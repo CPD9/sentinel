@@ -27,11 +27,12 @@ pytestmark = pytest.mark.skipif(
 
 
 def fingerprint(root: Path) -> dict:
+    # No mtime: file-sync daemons (iCloud Drive, Dropbox) re-stamp mtimes without changing content.
     out = {}
     for p in sorted(root.rglob("*")):
         if p.is_file():
             st = p.stat()
-            out[str(p.relative_to(root))] = (st.st_size, st.st_mtime_ns, st.st_mode,
+            out[str(p.relative_to(root))] = (st.st_size, st.st_mode,
                                              hashlib.sha256(p.read_bytes()).hexdigest())
     return out
 
