@@ -1,0 +1,12 @@
+# ASR stack, pinned. Install on top of requirements-analysis.txt:
+#   uv pip install --python .venv -r requirements-analysis.txt -r requirements-asr.txt
+#
+# ctranslate2 4.x GPU wheels need CUDA 12 + cuDNN 9 on the host (AWS Deep Learning AMI).
+# NOT YET VERIFIED against the AMI: check `nvidia-smi` / cuDNN version on the instance before the run.
+faster-whisper==1.2.1
+ctranslate2==4.8.2
+av==18.1.0
+huggingface_hub==2.2.0
+# Only for `ct2-transformers-converter` (HF-format fine-tunes -> CTranslate2). Not imported by the pipeline.
+transformers==5.19.0
+torch==2.14.1

@@ -255,15 +255,54 @@ def analyze_call(audio_path: str | Path, call_id: str) -> AnalysisArtifact:
 
 
 def write_analysis(art: AnalysisArtifact, out_dir: Path = OUT_DIR) -> Path:
+    return save_analysis(art, out_dir)
+
+
+# Blocks written by other stages into the same artifact (pipeline/asr.py). This module never computes
+# them, so a CPU re-analysis must carry them over instead of dropping them.
+ASR_BLOCKS = ("asr_confidence", "turns", "speech_rate")
+
+
+def analysis_path(call_id: str, out_dir: Path = OUT_DIR) -> Path:
+    return out_dir / call_id / "analysis.json"
+
+
+def load_or_init_analysis(call_id: str, duration_s: float, sample_rate: int,
+                          out_dir: Path = OUT_DIR) -> AnalysisArtifact:
+    """The call's existing artifact (validated), or an empty one. Other stages merge their block into
+    it and call save_analysis, so blocks written by different stages coexist."""
+    p = analysis_path(call_id, out_dir)
+    if p.is_file():
+        art = AnalysisArtifact.from_dict(json.loads(p.read_text(encoding="utf-8")))
+        if abs(art.duration_s - duration_s) > 0.05 or art.sample_rate != sample_rate:
+            raise ValueError(f"{call_id}: existing analysis is for other audio "
+                             f"({art.duration_s} s @ {art.sample_rate} Hz vs {duration_s} s @ {sample_rate} Hz)")
+        return art
+    return AnalysisArtifact(call_id=call_id, duration_s=duration_s, sample_rate=sample_rate)
+
+
+def save_analysis(art: AnalysisArtifact, out_dir: Path = OUT_DIR) -> Path:
+    """Validate, then write atomically (a reader never sees a half-written file)."""
     d = art.to_dict()
     errs = AnalysisArtifact.validate(d)
     if errs:
         raise ValueError(f"{art.call_id}: invalid AnalysisArtifact: {errs[:3]}")
-    target = out_dir / art.call_id
-    target.mkdir(parents=True, exist_ok=True)
-    p = target / "analysis.json"
-    p.write_text(json.dumps(d, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    p = analysis_path(art.call_id, out_dir)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(d, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    tmp.replace(p)
     return p
+
+
+def _carry_over_asr(fresh: AnalysisArtifact, old: AnalysisArtifact) -> None:
+    for name in ASR_BLOCKS:
+        if getattr(old, name) is not None:
+            setattr(fresh, name, getattr(old, name))
+    fresh.versions.asr = old.versions.asr
+    fresh.stage_errors += [e for e in old.stage_errors if e.stage.startswith("asr")]
+    if old.speech_rate is not None:
+        fresh.stage_errors = [e for e in fresh.stage_errors if e.stage != "analysis.speech_rate"]
 
 
 def render_png(art: AnalysisArtifact, audio_path: str | Path, out_path: Path) -> None:
@@ -352,12 +391,15 @@ def run(split: str | None = None, call_ids: list[str] | None = None, force: bool
         raise SystemExit(f"the test split is locked ({', '.join(locked[:3])}...); pass --allow-test only for the final run")
     rows = []
     for cid in call_ids:
-        target = out_dir / cid / "analysis.json"
-        if target.exists() and not force:
+        target = analysis_path(cid, out_dir)
+        old = AnalysisArtifact.from_dict(json.loads(target.read_text(encoding="utf-8"))) if target.exists() else None
+        if old is not None and old.versions.analysis == ANALYSIS_VERSION and not force:
             rows.append({"call_id": cid, "skipped": True})
             continue
         t0 = time.perf_counter()
         art = analyze_call(index[cid]["audio_path"], cid)
+        if old is not None:
+            _carry_over_asr(art, old)
         write_analysis(art, out_dir)
         if png:
             render_png(art, index[cid]["audio_path"], out_dir / cid / "analysis.png")
