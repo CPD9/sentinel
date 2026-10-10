@@ -1,4 +1,4 @@
-# INFRA — local LLM on the laptop (EXPERIMENT, not the pinned model)
+# Experiment: local Apertus 4B on a 4 GB laptop GPU (not part of the running system)
 
 **This is not the model CLAUDE.md pins.** The pipeline pins `swiss-ai/Apertus-v1.5-8B`. This laptop has an
 NVIDIA GTX 1650 Max-Q with 4 GB VRAM, which cannot hold an 8B model, so this setup serves
