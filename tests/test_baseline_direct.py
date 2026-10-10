@@ -90,3 +90,62 @@ def test_baseline_does_not_import_evaluate():
     r = subprocess.run([sys.executable, "-c", code], cwd=REPO_ROOT, capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
     assert r.stdout.strip() == "False"
+
+
+class _FakeClient:
+    """A real-provider stand-in (no network): same surface baseline_direct.run uses."""
+    def __init__(self, name, extra=None, model="same-model"):
+        from pipeline.llm import ProviderSpec
+        self.spec = ProviderSpec(name=name, base_url="http://127.0.0.1:1/v1", self_hosted=True)
+        self.model, self.model_revision, self.extra, self.requests = model, "rev", extra or {}, 0
+
+    def probe(self):
+        return {}
+
+    def chat(self, *a, **k):
+        self.requests += 1
+        return '{"decision": "no_alert", "risk": 0.1, "reason": "x", "evidence": []}'
+
+    def version_info(self):
+        return {"llm": f"{self.model}@{self.model_revision}", "provider": self.spec.name, "self_hosted": True}
+
+    def effective_extra_body(self):
+        return self.extra
+
+
+@needs_data
+def test_baseline_run_identity_and_cache_key_include_provider_and_extra_body(tmp_path, monkeypatch):
+    kw = dict(out_dir=tmp_path / "pred", cache_dir=tmp_path / "cache", limit=1)
+
+    def run_with(client):
+        monkeypatch.setattr(bd, "get_client", lambda model=None: client)
+        return bd.run("dev", "llm", **kw)
+
+    a, b = _FakeClient("p1"), _FakeClient("p2")
+    out_a, _ = run_with(a)
+    out_b, _ = run_with(b)
+    assert out_a != out_b and out_a.is_file() and out_b.is_file()            # same model, no overwrite
+    ra = RunResult.from_dict(json.loads(out_a.read_text(encoding="utf-8")))
+    assert ra.provider == "llm:p1:same-model" and ra.calls[0].versions.provider == "p1"
+    assert b.requests == 1                                                   # other provider: no cache sharing
+    changed = _FakeClient("p1", {"chat_template_kwargs": {"enable_thinking": False}})
+    out_changed, _ = run_with(changed)
+    assert changed.requests == 1                                             # new request options: cache miss
+    assert out_changed not in (out_a, out_b)                                 # ...and a separate run, no overwrite
+    rc = RunResult.from_dict(json.loads(out_changed.read_text(encoding="utf-8")))
+    assert rc.provider.startswith("llm:p1:same-model+opts-") and rc.run_id != ra.run_id
+    same = _FakeClient("p1")
+    run_with(same)
+    assert same.requests == 0                                                # identical setup: served from cache
+
+
+@needs_data
+def test_baseline_refusal_by_the_gate_exits_2_with_a_clear_message(monkeypatch, capsys):
+    from pipeline.llm import ProviderNotPermitted
+
+    def refuse(model=None):
+        raise ProviderNotPermitted("remote provider 'openrouter' is not permitted")
+    monkeypatch.setattr(bd, "get_client", refuse)
+    assert bd.main(["--provider", "llm", "--limit", "1"]) == 2
+    err = capsys.readouterr().err
+    assert "REFUSED by the provider policy gate" in err

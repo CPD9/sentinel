@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 
 from pipeline.schemas import (
-    AnalysisArtifact, CallListItem, CallResult, DecisionTrace, ProcessingEvent, QualityReport, Transcript,
-    validate_call_result,
+    AnalysisArtifact, CallListItem, CallResult, DecisionTrace, FeedbackEntry, ProcessingEvent, QualityReport, SimulationResult,
+    SuggestionsResponse, Transcript, validate_call_result,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -30,7 +30,8 @@ def test_fixture_set_is_complete():
     names = {p.name for p in fixture_files()}
     assert {"calls.json", "quality_report.json", "call_MOCK_001.result.json", "call_MOCK_001.transcript.json",
             "call_MOCK_001.trace.json", "call_MOCK_001.analysis.json", "call_MOCK_001.events.json",
-            "call_MOCK_002.result.json", "call_MOCK_002.trace.json", "call_MOCK_004.result.json"} <= names
+            "call_MOCK_002.result.json", "call_MOCK_002.trace.json", "call_MOCK_004.result.json",
+            "feedback.json", "simulation.json", "suggestions.json", "whatif_calls.json"} <= names
 
 
 @pytest.mark.parametrize("path", fixture_files(), ids=lambda p: p.name)
@@ -44,6 +45,15 @@ def test_fixture_validates_and_is_marked_mock(path):
     elif name.endswith(".events.json"):
         for e in d:
             assert ProcessingEvent.validate(e) == []
+    elif name == "feedback.json":
+        for e in d:
+            assert FeedbackEntry.validate(e) == [] and e["is_mock"] is True
+    elif name == "simulation.json":
+        assert SimulationResult.validate(d) == [] and d["is_mock"] is True
+    elif name == "suggestions.json":
+        assert SuggestionsResponse.validate(d) == [] and d["is_mock"] is True
+    elif name == "whatif_calls.json":
+        assert d["is_mock"] is True and all(c["call_id"].startswith("call_MOCK_1") for c in d["calls"])
     elif name == "quality_report.json":
         assert QualityReport.validate(d) == []
         assert d["is_mock"] is True and d["provider"] == "MOCK"
@@ -104,6 +114,21 @@ def test_harmless_keyword_call_is_no_alert_with_explanation():
     assert not any(r["fired"] for r in trace["rules"]) and trace["why_not_flagged"]
 
 
+def test_whatif_fixtures_agree_with_each_other():
+    calls, sugg, sim, fb = load("whatif_calls.json"), load("suggestions.json"), load("simulation.json"), load("feedback.json")
+    ids = {c["call_id"] for c in calls["calls"]}
+    counts = {d: sum(c["decision"] == d for c in calls["calls"]) for d in ("alarm", "review", "no_alert")}
+    assert sim["counts"]["before"] == counts and sim["n_calls"] == len(ids) and sugg["config_version"] == calls["config_version"]
+    assert {e["call_id"] for e in fb} <= ids and sugg["n_feedback"] == len(fb)
+    assert sugg["suggestions"] and sugg["suggestions"][0]["fix_credit"] >= sugg["suggestions"][-1]["fix_credit"]
+    for s in sugg["suggestions"]:
+        assert s["effect"]["counts"]["before"] == counts and s["effect"]["feedback_check"]["violations"] == []
+        assert {f["call_id"] for f in s["effect"]["flipped"]} <= ids
+        assert s["effect"]["baseline_version"] == s["config_version"]
+    correct = {e["call_id"] for e in fb if e["verdict"] == "correct"}
+    assert all(not correct & {f["call_id"] for f in s["effect"]["flipped"]} for s in sugg["suggestions"])
+
+
 def test_inbox_rows_match_results():
     rows = {r["call_id"]: r for r in load("calls.json")}
     for cid in ("call_MOCK_001", "call_MOCK_002", "call_MOCK_004"):
@@ -149,10 +174,10 @@ def test_regeneration_is_byte_identical(tmp_path):
 
 # --------------------------------------------------------------------------- docs/PRODUCT.md paths
 
-PATH_RE = re.compile(r"`((?:result|transcript|trace|analysis|quality|event|calls\[\])(?:\.[A-Za-z_]\w*(?:\[\])?)+)`")
+PATH_RE = re.compile(r"`((?:result|transcript|trace|analysis|quality|event|simulation|suggestions|feedback\[\]|calls\[\])(?:\.(?!json`)[A-Za-z_]\w*(?:\[\])?)+)`")
 DOC_GLOBS = {"result": "*.result.json", "transcript": "*.transcript.json", "trace": "*.trace.json",
              "analysis": "*.analysis.json", "quality": "quality_report.json", "event": "*.events.json",
-             "calls[]": "calls.json"}
+             "calls[]": "calls.json", "simulation": "simulation.json", "suggestions": "suggestions.json", "feedback[]": "feedback.json"}
 
 
 def _resolves(doc, tokens: list[str]) -> bool:

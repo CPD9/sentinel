@@ -38,3 +38,15 @@ export function fmtDateTime(iso: string | null | undefined): string {
 export function humanize(s: string): string {
   return s.replaceAll("_", " ");
 }
+
+export const VERDICT_LABEL = { false_alarm: "False alarm", missed: "Missed", correct: "Correct" } as const;
+
+/** "thresholds.alarm=0.8" → "alarm threshold 0.8", "rules.disable:insider_trading" → "rule insider trading off". */
+export function componentLabel(c: string): string {
+  const [kind, rest = ""] = c.split(/[=:]/);
+  if (kind === "thresholds.confidence_gate") return `confidence gate ${rest}`;
+  if (kind.startsWith("thresholds.")) return `${kind.slice(11)} threshold ${rest}`;
+  if (kind === "keywords.disable") return `keyword family ${rest} off`;
+  if (kind === "rules.disable") return `rule ${humanize(rest)} off`;
+  return humanize(c);
+}

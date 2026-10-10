@@ -57,7 +57,7 @@ export interface Finding {
   counter_evidence: Evidence[];
 }
 export interface StageError { stage: string; message: string }
-export interface Versions { asr: string | null; llm: string | null; prompt: string | null; rules: string | null }
+export interface Versions { asr: string | null; llm: string | null; prompt: string | null; rules: string | null; provider: string | null; self_hosted: boolean | null }
 export interface CallResult {
   call_id: string;
   decision: Decision;
@@ -278,6 +278,49 @@ export interface PreviewResponse {
   rule_fire_counts: Record<string, number>;
 }
 export interface RerunResponse { rerun: { stages: string[]; n_calls: number } }
+
+// ---- What-if, feedback, suggestions (pipeline/schemas.py, docs/API.md "What-if, feedback and suggestions")
+export const VERDICTS = ["false_alarm", "missed", "correct"] as const;
+export type Verdict = (typeof VERDICTS)[number];
+export const DECISION_RANK: Record<Decision, number> = { no_alert: 0, review: 1, alarm: 2 };
+/** A false alarm needs a flag to be false; a miss needs room above the current decision. */
+export const verdictAllowed = (v: Verdict, d: Decision) => !((v === "false_alarm" && d === "no_alert") || (v === "missed" && d === "alarm"));
+
+export interface Patch {
+  thresholds?: Partial<Thresholds>;
+  keywords?: { disable_families: string[] } | KeywordsConfig;
+  rules?: { disable: string[] } | RulesConfig;
+}
+export interface FeedbackEntry {
+  call_id: string; verdict: Verdict; ts: string; decision_at_feedback: Decision;
+  note: string | null; config_version: string | null; is_mock: boolean;
+}
+export interface Workload { n: number; alarms_per_100: number; reviews_per_100: number; flagged_per_100: number }
+export interface FlippedCall {
+  call_id: string; before: Decision; after: Decision; direction: "up" | "down";
+  risk_before: number; risk_after: number; confidence_before: number | null; confidence_after: number | null;
+  path_before: string; path_after: string; reasons: string[]; attributed_to: string[]; feedback_verdict: Verdict | null;
+}
+export interface FeedbackCheck { n_feedback: number; fix_credit: number; fixed: string[]; unchanged: string[]; violations: string[] }
+export interface SimulationResult {
+  patch: Patch; baseline_version: string; patched_version: string; n_calls: number; n_locked: number;
+  counts: { before: Record<Decision, number>; after: Record<Decision, number> };
+  workload: { before: Workload; after: Workload; delta_flagged_per_100: number };
+  flipped: FlippedCall[]; feedback_check: FeedbackCheck | null; is_mock: boolean; schema_version: number;
+}
+export interface Suggestion {
+  id: string; patch: Patch; title: string; rationale: string; config_version: string; n_knobs: number;
+  fix_credit: number; fixed: string[]; not_fixed: string[]; collateral_flips: string[]; effect: SimulationResult;
+}
+export interface SuggestionsResponse {
+  generated_at: string; config_version: string; n_feedback: number; counts_by_verdict: Record<Verdict, number>;
+  suggestions: Suggestion[]; caveat: string; reason: string | null; is_mock: boolean; schema_version: number;
+}
+export interface AuditEntry {
+  ts: string; action: "apply_suggestion" | "settings_change"; patch: Patch; config_version_before: string;
+  config_version_after: string; suggestion_id: string | null; note: string | null; n_flipped: number | null; is_mock: boolean;
+}
+export interface ApplyResponse { rerun: { stages: string[]; n_calls: number }; audit: AuditEntry }
 
 // ---- Errors (docs/API.md)
 export interface ApiErrorBody { error: string; detail: string | string[] }

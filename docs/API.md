@@ -108,9 +108,53 @@ finalises them, and both this section and the schemas will be updated then.
 | `PUT /settings/keywords` | Same shape. Families must be keys of `schemas.CRITERION_BY_FAMILY`. Re-runs step 3, then 6–8. `202 {"rerun": …}` |
 | `GET /settings/rules` | `{"version": "...", "rules": [{"criterion": "credential_sharing", "enabled": true, …rule-specific params}]}` |
 | `PUT /settings/rules` | Same shape. Re-runs 6–8. `202 {"rerun": …}` |
-| `POST /settings/preview` | Body: any subset of `{"thresholds": …, "keywords": …, "rules": …}`. **Does not save.** Response: `200 {"decision_counts": {"before": {"alarm": n, …}, "after": {…}}, "changed": [{"call_id", "decision_before", "decision_after", "risk_before", "risk_after"}], "keyword_hit_counts": {"<family>": {"<term>": n}}, "rule_fire_counts": {"<criterion>": n}}`. It must be fast (< 1 s for 60 calls): no ASR and no LLM, only cached transcripts and extractions. |
+| `POST /settings/preview` (superseded by `POST /simulate`, kept for compatibility; it may be a thin wrapper) | Body: any subset of `{"thresholds": …, "keywords": …, "rules": …}`. **Does not save.** Response: `200 {"decision_counts": {"before": {"alarm": n, …}, "after": {…}}, "changed": [{"call_id", "decision_before", "decision_after", "risk_before", "risk_after"}], "keyword_hit_counts": {"<family>": {"<term>": n}}, "rule_fire_counts": {"<criterion>": n}}`. It must be fast (< 1 s for 60 calls): no ASR and no LLM, only cached transcripts and extractions. |
 
 Concurrent PUTs return 409 `conflict` while a re-run is in progress.
+
+### What-if, feedback and suggestions
+
+The differentiator: an officer sees what a config change *would* do, tells SENTINEL which flagged calls were wrong, and gets
+ranked, simulated suggestions. **Nothing here is ever applied automatically.** Bodies are the dataclasses in
+`pipeline/schemas.py` (`SimulationResult`, `FeedbackEntry`, `SuggestionsResponse`, `AuditEntry`), MOCK examples are in
+`fixtures/{simulation,feedback,suggestions}.json`. The logic is pure Python over cached transcripts and facts, so the API
+only wires it up:
+
+```python
+from pipeline.simulate import load_inputs, load_raw, Simulator, patched_docs, ConfigError   # steps 3 + 6-8, no ASR/LLM
+from pipeline.suggest import suggestions_response
+from pipeline.feedback import make_entry, append_feedback, latest_feedback, append_audit, read_audit
+```
+
+`load_inputs()` reads `artifacts/{transcripts,traces,analysis}` and `out/results` (stage errors). The API never reads
+`evaluation.json`: feedback comes only from the officer through `POST /feedback`.
+
+**Patch** (request body of `/simulate`, and the `patch` field of every suggestion). Same idea as `/settings/preview`:
+
+```json
+{"thresholds": {"alarm": 0.8, "review": 0.45, "confidence_gate": 0.5},
+ "keywords":   {"disable_families": ["splitting"]},
+ "rules":      {"disable": ["credential_sharing"]}}
+```
+
+Every key is optional. `keywords` and `rules` may also carry a full document (`{"families": …}` / `{"rules": …}`) like the
+`PUT /settings/*` bodies. An invalid patch (review >= alarm, unknown family or rule, unknown key) is `422 invalid` with the
+`ConfigError.errors` list in `detail`.
+
+| Method + path | Body / response |
+|---|---|
+| `POST /simulate` | Body `{"patch": {…}, "with_feedback": true}` (`with_feedback` defaults to true). `200 SimulationResult`. **Does not save.** Must be fast (< 1 s for 60 calls). `flipped[]` lists every call whose decision changes, with `reasons`, the patch components that `attributed_to` it, and `feedback_verdict` when the officer labelled it. `workload` is alarms + reviews per 100 calls, before and after. `feedback_check` lists labelled calls that moved the right way (`fixed`) or the wrong way (`violations`, which includes any `correct` call that flips), so the UI can warn while the officer drags a slider. |
+| `POST /feedback` | Body `{"call_id", "verdict": "false_alarm" \| "missed" \| "correct", "note"?}`. `201 FeedbackEntry`. The server fills `ts`, `decision_at_feedback` (the call's current decision) and `config_version`, then calls `append_feedback` (atomic append to `out/feedback.jsonl`). `404 not_found` for an unknown call, `422 invalid` for a verdict that makes no sense (`false_alarm` on a `no_alert` call, `missed` on an `alarm`, bad note length). The log is append-only and the **latest verdict per call wins**: to change your mind, post again. |
+| `GET /feedback` | `200 list[FeedbackEntry]`, the latest verdict per call. |
+| `GET /suggestions` | `200 SuggestionsResponse`. `suggestions` are ranked (most feedback fixed first, then fewest other calls flipped, fewest knobs, smallest change). Each carries its patch, `fixed` / `not_fixed` calls, `collateral_flips` (unlabelled calls that would change) and the full simulated `effect`. An empty list always has a `reason` (no feedback yet, only "correct" verdicts, everything already resolved, or no change satisfies the correct-marked calls); it is not an error. Query `?max=5`. Computed on demand (< 2 s for 60 calls). |
+| `POST /suggestions/{id}/apply` | **Needed for the apply flow.** Body `{"confirm": true, "note"?}`. Recomputes the suggestion `id` against the current config; `409 conflict` if the config changed since (the UI then reloads) or the id is unknown. Writes the config through the same code path as `PUT /settings/*` (`patched_docs(load_raw(), patch)` gives the three documents to save), re-runs steps 6-8, appends an `AuditEntry` (`append_audit`, `out/audit.jsonl`) and answers `202 {"rerun": …, "audit": AuditEntry}`. |
+| `GET /audit` | `200 list[AuditEntry]`, newest first. Also written by `PUT /settings/*` (`action: "settings_change"`). |
+
+Notes for implementation:
+- `feedback` is passed to the pure functions as an argument: `suggestions_response(inputs, latest_feedback(), load_raw())`.
+- Suggestions are fitted to a handful of officer verdicts. The body says so (`caveat`) and the UI shows it.
+- Fixture mode: `/simulate` and `/suggestions` serve `simulation.json` / `suggestions.json`, `GET /feedback` serves `feedback.json`,
+  `POST /feedback`, `POST /suggestions/{id}/apply` return 409 like uploads.
 
 ### Quality
 
@@ -140,6 +184,20 @@ With `SENTINEL_FIXTURES=1`, the API serves `fixtures/` instead of real artifacts
 In fixture mode, audio and snippet endpoints return 404, uploads return 409, and every body carries
 `is_mock` (or MOCK `versions`), which the UI shows as a banner. The frontend can also import the
 fixture JSON directly, without the API.
+
+Implementation notes (`services/api/`, run with `SENTINEL_FIXTURES=1 python -m services.api` on `127.0.0.1:8001`):
+- `/calls/{id}/events` replays the recorded log paced at a fraction of its real gaps (`SENTINEL_REPLAY_SCALE`,
+  default 0.1) so the Processing view visibly ticks. Calls without an events file get a short synthesized
+  log consistent with their row and result (for example `call_MOCK_004`: asr `stage_failed`, then `review`).
+- Settings start from MOCK defaults. `PUT` validates (422 on bad values) and keeps the values in memory only
+  until `config/` exists, answering `202` with `n_calls: 0` because nothing is re-run. `POST /settings/preview`
+  re-applies the decide.py priority order to the cached rows (a MOCK approximation).
+
+## Versions block
+
+`versions` (in `CallResult` and `DecisionTrace`) is `{asr, llm, prompt, rules, provider, self_hosted}`, all optional.
+`provider` is the LLM provider name from `config/providers.yaml`; `self_hosted: false` means the LLM ran on a remote
+provider (allowed for fictional data only), which the UI should show.
 
 ## Validation
 

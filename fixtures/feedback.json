@@ -1,0 +1,83 @@
+[
+  {
+    "call_id": "call_MOCK_101",
+    "verdict": "correct",
+    "ts": "2026-10-10T13:00:00Z",
+    "decision_at_feedback": "no_alert",
+    "note": null,
+    "config_version": "rules-v1+05033d70",
+    "is_mock": true
+  },
+  {
+    "call_id": "call_MOCK_102",
+    "verdict": "correct",
+    "ts": "2026-10-10T13:01:00Z",
+    "decision_at_feedback": "no_alert",
+    "note": null,
+    "config_version": "rules-v1+05033d70",
+    "is_mock": true
+  },
+  {
+    "call_id": "call_MOCK_103",
+    "verdict": "correct",
+    "ts": "2026-10-10T13:02:00Z",
+    "decision_at_feedback": "alarm",
+    "note": null,
+    "config_version": "rules-v1+05033d70",
+    "is_mock": true
+  },
+  {
+    "call_id": "call_MOCK_104",
+    "verdict": "false_alarm",
+    "ts": "2026-10-10T13:03:00Z",
+    "decision_at_feedback": "review",
+    "note": "Kunde hat Spass gemacht, kein echtes Passwort.",
+    "config_version": "rules-v1+05033d70",
+    "is_mock": true
+  },
+  {
+    "call_id": "call_MOCK_105",
+    "verdict": "correct",
+    "ts": "2026-10-10T13:04:00Z",
+    "decision_at_feedback": "alarm",
+    "note": null,
+    "config_version": "rules-v1+05033d70",
+    "is_mock": true
+  },
+  {
+    "call_id": "call_MOCK_106",
+    "verdict": "false_alarm",
+    "ts": "2026-10-10T13:05:00Z",
+    "decision_at_feedback": "review",
+    "note": "Ironisch gemeint.",
+    "config_version": "rules-v1+05033d70",
+    "is_mock": true
+  },
+  {
+    "call_id": "call_MOCK_107",
+    "verdict": "false_alarm",
+    "ts": "2026-10-10T13:06:00Z",
+    "decision_at_feedback": "alarm",
+    "note": "Ratenzahlung mit Segen der Kreditabteilung.",
+    "config_version": "rules-v1+05033d70",
+    "is_mock": true
+  },
+  {
+    "call_id": "call_MOCK_108",
+    "verdict": "correct",
+    "ts": "2026-10-10T13:07:00Z",
+    "decision_at_feedback": "no_alert",
+    "note": null,
+    "config_version": "rules-v1+05033d70",
+    "is_mock": true
+  },
+  {
+    "call_id": "call_MOCK_110",
+    "verdict": "correct",
+    "ts": "2026-10-10T13:08:00Z",
+    "decision_at_feedback": "no_alert",
+    "note": null,
+    "config_version": "rules-v1+05033d70",
+    "is_mock": true
+  }
+]

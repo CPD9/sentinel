@@ -563,6 +563,59 @@ def with_audio_quality(trace: dict, an: dict) -> dict:
     return DecisionTrace.from_dict(trace).to_dict()
 
 
+def whatif() -> dict[str, object]:
+    """feedback.json, simulation.json, suggestions.json, whatif_calls.json: the REAL simulate/suggest code run over a small
+    invented corpus (call_MOCK_101..112, config frozen in fixtures/config_snapshot/ so tuning config/ never drifts these)."""
+    from dataclasses import replace
+    import yaml
+    sys.path.insert(0, str(REPO_ROOT / "fixtures"))
+    from whatif_corpus import make_corpus
+    from pipeline.feedback import make_entry
+    from pipeline.schemas import FeedbackEntry, SimulationResult, SuggestionsResponse
+    from pipeline.simulate import RawConfig, Simulator, split_patch, patch_components
+    from pipeline.suggest import suggestions_response
+
+    snap = Path(__file__).resolve().parent / "config_snapshot"
+    raw = RawConfig(json.loads((snap / "keywords.json").read_text(encoding="utf-8")),
+                    yaml.safe_load((snap / "rules.yaml").read_text(encoding="utf-8")),
+                    json.loads((snap / "thresholds.json").read_text(encoding="utf-8")))
+    calls = make_corpus(12, seed=1, mock=True, first_id=101)
+    base = Simulator(calls, raw).baseline
+    # Officer verdicts (invented): the two password jokes are false alarms, one split-payment alarm is a false alarm,
+    # the insider alarms and the quiet calls are right.
+    verdicts = {"call_MOCK_104": ("false_alarm", "Kunde hat Spass gemacht, kein echtes Passwort."),
+                "call_MOCK_106": ("false_alarm", "Ironisch gemeint."),
+                "call_MOCK_107": ("false_alarm", "Ratenzahlung mit Segen der Kreditabteilung."),
+                "call_MOCK_103": ("correct", None), "call_MOCK_105": ("correct", None), "call_MOCK_101": ("correct", None),
+                "call_MOCK_102": ("correct", None), "call_MOCK_108": ("correct", None), "call_MOCK_110": ("correct", None)}
+    fb = {}
+    for i, (cid, (verdict, note)) in enumerate(sorted(verdicts.items())):
+        fb[cid] = make_entry(cid, verdict, base[cid].decision, note, base[cid].versions.rules, f"2026-10-10T13:{i:02d}:00Z", True)
+    resp = replace(suggestions_response(calls, fb, raw), generated_at="2026-10-10T14:10:00Z")
+    sim = Simulator(calls, raw, fb)
+    sample = sim.run({"thresholds": {"alarm": 0.87}})
+    toggles = (split_patch({"keywords": {"disable_families": sorted(raw.keywords["families"])}})
+               + split_patch({"rules": {"disable": [r["criterion"] for r in raw.rules["rules"] if r.get("enabled", True)]}}))
+    components = [patch_components(p)[0] for p in toggles]
+    solo = {c.call_id: {} for c in calls}
+    for comp, p in zip(components, toggles):
+        for cid, d in sim.decisions(p).items():
+            solo[cid][comp] = d
+    rows = [{"call_id": c.call_id, "decision": base[c.call_id].decision, "decision_path": base[c.call_id].decision_path,
+             "risk_score": base[c.call_id].risk_score, "confidence": base[c.call_id].confidence, "locked": c.locked,
+             "if_disabled": solo[c.call_id]} for c in calls]
+    for d in (resp, sample):
+        assert d.is_mock
+    assert SuggestionsResponse.validate(resp.to_dict()) == [] and SimulationResult.validate(sample.to_dict()) == []
+    return {
+        "feedback.json": [FeedbackEntry.from_dict(e.to_dict()).to_dict() for e in fb.values()],
+        "simulation.json": sample.to_dict(),
+        "suggestions.json": resp.to_dict(),
+        "whatif_calls.json": {"is_mock": True, "config_version": sim.base_config.rules_version, "thresholds":
+                              {k: raw.thresholds[k] for k in ("alarm", "review", "confidence_gate")}, "components": components, "calls": rows},
+    }
+
+
 def build() -> dict[str, object]:
     r1, t1 = call_1()
     r2, t2 = call_2()
@@ -583,6 +636,7 @@ def build() -> dict[str, object]:
         "call_MOCK_002.analysis.json": a2,
         "call_MOCK_004.result.json": r4,
         "quality_report.json": quality_report(),
+        **whatif(),
     }
 
 
