@@ -1,5 +1,5 @@
 "use client";
-import { Lock } from "lucide-react";
+import { ChevronRight, Lock } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,6 +12,7 @@ import { useReportMock } from "@/lib/mock-store";
 import type { ConventionSet, QualityReport } from "@/lib/types";
 import { useAsync } from "@/lib/use-async";
 import { AblationChart, GroupBars, LatencyBars, METRICS, ReliabilityDiagram, WerChart, type MetricKey } from "./charts";
+import { Headline } from "./headline";
 import { MetricBar } from "./metric";
 
 export function QualityView() {
@@ -26,7 +27,7 @@ export function QualityView() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Detection quality</h1>
-          <p className="text-sm text-muted-foreground">Three metric conventions are always shown together, each with a bootstrap confidence interval.</p>
+          <p className="text-sm text-muted-foreground">How well SENTINEL detects fraud: false alarms and missed cases on calls it was never tuned on. The three ways of counting “review” are always shown together, each with a confidence interval.</p>
         </div>
         {list.data && list.data.length > 0 && (
           <Select label="Report" value={id ?? ""} onChange={(e) => setId(e.target.value)} className="max-w-xs">
@@ -49,14 +50,17 @@ function Report({ r }: { r: QualityReport }) {
 
   return (
     <div className="space-y-4">
+      <Headline r={r} />
       <Card>
         <CardContent className="space-y-2">
-          <dl className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
+          <details className="text-sm"><summary className="cursor-pointer text-xs text-muted-foreground">Run details: {r.split} split · {r.mode} transcripts · {r.system}</summary>
+          <dl className="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-sm">
             {[["run", r.run_id], ["system", r.system], ["mode", r.mode], ["split", r.split], ["n", String(r.overall.n)],
               ["bootstrap", `${r.bootstrap.n_resamples} resamples · ${pct(r.bootstrap.ci_level)} CI · unit: ${r.bootstrap.unit}`]].map(([k, v]) => (
               <div key={k} className="flex gap-1.5"><dt className="text-muted-foreground">{k}</dt><dd className="font-mono text-xs leading-5">{v}</dd></div>
             ))}
           </dl>
+          </details>
           <div className="flex flex-wrap gap-2">
             {r.split === "test" && <Badge className="border-foreground"><Lock className="size-3" />locked test set — final report only</Badge>}
             {small && <Badge className="border-review bg-review-bg text-review">n is small ({r.overall.n} &lt; 30): read the intervals, not the point estimates</Badge>}
@@ -83,14 +87,6 @@ function Report({ r }: { r: QualityReport }) {
         <CardContent><Confusion cs={r.overall} /></CardContent>
       </Card>
 
-      <Panel title="Threshold curves" desc="Precision and recall as one threshold moves; the marker is the value used in this run.">
-        {r.threshold_curves.length === 0 ? hidden("Threshold curves") : (
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{r.threshold_curves.map((c, i) => (
-            <div key={i}><h4 className="mb-1 text-xs font-semibold">{humanize(c.param)} · {humanize(c.convention)}</h4><CurveChart curve={c} /></div>
-          ))}</div>
-        )}
-      </Panel>
-
       <Panel title="Breakdowns" desc="Per Stufe and clean vs noisy, with bootstrap CIs. Small groups have wide intervals."
         action={<Select label="Metric" value={metric} onChange={(e) => setMetric(e.target.value as MetricKey)}>{(Object.keys(METRICS) as MetricKey[]).map((k) => <option key={k} value={k}>{METRICS[k][0]}</option>)}</Select>}>
         <div className="grid gap-4 md:grid-cols-2">
@@ -99,8 +95,8 @@ function Report({ r }: { r: QualityReport }) {
         </div>
       </Panel>
 
+      <Panel title="Ablations" desc="Escalation recall: keyword-only vs LLM-only vs combined, on reference and ASR transcripts.">{r.ablations.length ? <AblationChart items={r.ablations} /> : hidden("Ablations")}</Panel>
       <div className="grid gap-4 lg:grid-cols-2">
-        <Panel title="Confidence reliability" desc="Does a confidence of 80 % mean right 80 % of the time?">{r.reliability ? <ReliabilityDiagram r={r.reliability} /> : hidden("Reliability")}</Panel>
         <Panel title="Evidence validity" desc="Flagged passages with valid segment refs, timestamps inside the audio and a playable snippet.">
           {r.evidence_validity ? (
             <div className="space-y-2">
@@ -113,12 +109,29 @@ function Report({ r }: { r: QualityReport }) {
           ) : hidden("Evidence validity")}
         </Panel>
       </div>
+      <details className="group space-y-4">
+        <summary className="flex cursor-pointer list-none items-center gap-2 rounded-2xl border border-border bg-card/40 px-4 py-3 text-sm font-semibold [&::-webkit-details-marker]:hidden">
+          <ChevronRight className="size-4 transition-transform group-open:rotate-90 motion-reduce:transition-none" aria-hidden />
+          More analysis <span className="font-normal text-muted-foreground">· threshold curves, confidence reliability, transcript quality vs recall, speed per step</span>
+        </summary>
+        <div className="space-y-4 pt-4">
+      <Panel title="Threshold curves" desc="Precision and recall as one threshold moves; the marker is the value used in this run.">
+        {r.threshold_curves.length === 0 ? hidden("Threshold curves") : (
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{r.threshold_curves.map((c, i) => (
+            <div key={i}><h4 className="mb-1 text-xs font-semibold">{humanize(c.param)} · {humanize(c.convention)}</h4><CurveChart curve={c} /></div>
+          ))}</div>
+        )}
+      </Panel>
 
-      <Panel title="Ablations" desc="Escalation recall: keyword-only vs LLM-only vs combined, on reference and ASR transcripts.">{r.ablations.length ? <AblationChart items={r.ablations} /> : hidden("Ablations")}</Panel>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Panel title="Confidence reliability" desc="Does a confidence of 80 % mean right 80 % of the time?">{r.reliability ? <ReliabilityDiagram r={r.reliability} /> : hidden("Reliability")}</Panel>
+      </div>
       <div className="grid gap-4 lg:grid-cols-2">
         <Panel title="WER vs downstream recall" desc="Does a worse transcript cost recall?">{r.wer_vs_recall.length ? <WerChart bins={r.wer_vs_recall} /> : hidden("WER vs recall")}</Panel>
         <Panel title="Per-stage latency" desc="Bar = p50, whisker to p95.">{r.latency.length ? <LatencyBars items={r.latency} /> : hidden("Latency")}</Panel>
       </div>
+        </div>
+      </details>
       {r.notes.length > 0 && <ul className="list-disc pl-5 text-xs text-muted-foreground">{r.notes.map((n, i) => <li key={i}>{n}</li>)}</ul>}
     </div>
   );
