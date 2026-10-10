@@ -65,6 +65,32 @@ def test_provider_provenance_reaches_result_and_trace(env, monkeypatch):
     assert trace["versions"]["provider"] == "openrouter" and trace["versions"]["self_hosted"] is False
 
 
+def test_provider_provenance_survives_a_failed_remote_extraction(env, monkeypatch):
+    from pipeline.llm import ProviderSpec
+    spec = ProviderSpec(name="openrouter", base_url="https://openrouter.ai/api/v1", key_env="K", self_hosted=False,
+                        allowed_models=("a/b",))
+    fake_extract(monkeypatch, [], boom=TimeoutError("read timed out"))
+    # the chosen client is known before extraction starts, even if the extractor never records its own versions
+    monkeypatch.setattr("pipeline.llm.from_env", lambda: types.SimpleNamespace(probe=lambda: {}, spec=spec))
+    r = run(env)
+    assert r["decision"] == "review" and r["stage_errors"][0]["stage"] == "extract"
+    assert r["versions"]["provider"] == "openrouter" and r["versions"]["self_hosted"] is False
+    trace = json.loads((env.art / "traces" / "call_t1.json").read_text())
+    assert trace["versions"]["provider"] == "openrouter" and trace["versions"]["self_hosted"] is False
+
+
+def test_refusal_before_any_client_leaves_provenance_unset(env, monkeypatch):
+    from pipeline.llm import ProviderNotPermitted
+    fake_extract(monkeypatch, [])
+
+    def refuse():
+        raise ProviderNotPermitted("remote provider 'openrouter' is not permitted")
+    monkeypatch.setattr("pipeline.llm.from_env", refuse)
+    r = run(env)
+    assert r["decision"] == "review" and "not permitted" in r["stage_errors"][0]["message"]
+    assert "provider" not in r["versions"]                       # nothing was sent anywhere
+
+
 def test_missing_extract_module_is_review_never_silent(env):
     r = run(env)
     assert r["decision"] == "review" and [e["stage"] for e in r["stage_errors"]] == ["extract"]
