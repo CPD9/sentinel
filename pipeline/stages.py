@@ -5,7 +5,8 @@ Extraction is built in a parallel branch (pipeline/extract.py). It is imported l
 creates it. Assumed contract, adjust when that branch lands:
 
     pipeline.extract.extract_facts(transcript: Transcript) -> list[schemas.Fact]   # validated facts (valid flag set)
-    pipeline.extract.VERSIONS = {"llm": "<model>@<rev>", "prompt": "<prompt version>"}   # optional
+    pipeline.extract.VERSIONS = {"llm": "<model>@<rev>", "prompt": "<prompt version>",
+                                 "provider": "<provider name>", "self_hosted": True}   # optional, recorded in versions
 
 A missing module, an unreachable LLM_BASE_URL (probed first, 10 s) or any exception becomes StageError("extract").
 """
@@ -95,19 +96,36 @@ def run_reference(call_id: str) -> tuple[Transcript | None, list[StageError]]:
 # --------------------------------------------------------------------------- extraction
 
 def run_extraction(transcript: Transcript, call_id: str) -> tuple[list[Fact] | None, list[StageError], dict]:
-    """(facts, errors, versions). facts is None exactly when errors is non-empty."""
+    """(facts, errors, versions). facts is None exactly when errors is non-empty.
+
+    `versions` is returned on failure too: once a client has been chosen, its provider / self_hosted stay recorded,
+    so a failed call to a remote provider remains auditable.
+    """
+    mod, vinfo = None, {}
     try:
         mod = importlib.import_module("pipeline.extract")
         from pipeline import llm
-        llm.from_env().probe()          # fail fast on a dead SSH tunnel instead of waiting out a 300 s timeout
+        client = llm.from_env()
+        vinfo = _provenance(client)
+        client.probe()                  # fail fast on a dead SSH tunnel instead of waiting out a 300 s timeout
         facts = mod.extract_facts(transcript)
         if not isinstance(facts, list) or not all(isinstance(f, Fact) for f in facts):
             raise TypeError("extract_facts must return list[Fact]")
-        return facts, [], dict(getattr(mod, "VERSIONS", None) or {})
+        return facts, [], {**vinfo, **dict(getattr(mod, "VERSIONS", None) or {})}
     except BaseException as exc:
         if isinstance(exc, (KeyboardInterrupt, SystemExit)):
             raise
-        return None, _err("extract", exc), {}
+        partial = {k: v for k, v in dict(getattr(mod, "VERSIONS", None) or {}).items() if v is not None}
+        # the module-level VERSIONS may be stale (set by an earlier call): the client chosen for THIS call wins
+        return None, _err("extract", exc), {**partial, **vinfo}
+
+
+def _provenance(client) -> dict:
+    """provider + self_hosted of a client, {} when it carries no provider spec (e.g. a test double)."""
+    spec = getattr(client, "spec", None)
+    if spec is None:
+        return {}
+    return {"provider": spec.name, "self_hosted": spec.self_hosted}
 
 
 # --------------------------------------------------------------------------- decision

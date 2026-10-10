@@ -193,6 +193,12 @@ Implementation notes (`services/api/`, run with `SENTINEL_FIXTURES=1 python -m s
   until `config/` exists, answering `202` with `n_calls: 0` because nothing is re-run. `POST /settings/preview`
   re-applies the decide.py priority order to the cached rows (a MOCK approximation).
 
+## Versions block
+
+`versions` (in `CallResult` and `DecisionTrace`) is `{asr, llm, prompt, rules, provider, self_hosted}`, all optional.
+`provider` is the LLM provider name from `config/providers.yaml`; `self_hosted: false` means the LLM ran on a remote
+provider (allowed for fictional data only), which the UI should show.
+
 ## Validation
 
 The API should validate what it serves with `<Schema>.validate(d)` (and `validate_call_result` for

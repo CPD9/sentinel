@@ -15,6 +15,7 @@ prompt version, messages, runtime). Clean and noisy recordings share a script, s
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -24,7 +25,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
-from pipeline.llm import RUNTIME_VERSION, DiskCache, LLMError, from_env  # noqa: E402
+from pipeline.llm import RUNTIME_VERSION, DiskCache, LLMError, ProviderNotPermitted, get_client  # noqa: E402
 from pipeline.reference import reference_transcript  # noqa: E402
 from pipeline.schemas import (CRITERIA, DECISIONS, SPEAKERS, CallResult, Evidence, Finding,  # noqa: E402
                               RunResult, StageError, Versions)
@@ -174,24 +175,34 @@ def to_call_result(call_id: str, raw: str, versions: Versions) -> CallResult:
 # --------------------------------------------------------------------------- main
 
 def run(split: str, provider_name: str, out_dir: Path = PRED_DIR, cache_dir: Path = CACHE_DIR,
-        limit: int | None = None) -> tuple[Path, dict]:
+        limit: int | None = None, model: str | None = None) -> tuple[Path, dict]:
     call_ids = json.loads(SPLITS_FILE.read_text(encoding="utf-8"))["splits"][split]["call_ids"]
     if limit:
         call_ids = call_ids[:limit]
+    opts_tag = ""
     if provider_name == "mock":
         provider = MockProvider()
         provider_id = MOCK_ID
     else:
-        provider = from_env()
+        provider = get_client(model=model)     # provider: $SENTINEL_LLM_PROVIDER, else the registry default
         provider.probe()           # fails loudly if the tunnel / vLLM is down
-        provider_id = f"llm:{provider.model}"
-    versions = Versions(llm=f"{provider.model}@{provider.model_revision}", prompt=PROMPT_VERSION)
+        opts = provider.effective_extra_body()
+        # request options change the answers, so they are part of the run identity (same provider + model + options
+        # = same run; different options must not overwrite each other)
+        opts_tag = hashlib.sha256(json.dumps(opts, sort_keys=True).encode()).hexdigest()[:8] if opts else ""
+        provider_id = f"llm:{provider.spec.name}:{provider.model}" + (f"+opts-{opts_tag}" if opts_tag else "")
+    if provider_name == "mock":
+        versions = Versions(llm=f"{provider.model}@{provider.model_revision}", prompt=PROMPT_VERSION)
+    else:
+        versions = Versions(**provider.version_info(), prompt=PROMPT_VERSION)
+    provider_key = "mock" if provider_name == "mock" else provider.spec.name
     cache = DiskCache(cache_dir)
     stats = {"calls": 0, "cache_hits": 0, "llm_requests": 0, "stage_errors": 0}
     results = []
     for cid in call_ids:
         messages = build_messages(reference_transcript(cid))
-        key = cache.key({"provider": provider_id, "model": provider.model, "revision": provider.model_revision,
+        key = cache.key({"provider": provider_id, "provider_name": provider_key,
+                         "extra_body": {} if provider_name == "mock" else provider.effective_extra_body(), "model": provider.model, "revision": provider.model_revision,
                          "prompt_version": PROMPT_VERSION, "runtime": RUNTIME_VERSION, "messages": messages,
                          "temperature": 0.0, "schema": RESPONSE_SCHEMA})
         hit = cache.get(key)
@@ -215,7 +226,8 @@ def run(split: str, provider_name: str, out_dir: Path = PRED_DIR, cache_dir: Pat
         print(f"{cid}: {res.decision:8s} {[f.criterion for f in res.findings]}"
               f"{'  (cached)' if hit is not None else ''}{'  STAGE ERROR' if res.stage_errors else ''}")
 
-    tag = "MOCK" if provider_name == "mock" else re.sub(r"[^A-Za-z0-9.-]+", "-", provider.model)
+    tag = "MOCK" if provider_name == "mock" else re.sub(r"[^A-Za-z0-9.-]+", "-", f"{provider.spec.name}-{provider.model}"
+                                            + (f"-opts-{opts_tag}" if opts_tag else ""))
     run_id = f"baseline_direct_{tag}_{split}"
     notes = [f"input: reference transcripts (organizer scripts), split={split}",
              "confidence is not computed by this baseline (null)",
@@ -234,13 +246,17 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--split", choices=("dev", "holdout", "test"), default="dev")
     ap.add_argument("--provider", choices=("llm", "mock"), default="llm")
+    ap.add_argument("--model", help="model id (needed for remote providers; set the provider with SENTINEL_LLM_PROVIDER)")
     ap.add_argument("--limit", type=int, default=None, help="only the first N calls (smoke test)")
     ap.add_argument("--allow-test", action="store_true", help="required to run on the locked test split")
     args = ap.parse_args(argv)
     if args.split == "test" and not args.allow_test:
         ap.error("the test split is locked; pass --allow-test for the final report only")
     try:
-        out, stats = run(args.split, args.provider, limit=args.limit)
+        out, stats = run(args.split, args.provider, limit=args.limit, model=args.model)
+    except ProviderNotPermitted as e:
+        print(f"REFUSED by the provider policy gate: {e}", file=sys.stderr)
+        return 2
     except LLMError as e:
         print(f"LLM endpoint unavailable: {e}\nStart the SSH tunnel, or run with --provider mock "
               f"(clearly labelled, not an LLM).", file=sys.stderr)
