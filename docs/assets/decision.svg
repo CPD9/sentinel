@@ -1,0 +1,129 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 566" width="960" height="566" role="img" aria-labelledby="t d">
+  <title id="t">SENTINEL confidence gate and decision ladder</title>
+  <desc id="d">Five confidence components are combined into one confidence value. A four-step ladder then decides: step 1 sends failed stages, missing or contradictory evidence and low confidence to review; step 2 sends validated evidence with a rule risk at or above the alarm threshold to alarm; step 3 sends risk in the review band to review; step 4 is no alert. Borderline calls get a why-not-flagged explanation written after the decision is locked.</desc>
+  <defs>
+    <style>
+      .h  { font: 700 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; fill: #0f172a; }
+      .s  { font: 400 10.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; fill: #475569; }
+      .pl { font: 700 10px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; letter-spacing: 0.8px; fill: #334155; }
+      .an { font: 400 10px ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; fill: #1e293b; paint-order: stroke; stroke: #fff; stroke-width: 3px; stroke-linejoin: round; }
+      .lg { font: 400 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; fill: #334155; }
+      .num { font: 700 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; fill: #fff; }
+      .pill { font: 700 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+      .box { stroke-width: 1.2; }
+      .flow { stroke: #111827; stroke-width: 1.6; fill: none; marker-end: url(#ah); }
+      .line { stroke: #111827; stroke-width: 1.6; fill: none; }
+      .cfg  { stroke: #7c3aed; stroke-width: 1.6; fill: none; stroke-dasharray: 6 4; marker-end: url(#ap); }
+      .cfgl { stroke: #7c3aed; stroke-width: 1.6; fill: none; stroke-dasharray: 6 4; }
+      .qual { stroke: #ea580c; stroke-width: 1.6; fill: none; stroke-dasharray: 6 4; }
+    </style>
+    <marker id="ah" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="10" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><polygon points="0,0 10,4 0,8" fill="#111827"/></marker>
+    <marker id="ap" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="10" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><polygon points="0,0 10,4 0,8" fill="#7c3aed"/></marker>
+  </defs>
+
+  <rect x="6" y="6" width="948" height="554" rx="18" fill="#ffffff" stroke="#d0d7de" stroke-width="1.5"/>
+
+  <!-- ============ confidence gate ============ -->
+  <rect x="24" y="24" width="912" height="130" rx="12" fill="#ffedd5" stroke="#fdba74"/>
+  <text class="pl" x="38" y="44">CONFIDENCE GATE · HOW SURE ARE WE?</text>
+
+  <rect class="box" x="38" y="54" width="166" height="60" rx="8" fill="#fff" stroke="#fdba74"/>
+  <text class="h" x="50" y="73" style="font-size:12px">ASR confidence</text>
+  <text class="s" x="50" y="89">avg log-prob on the</text>
+  <text class="s" x="50" y="103">evidence passages</text>
+
+  <rect class="box" x="217.5" y="54" width="166" height="60" rx="8" fill="#fff" stroke="#7c3aed" stroke-dasharray="5 3"/>
+  <text class="h" x="229.5" y="73" style="font-size:12px">Threshold proximity</text>
+  <text class="s" x="229.5" y="89">risk close to the alarm</text>
+  <text class="s" x="229.5" y="103">or review line</text>
+
+  <rect class="box" x="397" y="54" width="166" height="60" rx="8" fill="#fff" stroke="#fdba74"/>
+  <text class="h" x="409" y="73" style="font-size:12px">Conflicting facts</text>
+  <text class="s" x="409" y="89">evidence for and against</text>
+  <text class="s" x="409" y="103">the same act</text>
+
+  <rect class="box" x="576.5" y="54" width="166" height="60" rx="8" fill="#fff" stroke="#fdba74"/>
+  <text class="h" x="588.5" y="73" style="font-size:12px">Missing evidence</text>
+  <text class="s" x="588.5" y="89">dropped facts: ids or quotes</text>
+  <text class="s" x="588.5" y="103">did not check out</text>
+
+  <rect class="box" x="756" y="54" width="166" height="60" rx="8" fill="#fff" stroke="#ea580c" stroke-dasharray="5 3"/>
+  <text class="h" x="768" y="73" style="font-size:12px">Audio noise</text>
+  <text class="s" x="768" y="89">SNR per segment, from</text>
+  <text class="s" x="768" y="103">the audio analysis</text>
+
+  <path class="line" d="M121,114 V130 M300.5,114 V130 M480,114 V130 M659.5,114 V130 M839,114 V130 M121,130 H839"/>
+  <path class="flow" d="M160,130 V212"/>
+  <text class="an" x="168" y="186">confidence[5 parts] → 0..1</text>
+
+  <!-- ============ decision ladder ============ -->
+  <!-- card 1 -->
+  <rect class="box" x="38" y="214" width="205" height="150" rx="10" fill="#ffedd5" stroke="#fdba74"/>
+  <circle cx="64" cy="240" r="11" fill="#111827"/><text class="num" x="64" y="244" text-anchor="middle">1</text>
+  <text class="h" x="82" y="244">Anything wrong?</text>
+  <text class="s" x="54" y="272">failed stage · missing or</text>
+  <text class="s" x="54" y="287">contradictory evidence ·</text>
+  <text class="s" x="54" y="302">confidence below the gate</text>
+  <rect x="54" y="326" width="104" height="24" rx="12" fill="#fde68a" stroke="#f59e0b"/>
+  <text class="pill" x="106" y="342" text-anchor="middle" style="fill:#92400e">yes → review</text>
+
+  <!-- card 2 -->
+  <rect class="box" x="264" y="214" width="205" height="150" rx="10" fill="#ffedd5" stroke="#fdba74"/>
+  <circle cx="290" cy="240" r="11" fill="#111827"/><text class="num" x="290" y="244" text-anchor="middle">2</text>
+  <text class="h" x="308" y="244">Clear evidence?</text>
+  <text class="s" x="280" y="272">validated evidence</text>
+  <text class="s" x="280" y="287">and rule risk at or above</text>
+  <text class="s" x="280" y="302">the alarm threshold</text>
+  <rect x="280" y="326" width="104" height="24" rx="12" fill="#fecaca" stroke="#ef4444"/>
+  <text class="pill" x="332" y="342" text-anchor="middle" style="fill:#991b1b">yes → alarm</text>
+
+  <!-- card 3 -->
+  <rect class="box" x="490" y="214" width="205" height="150" rx="10" fill="#ffedd5" stroke="#fdba74"/>
+  <circle cx="516" cy="240" r="11" fill="#111827"/><text class="num" x="516" y="244" text-anchor="middle">3</text>
+  <text class="h" x="534" y="244">Borderline?</text>
+  <text class="s" x="506" y="272">rule risk inside the</text>
+  <text class="s" x="506" y="287">review band: at or above the</text>
+  <text class="s" x="506" y="302">review line, below alarm</text>
+  <rect x="506" y="326" width="104" height="24" rx="12" fill="#fde68a" stroke="#f59e0b"/>
+  <text class="pill" x="558" y="342" text-anchor="middle" style="fill:#92400e">yes → review</text>
+
+  <!-- card 4 -->
+  <rect class="box" x="716" y="214" width="205" height="150" rx="10" fill="#ffedd5" stroke="#fdba74"/>
+  <circle cx="742" cy="240" r="11" fill="#111827"/><text class="num" x="742" y="244" text-anchor="middle">4</text>
+  <text class="h" x="760" y="244">Otherwise</text>
+  <text class="s" x="732" y="272">nothing relevant found.</text>
+  <text class="s" x="732" y="287">A failed stage is recorded</text>
+  <text class="s" x="732" y="302">as an error, never as this.</text>
+  <rect x="732" y="326" width="104" height="24" rx="12" fill="#e5e7eb" stroke="#9ca3af"/>
+  <text class="pill" x="784" y="342" text-anchor="middle" style="fill:#374151">no_alert</text>
+
+  <path class="flow" d="M243,289 H262"/><text class="an" x="252.5" y="282" text-anchor="middle">no</text>
+  <path class="flow" d="M469,289 H488"/><text class="an" x="478.5" y="282" text-anchor="middle">no</text>
+  <path class="flow" d="M695,289 H714"/><text class="an" x="704.5" y="282" text-anchor="middle">no</text>
+
+  <!-- ============ thresholds (conditioning) ============ -->
+  <path class="cfg" d="M140,440 V366"/><text class="an" x="148" y="412">gate</text>
+  <path class="cfg" d="M366,440 V366"/><text class="an" x="374" y="412">alarm</text>
+  <path class="cfg" d="M592,440 V366"/><text class="an" x="600" y="412">review band</text>
+  <rect class="box" x="38" y="440" width="662" height="44" rx="10" fill="#f1f5f9" stroke="#cbd5e1"/>
+  <text class="h" x="52" y="459" style="font:700 12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">config/thresholds.json</text>
+  <text class="s" x="52" y="475">alarm · review · confidence_gate. Edited without code; a change re-runs steps 6–8 from cache.</text>
+
+  <!-- ============ why not flagged ============ -->
+  <path class="flow" d="M818,364 V408"/>
+  <path class="flow" d="M672,364 V386 H770 V408"/>
+  <rect class="box" x="716" y="410" width="205" height="74" rx="10" fill="#dbeafe" stroke="#93c5fd"/>
+  <text class="h" x="730" y="430">“Why not flagged?”</text>
+  <text class="s" x="730" y="446">plus: what would change this.</text>
+  <text class="s" x="730" y="460">Written by the narrative step,</text>
+  <text class="s" x="730" y="474">after the decision is locked.</text>
+
+  <!-- ============ legend ============ -->
+  <rect x="24" y="508" width="912" height="40" rx="10" fill="#fff" stroke="#cbd5e1"/>
+  <rect x="40" y="521" width="14" height="14" rx="3" fill="#ffedd5" stroke="#fdba74"/><text class="lg" x="62" y="532">Decision and uncertainty</text>
+  <rect x="214" y="521" width="14" height="14" rx="3" fill="#dbeafe" stroke="#93c5fd"/><text class="lg" x="236" y="532">AI-written text</text>
+  <rect x="338" y="521" width="14" height="14" rx="3" fill="#f1f5f9" stroke="#cbd5e1"/><text class="lg" x="360" y="532">Config file</text>
+  <path class="flow" d="M440,528 H470"/><text class="lg" x="478" y="532">data flow</text>
+  <path class="cfg" d="M552,528 H582"/><text class="lg" x="590" y="532">depends on config</text>
+  <path class="qual" d="M704,528 H734"/><text class="lg" x="742" y="532">depends on audio quality</text>
+</svg>

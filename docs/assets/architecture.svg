@@ -1,0 +1,116 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 580" width="960" height="580" role="img" aria-labelledby="t d">
+  <title id="t">SENTINEL deployment</title>
+  <desc id="d">The compliance officer's browser and the Next.js app on a laptop reach the FastAPI service on an Exoscale GPU VM in Switzerland through an SSH tunnel. On the VM, the pipeline calls vLLM serving Apertus and faster-whisper, and stores artifacts. Everything sits inside a secured environment. Alarms go to the Outcept trigger API. Cloud AI APIs are not used.</desc>
+  <defs>
+    <style>
+      .h  { font: 700 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; fill: #0f172a; }
+      .s  { font: 400 10.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; fill: #475569; }
+      .pl { font: 700 10px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; letter-spacing: 0.8px; fill: #334155; }
+      .an { font: 400 10px ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; fill: #1e293b; paint-order: stroke; stroke: #fff; stroke-width: 3px; stroke-linejoin: round; }
+      .lg { font: 400 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; fill: #334155; }
+      .box { stroke-width: 1.2; }
+      .flow { stroke: #111827; stroke-width: 1.6; fill: none; marker-end: url(#ah); }
+      .blocked { stroke: #94a3b8; stroke-width: 1.6; fill: none; stroke-dasharray: 6 4; }
+    </style>
+    <marker id="ah" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="10" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><polygon points="0,0 10,4 0,8" fill="#111827"/></marker>
+  </defs>
+
+  <rect x="6" y="6" width="948" height="568" rx="18" fill="#ffffff" stroke="#d0d7de" stroke-width="1.5"/>
+
+  <!-- secured environment boundary -->
+  <rect x="344" y="30" width="592" height="400" rx="16" fill="none" stroke="#475569" stroke-width="2" stroke-dasharray="9 6"/>
+  <text class="pl" x="360" y="52" style="fill:#1e293b">SECURED ENVIRONMENT · SWITZERLAND · SERVICES BIND TO 127.0.0.1</text>
+
+  <!-- VM -->
+  <rect x="360" y="74" width="560" height="336" rx="12" fill="#f8fafc" stroke="#cbd5e1"/>
+  <text class="pl" x="374" y="92">EXOSCALE GPU VM</text>
+
+  <rect class="box" x="380" y="108" width="210" height="62" rx="10" fill="#dcfce7" stroke="#86efac"/>
+  <text class="h" x="394" y="128">FastAPI + SQLite</text>
+  <text class="s" x="394" y="145">job queue · live SSE events</text>
+  <text class="s" x="394" y="159">serves results, audio, snippets</text>
+
+  <rect class="box" x="660" y="108" width="240" height="62" rx="10" fill="#f1f5f9" stroke="#cbd5e1"/>
+  <text class="h" x="674" y="128">Artifacts on disk</text>
+  <text class="s" x="674" y="145">transcripts · cache · analysis</text>
+  <text class="s" x="674" y="159">results.json · audio snippets</text>
+
+  <rect class="box" x="410" y="226" width="170" height="120" rx="10" fill="#dcfce7" stroke="#86efac"/>
+  <text class="h" x="424" y="246">SENTINEL pipeline</text>
+  <text class="s" x="424" y="264">Python 3.11</text>
+  <text class="s" x="424" y="280">run.sh · process_call()</text>
+  <text class="s" x="424" y="296">rules, validation,</text>
+  <text class="s" x="424" y="310">confidence, decision</text>
+
+  <rect x="660" y="210" width="240" height="170" rx="12" fill="#dbeafe" stroke="#93c5fd"/>
+  <text class="pl" x="672" y="226">AI MODELS · SELF-HOSTED</text>
+  <rect class="box" x="672" y="236" width="216" height="60" rx="8" fill="#fff" stroke="#93c5fd"/>
+  <text class="h" x="686" y="256">vLLM · Apertus v1.5 8B</text>
+  <text class="s" x="686" y="272">swiss-ai image · thinking mode off</text>
+  <text class="s" x="686" y="286">reached via LLM_BASE_URL</text>
+  <rect class="box" x="672" y="308" width="216" height="60" rx="8" fill="#fff" stroke="#93c5fd"/>
+  <text class="h" x="686" y="328">faster-whisper</text>
+  <text class="s" x="686" y="344">Swiss German checkpoint</text>
+  <text class="s" x="686" y="358">runs on the GPU</text>
+
+  <!-- arrows inside the VM -->
+  <path class="flow" d="M658,139 H592"/>
+  <text class="an" x="625" y="132" text-anchor="middle">reads</text>
+  <path class="flow" d="M495,170 V224"/>
+  <text class="an" x="487" y="202" text-anchor="end">process_call()</text>
+  <path class="flow" d="M570,226 V188 H780 V172"/>
+  <text class="an" x="600" y="183">writes artifacts</text>
+  <path class="flow" d="M580,266 H670"/>
+  <text class="an" x="625" y="260" text-anchor="middle">LLM_BASE_URL</text>
+  <path class="flow" d="M580,338 H670"/>
+  <text class="an" x="625" y="332" text-anchor="middle">audio→segments</text>
+
+  <!-- laptop -->
+  <rect x="24" y="74" width="196" height="150" rx="12" fill="#ede9fe" stroke="#c4b5fd"/>
+  <text class="pl" x="36" y="90">COMPLIANCE OFFICER</text>
+  <rect class="box" x="36" y="100" width="172" height="58" rx="8" fill="#fff" stroke="#c4b5fd"/>
+  <text class="h" x="50" y="120">Next.js web app</text>
+  <text class="s" x="50" y="136">web/ · planned</text>
+  <text class="s" x="50" y="149">runs on the laptop</text>
+  <rect class="box" x="36" y="174" width="172" height="40" rx="8" fill="#fff" stroke="#c4b5fd"/>
+  <text class="h" x="50" y="192">Browser</text>
+  <text class="s" x="50" y="206">inbox, evidence, audio player</text>
+  <path class="flow" d="M122,174 V160"/>
+
+  <!-- SSH tunnel -->
+  <rect x="226" y="98" width="112" height="70" rx="10" fill="#e2e8f0" stroke="#94a3b8"/>
+  <text class="pl" x="282" y="89" text-anchor="middle">SSH TUNNEL</text>
+  <path class="flow" d="M210,124 H378"/>
+  <text class="an" x="282" y="117" text-anchor="middle">requests · SSE</text>
+  <path class="flow" d="M378,146 H210"/>
+  <text class="an" x="282" y="161" text-anchor="middle">results · audio</text>
+
+  <!-- Outcept trigger -->
+  <rect class="box" x="24" y="256" width="196" height="60" rx="10" fill="#fff" stroke="#94a3b8" stroke-dasharray="5 3"/>
+  <text class="h" x="38" y="277">Outcept trigger API</text>
+  <text class="s" x="38" y="293">external · optional</text>
+  <text class="s" x="38" y="306">enabled by env, alarms only</text>
+  <path class="flow" d="M408,286 H222"/>
+  <text class="an" x="300" y="280" text-anchor="middle">POST alarm</text>
+
+  <!-- blocked: cloud AI -->
+  <path class="blocked" d="M495,346 V438"/>
+  <circle cx="495" cy="454" r="11" fill="#fff1f2" stroke="#dc2626" stroke-width="2"/>
+  <path d="M489,448 L501,460 M501,448 L489,460" stroke="#dc2626" stroke-width="2.4" stroke-linecap="round"/>
+  <rect x="344" y="482" width="592" height="68" rx="12" fill="#fff1f2" stroke="#dc2626" stroke-dasharray="6 4"/>
+  <text class="h" x="360" y="506" style="fill:#991b1b">No cloud AI APIs, not even for a quick test</text>
+  <text class="s" x="360" y="528" style="font-size:12px;text-decoration:line-through">OpenAI · ElevenLabs · AssemblyAI · Deepgram</text>
+  <text class="s" x="360" y="543">Audio and transcripts never leave the secured environment.</text>
+
+  <!-- legend -->
+  <rect x="24" y="340" width="296" height="208" rx="12" fill="#fff" stroke="#cbd5e1"/>
+  <text class="pl" x="38" y="360">LEGEND</text>
+  <rect x="38" y="370" width="14" height="14" rx="3" fill="#ede9fe" stroke="#c4b5fd"/><text class="lg" x="60" y="381">People and their devices</text>
+  <rect x="38" y="390" width="14" height="14" rx="3" fill="#dbeafe" stroke="#93c5fd"/><text class="lg" x="60" y="401">AI models (self-hosted)</text>
+  <rect x="38" y="410" width="14" height="14" rx="3" fill="#dcfce7" stroke="#86efac"/><text class="lg" x="60" y="421">Deterministic code</text>
+  <rect x="38" y="430" width="14" height="14" rx="3" fill="#f1f5f9" stroke="#cbd5e1"/><text class="lg" x="60" y="441">Storage</text>
+  <rect x="38" y="450" width="14" height="14" rx="3" fill="none" stroke="#475569" stroke-width="1.6" stroke-dasharray="3 2"/><text class="lg" x="60" y="461">Secured environment</text>
+  <path class="flow" d="M38,482 H70"/><text class="lg" x="78" y="486">data flow</text>
+  <path class="blocked" d="M38,502 H70"/><text class="lg" x="78" y="506">path that must not exist</text>
+  <text class="s" x="38" y="528" style="font-size:9.5px">Dashed outlines: optional or external.</text>
+</svg>

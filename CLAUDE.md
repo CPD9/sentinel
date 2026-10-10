@@ -139,5 +139,6 @@ Branches: `ml/*` (me), `infra/*` (Loyola), `api/*` (Jules), `web/*` (Nik + me). 
 - One milestone per session. Inspect → plan → implement → test → report. Don't start the next
   milestone on your own.
 - Clearly label anything mocked. Never replace testing with confident explanations.
+- Every milestone report includes the README "Project status" table update (what changed, new status emoji).
 - Prefer simple code over frameworks; avoid new heavy dependencies without asking.
 - When unsure about the case rules, check https://github.com/Outcept/inventx-case-study and ask me.
