@@ -1,0 +1,94 @@
+{
+  "patch": {
+    "thresholds": {
+      "alarm": 0.87
+    }
+  },
+  "baseline_version": "rules-v1+05033d70",
+  "patched_version": "rules-v1+54e50d2c",
+  "n_calls": 12,
+  "n_locked": 0,
+  "counts": {
+    "before": {
+      "alarm": 5,
+      "review": 2,
+      "no_alert": 5
+    },
+    "after": {
+      "alarm": 2,
+      "review": 5,
+      "no_alert": 5
+    }
+  },
+  "workload": {
+    "before": {
+      "n": 12,
+      "alarms_per_100": 41.67,
+      "reviews_per_100": 16.67,
+      "flagged_per_100": 58.33
+    },
+    "after": {
+      "n": 12,
+      "alarms_per_100": 16.67,
+      "reviews_per_100": 41.67,
+      "flagged_per_100": 58.33
+    },
+    "delta_flagged_per_100": 0.0
+  },
+  "flipped": [
+    {
+      "call_id": "call_MOCK_107",
+      "before": "alarm",
+      "after": "review",
+      "direction": "down",
+      "risk_before": 0.85,
+      "risk_after": 0.85,
+      "confidence_before": 0.9262,
+      "confidence_after": 0.7528,
+      "path_before": "alarm",
+      "path_after": "review_band",
+      "reasons": ["decision path alarm → review_band", "risk 0.85 is in the review band [0.40, 0.87)", "confidence 0.93 → 0.75"],
+      "attributed_to": ["thresholds.alarm=0.87"],
+      "feedback_verdict": "false_alarm"
+    },
+    {
+      "call_id": "call_MOCK_109",
+      "before": "alarm",
+      "after": "review",
+      "direction": "down",
+      "risk_before": 0.85,
+      "risk_after": 0.85,
+      "confidence_before": 0.8131,
+      "confidence_after": 0.6397,
+      "path_before": "alarm",
+      "path_after": "review_band",
+      "reasons": ["decision path alarm → review_band", "risk 0.85 is in the review band [0.40, 0.87)", "confidence 0.81 → 0.64"],
+      "attributed_to": ["thresholds.alarm=0.87"],
+      "feedback_verdict": null
+    },
+    {
+      "call_id": "call_MOCK_112",
+      "before": "alarm",
+      "after": "review",
+      "direction": "down",
+      "risk_before": 0.85,
+      "risk_after": 0.85,
+      "confidence_before": 0.7678,
+      "confidence_after": 0.5945,
+      "path_before": "alarm",
+      "path_after": "review_band",
+      "reasons": ["decision path alarm → review_band", "risk 0.85 is in the review band [0.40, 0.87)", "confidence 0.77 → 0.59"],
+      "attributed_to": ["thresholds.alarm=0.87"],
+      "feedback_verdict": null
+    }
+  ],
+  "feedback_check": {
+    "n_feedback": 9,
+    "fix_credit": 0.5,
+    "fixed": ["call_MOCK_107"],
+    "unchanged": ["call_MOCK_101", "call_MOCK_102", "call_MOCK_103", "call_MOCK_104", "call_MOCK_105", "call_MOCK_106", "call_MOCK_108", "call_MOCK_110"],
+    "violations": []
+  },
+  "is_mock": true,
+  "schema_version": 1
+}

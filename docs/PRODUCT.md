@@ -17,6 +17,9 @@ MOCK data for every contract is in `fixtures/` (see `fixtures/README.md`).
 | `trace.` | decision trace | `DecisionTrace` | `GET /api/calls/{id}/trace` | `call_MOCK_00x.trace.json` |
 | `analysis.` | audio analysis | `AnalysisArtifact` | `GET /api/calls/{id}/analysis` | `call_MOCK_00x.analysis.json` |
 | `quality.` | quality report | `QualityReport` | `GET /api/quality/{report_id}` | `quality_report.json` |
+| `simulation.` | what-if result | `SimulationResult` | `POST /api/simulate` | `simulation.json` |
+| `suggestions.` | ranked suggestions | `SuggestionsResponse` | `GET /api/suggestions` | `suggestions.json` |
+| `feedback[].` | officer verdicts | `FeedbackEntry` | `GET /api/feedback` | `feedback.json` |
 
 `tests/test_fixtures.py` checks that every path quoted in this file (outside the STRETCH section)
 exists in the fixtures. If you rename a field, the test fails until this doc is updated too.
@@ -214,6 +217,22 @@ Read top to bottom: facts → rules → confidence → decision.
 - **Empty:** a version that is null is shown as "not run".
 - **Error:** per document. One failed document never blanks the others.
 
+### 3.7 Feedback: false alarm / missed / correct
+
+A small bar in the call header, under the decision badge. The officer's verdicts feed the suggestions in Settings (§4.3). They
+never change a decision by themselves.
+
+| Element | Fed by |
+|---|---|
+| Buttons "False alarm", "Missed", "Correct". Only the sensible ones are enabled: a `no_alert` call offers Missed and Correct, an `alarm` offers False alarm and Correct, a `review` offers all three | `result.decision` |
+| The current verdict, highlighted, with its note and time ("marked false alarm, 14:02") | `feedback[].verdict`, `feedback[].note`, `feedback[].ts` for this call |
+| Optional one-line note (kept with the verdict) | `POST /api/feedback` body `note` |
+
+- Clicking again with another verdict replaces it (the log is append-only; the latest verdict per call wins).
+- **Loading:** the buttons render at once, disabled for the first moment. **Error:** the verdict is rolled back and the reason shown
+  under the bar. **Empty:** no verdict yet, all valid buttons neutral.
+- In fixtures mode verdicts are kept in the browser only (MOCK banner shown).
+
 ## 4. Settings
 
 The config files are edited without code (CLAUDE.md). Shapes are in API.md. The files themselves arrive in a
@@ -239,6 +258,38 @@ later milestone, so no settings fixture exists yet.
 - **Loading:** form skeleton.
 - **Empty:** a config file is missing → "Using built-in defaults", with read-only values.
 - **Error:** PUT returns 422 → field-level messages from `detail`, and nothing is saved. A preview failure → impact panel shows "preview unavailable" and the form still works.
+
+### 4.3 What-if impact and suggested changes
+
+Shown beside both Tuning and Configuration. Whatever the officer drafts (thresholds, a keyword family or a rule switched off) is
+simulated live with `POST /api/simulate`. Nothing is saved until "Save"/"Apply" is confirmed.
+
+| Element | Fed by |
+|---|---|
+| Decision counts before → after | `simulation.counts.before`, `simulation.counts.after` |
+| **Workload meter**: alarms + reviews per 100 calls, before → after, and the change | `simulation.workload.before.alarms_per_100`, `simulation.workload.before.reviews_per_100`, `simulation.workload.after.flagged_per_100`, `simulation.workload.delta_flagged_per_100` |
+| **Flipped calls**: id (link to the call), before → after badges, up/down arrow, the reasons, which part of the draft caused it | `simulation.flipped[].call_id`, `simulation.flipped[].before`, `simulation.flipped[].after`, `simulation.flipped[].direction`, `simulation.flipped[].reasons`, `simulation.flipped[].attributed_to` |
+| A flipped call that the officer labelled gets a chip with the verdict | `simulation.flipped[].feedback_verdict` |
+| Warning row when the draft changes a call marked "correct" or moves a labelled call the wrong way | `simulation.feedback_check.violations` |
+| "Fixes n of your flagged verdicts" | `simulation.feedback_check.fixed`, `simulation.feedback_check.fix_credit` |
+
+**Suggested changes** (a card list; never applied on its own):
+
+| Element | Fed by |
+|---|---|
+| Title ("Raise review threshold 0.40 → 0.55") and the plain-language rationale | `suggestions.suggestions[].title`, `suggestions.suggestions[].rationale` |
+| Calls fixed / still flagged wrongly / other calls that would change | `suggestions.suggestions[].fixed`, `suggestions.suggestions[].not_fixed`, `suggestions.suggestions[].collateral_flips` |
+| Simulated effect: decision counts and workload change | `suggestions.suggestions[].effect.counts`, `suggestions.suggestions[].effect.workload.delta_flagged_per_100` |
+| Honesty line: how many verdicts it is fitted to, and that it is not validated on unseen calls | `suggestions.n_feedback`, `suggestions.counts_by_verdict`, `suggestions.caveat` |
+| What to do next when the list is empty | `suggestions.reason` |
+| Button **Preview** loads the patch into the draft above, so the impact panel shows it; button **Apply…** opens a confirm dialog that lists the exact change and the calls that would flip | `suggestions.suggestions[].patch` |
+
+- Applying writes the config, re-runs steps 6-8 from cache and adds a line to the audit log (who/when, what changed, from which
+  suggestion). A small audit list under the suggestions shows the last entries (`GET /api/audit`).
+- A suggestion built for an older config version is refused with 409; the UI reloads the list.
+- **Loading:** skeleton cards. **Empty:** the `reason` text plus "Mark calls as false alarm, missed or correct on their call page".
+  **Error:** card with retry; the sliders keep working. Fixtures mode: the list is MOCK sample data and says it is not recomputed
+  from the officer's clicks; the impact numbers for a hand-made draft are a client-side approximation, labelled as such.
 
 ## 5. Quality lab
 

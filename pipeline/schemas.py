@@ -1122,3 +1122,182 @@ def _convention_set(cs: dict, where: str) -> list[str]:
         errs.append(f"{where}.three_class.confusion must sum to n")
     errs += _metric(tc["macro_f1"], f"{where}.three_class.macro_f1") + _metric(tc["accuracy"], f"{where}.three_class.accuracy")
     return errs
+
+
+# =========================================================================== what-if, feedback, suggestions
+# Officer feedback (out/feedback.jsonl), the what-if simulation (POST /simulate) and the ranked suggestions
+# (GET /suggestions). None of these read ground-truth labels: feedback comes from the officer in the UI.
+
+VERDICTS = ("false_alarm", "missed", "correct")
+DECISION_RANK = {"no_alert": 0, "review": 1, "alarm": 2}
+FLIP_DIRECTIONS = ("up", "down")                       # up = more severe (no_alert < review < alarm)
+AUDIT_ACTIONS = ("apply_suggestion", "settings_change")
+
+
+def verdict_allowed(verdict: str, decision: str) -> bool:
+    """A false alarm needs a flag to be false; a miss needs room above the current decision."""
+    return not ((verdict == "false_alarm" and decision == "no_alert") or (verdict == "missed" and decision == "alarm"))
+
+
+@dataclass
+class FeedbackEntry(_Artifact):
+    """One officer verdict on one call. The log is append-only: the latest row per call_id wins."""
+    call_id: str
+    verdict: str
+    ts: str                                # ISO 8601 UTC
+    decision_at_feedback: str              # what the officer saw (audit trail)
+    note: str | None = None
+    config_version: str | None = None      # versions.rules at that time
+    is_mock: bool = False
+
+    @classmethod
+    def _semantic(cls, d: dict) -> list[str]:
+        errs = _enum(d["verdict"], VERDICTS, "verdict") + _enum(d["decision_at_feedback"], DECISIONS, "decision_at_feedback")
+        if not errs and not verdict_allowed(d["verdict"], d["decision_at_feedback"]):
+            errs.append(f"verdict {d['verdict']} makes no sense for a {d['decision_at_feedback']} call")
+        if not re.fullmatch(r"[A-Za-z0-9_]+", d["call_id"]):
+            errs.append("call_id must match ^[A-Za-z0-9_]+$")
+        if len(d.get("note") or "") > 2000:
+            errs.append("note is longer than 2000 characters")
+        return errs
+
+
+@dataclass
+class Workload:
+    """Officer workload: how many calls per 100 land in their queue."""
+    n: int
+    alarms_per_100: float
+    reviews_per_100: float
+    flagged_per_100: float                 # alarms + reviews
+
+
+@dataclass
+class WorkloadPair:
+    before: Workload
+    after: Workload
+    delta_flagged_per_100: float
+
+
+@dataclass
+class FlippedCall:
+    call_id: str
+    before: str
+    after: str
+    direction: str
+    risk_before: float
+    risk_after: float
+    confidence_before: float | None
+    confidence_after: float | None
+    path_before: str
+    path_after: str
+    reasons: list[str] = field(default_factory=list)
+    attributed_to: list[str] = field(default_factory=list)   # patch components that alone reproduce the flip
+    feedback_verdict: str | None = None
+
+
+@dataclass
+class FeedbackCheck:
+    """How the patch fares against officer verdicts. Reference = the decision under the current config."""
+    n_feedback: int
+    fix_credit: float                      # sum over false_alarm / missed calls, each in [0, 1]
+    fixed: list[str] = field(default_factory=list)        # call_ids that moved the right way
+    unchanged: list[str] = field(default_factory=list)    # labelled calls the patch does not touch
+    violations: list[str] = field(default_factory=list)   # 'correct' flipped, or a labelled call moved the wrong way
+
+
+@dataclass
+class SimulationResult(_Artifact):
+    """POST /api/simulate: what changes if `patch` were saved. Nothing is saved or re-run beyond steps 3 + 6-8."""
+    patch: dict[str, Any]
+    baseline_version: str
+    patched_version: str
+    n_calls: int
+    n_locked: int                          # stage-errored calls: always review, never flip
+    counts: dict[str, dict[str, int]]      # before / after -> decision -> n
+    workload: WorkloadPair
+    flipped: list[FlippedCall] = field(default_factory=list)
+    feedback_check: FeedbackCheck | None = None
+    is_mock: bool = False
+    schema_version: int = SCHEMA_VERSION
+
+    @classmethod
+    def _semantic(cls, d: dict) -> list[str]:
+        errs = _schema_version(d)
+        for side in ("before", "after"):
+            c = d["counts"].get(side)
+            if c is None or set(c) != set(DECISIONS):
+                errs.append(f"counts.{side} must have exactly the keys {DECISIONS}")
+            elif sum(c.values()) != d["n_calls"]:
+                errs.append(f"counts.{side} must sum to n_calls")
+        for i, f in enumerate(d["flipped"]):
+            w = f"flipped[{i}]"
+            errs += _enum(f["before"], DECISIONS, f"{w}.before") + _enum(f["after"], DECISIONS, f"{w}.after")
+            errs += _enum(f["direction"], FLIP_DIRECTIONS, f"{w}.direction")
+            if f["before"] == f["after"]:
+                errs.append(f"{w}: before and after are equal, it did not flip")
+            elif f["direction"] != ("up" if DECISION_RANK[f["after"]] > DECISION_RANK[f["before"]] else "down"):
+                errs.append(f"{w}: direction does not match before/after")
+            if f["feedback_verdict"] is not None:
+                errs += _enum(f["feedback_verdict"], VERDICTS, f"{w}.feedback_verdict")
+        if len({f["call_id"] for f in d["flipped"]}) != len(d["flipped"]):
+            errs.append("flipped: duplicate call_id")
+        return errs
+
+
+@dataclass
+class Suggestion:
+    id: str                                # hash of patch + config version
+    patch: dict[str, Any]
+    title: str
+    rationale: str
+    config_version: str                    # the config this patch was computed against (apply is refused if it moved)
+    n_knobs: int
+    fix_credit: float
+    fixed: list[str]
+    not_fixed: list[str]
+    collateral_flips: list[str]            # unlabelled calls whose decision changes
+    effect: SimulationResult
+
+
+@dataclass
+class SuggestionsResponse(_Artifact):
+    """GET /api/suggestions. An empty list always comes with a `reason`."""
+    generated_at: str
+    config_version: str
+    n_feedback: int
+    counts_by_verdict: dict[str, int]
+    suggestions: list[Suggestion]
+    caveat: str
+    reason: str | None = None
+    is_mock: bool = False
+    schema_version: int = SCHEMA_VERSION
+
+    @classmethod
+    def _semantic(cls, d: dict) -> list[str]:
+        errs = _schema_version(d)
+        errs += [e for k in d["counts_by_verdict"] for e in _enum(k, VERDICTS, "counts_by_verdict key")]
+        if not d["suggestions"] and not d.get("reason"):
+            errs.append("an empty suggestions list needs a reason")
+        for i, s in enumerate(d["suggestions"]):
+            if s["effect"]["feedback_check"] is not None and s["effect"]["feedback_check"]["violations"]:
+                errs.append(f"suggestions[{i}] violates officer feedback: {s['effect']['feedback_check']['violations']}")
+            errs += [f"suggestions[{i}].effect: {e}" for e in SimulationResult._semantic(s["effect"])]
+        return errs
+
+
+@dataclass
+class AuditEntry(_Artifact):
+    """One line of out/audit.jsonl: who changed the config, when, from what to what."""
+    ts: str
+    action: str
+    patch: dict[str, Any]
+    config_version_before: str
+    config_version_after: str
+    suggestion_id: str | None = None
+    note: str | None = None
+    n_flipped: int | None = None
+    is_mock: bool = False
+
+    @classmethod
+    def _semantic(cls, d: dict) -> list[str]:
+        return _enum(d["action"], AUDIT_ACTIONS, "action")
