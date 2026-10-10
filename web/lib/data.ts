@@ -2,12 +2,13 @@
 //   NEXT_PUBLIC_DATA_MODE=fixtures  → reads public/fixtures/*.json (copied from ../fixtures; MOCK data)
 //   NEXT_PUBLIC_DATA_MODE=api       → follows docs/API.md exactly, via the same-origin /api proxy (next.config.ts)
 import { replayDelayMs, synthFinishedEvents, synthRunningEvents } from "./mock-replay";
+import { approxSimulate, samePatch, type WhatifCalls } from "./whatif-mock";
 import type {
-  AnalysisArtifact, ApiErrorBody, CallListItem, CallResult, DecisionTrace, KeywordsConfig, PreviewRequest,
-  PreviewResponse, ProcessingEvent, QualityReport, QualityReportSummary, RerunResponse, RulesConfig, Thresholds,
-  Transcript,
+  AnalysisArtifact, ApiErrorBody, ApplyResponse, AuditEntry, CallListItem, CallResult, DecisionTrace, FeedbackEntry,
+  KeywordsConfig, Patch, PreviewRequest, PreviewResponse, ProcessingEvent, QualityReport, QualityReportSummary,
+  RerunResponse, RulesConfig, SimulationResult, SuggestionsResponse, Thresholds, Transcript, Verdict,
 } from "./types";
-import { CRITERIA, EVENT_TYPES } from "./types";
+import { CRITERIA, EVENT_TYPES, verdictAllowed } from "./types";
 
 export const DATA_MODE: "fixtures" | "api" = process.env.NEXT_PUBLIC_DATA_MODE === "api" ? "api" : "fixtures";
 export const isFixtures = DATA_MODE === "fixtures";
@@ -292,4 +293,87 @@ async function mockPreview(req: PreviewRequest): Promise<PreviewResponse> {
     rule_fire_counts[rule.criterion] = (rule_fire_counts[rule.criterion] ?? 0) + (rule.risk >= next.review ? 1 : 0);
   }
   return { decision_counts: { before: counts(base), after: counts(next) }, changed, keyword_hit_counts, rule_fire_counts };
+}
+
+// ------------------------------------------------------------------ what-if, feedback, suggestions
+// API mode follows docs/API.md "What-if, feedback and suggestions". Fixtures mode (MOCK): feedback lives in this browser only,
+// suggestions are the stored sample from fixtures/suggestions.json, and a hand-made draft is simulated by whatif-mock.ts.
+const LS_FEEDBACK = "sentinel.mock.feedback.v1";
+let memoryFeedback: FeedbackEntry[] | null = null;
+
+function localFeedback(): FeedbackEntry[] {
+  if (memoryFeedback) return memoryFeedback;
+  try { memoryFeedback = JSON.parse(localStorage.getItem(LS_FEEDBACK) ?? "[]") as FeedbackEntry[]; } catch { memoryFeedback = []; }
+  return memoryFeedback;
+}
+function persistFeedback() {
+  try { localStorage.setItem(LS_FEEDBACK, JSON.stringify(memoryFeedback ?? [])); } catch { /* private window: memory only */ }
+}
+
+/** Latest verdict per call. */
+export async function getFeedback(): Promise<FeedbackEntry[]> {
+  if (!isFixtures) return (await getJson<FeedbackEntry[]>(api("/feedback"))).data;
+  const base = (await getJson<FeedbackEntry[]>(fx("feedback.json"))).data;
+  const latest = new Map<string, FeedbackEntry>();
+  for (const e of [...base, ...localFeedback()]) latest.set(e.call_id, e);
+  return [...latest.values()];
+}
+
+export async function postFeedback(callId: string, verdict: Verdict, note?: string): Promise<FeedbackEntry> {
+  if (!isFixtures) {
+    const res = await fetch(api("/feedback"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ call_id: callId, verdict, note: note || undefined }) });
+    if (!res.ok) throw await parseError(res);
+    return (await res.json()) as FeedbackEntry;
+  }
+  const row = (await getCalls()).find((c) => c.call_id === callId);
+  const decision = row?.decision ?? (await getJson<WhatifCalls>(fx("whatif_calls.json"))).data.calls.find((c) => c.call_id === callId)?.decision;
+  if (!decision) throw new ApiError(404, "not_found", `Unknown call ${callId} (or it has no decision yet)`);
+  if (!verdictAllowed(verdict, decision)) throw new ApiError(422, "invalid", `${verdict.replace("_", " ")} makes no sense for a ${decision} call`);
+  const entry: FeedbackEntry = { call_id: callId, verdict, ts: new Date().toISOString().replace(/\.\d+Z$/, "Z"), decision_at_feedback: decision, note: note?.trim() || null, config_version: null, is_mock: true };
+  localFeedback().push(entry);
+  persistFeedback();
+  return entry;
+}
+
+export async function simulate(patch: Patch): Promise<SimulationResult> {
+  if (!isFixtures) {
+    const res = await fetch(api("/simulate"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ patch, with_feedback: true }) });
+    if (!res.ok) throw await parseError(res);
+    return (await res.json()) as SimulationResult;
+  }
+  const [data, sugg, fb] = await Promise.all([
+    getJson<WhatifCalls>(fx("whatif_calls.json")).then((r) => r.data),
+    getSuggestions(), getFeedback(),
+  ]);
+  const exact = sugg.suggestions.find((s) => samePatch(s.patch, patch));
+  if (exact) return exact.effect;                                        // stored real simulate() result
+  return approxSimulate(patch, data, new Map(fb.map((f) => [f.call_id, f])));
+}
+
+export async function getSuggestions(max = 5): Promise<SuggestionsResponse> {
+  return (await getJson<SuggestionsResponse>(isFixtures ? fx("suggestions.json") : api(`/suggestions?max=${max}`))).data;
+}
+
+export async function applySuggestion(id: string, note?: string): Promise<ApplyResponse> {
+  if (isFixtures) throw unsupported("Applying a suggestion");
+  const res = await fetch(api(`/suggestions/${encodeURIComponent(id)}/apply`), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ confirm: true, note: note || undefined }) });
+  if (!res.ok) throw await parseError(res);
+  return (await res.json()) as ApplyResponse;
+}
+
+export async function getAudit(): Promise<AuditEntry[]> {
+  return isFixtures ? [] : (await getJson<AuditEntry[]>(api("/audit"))).data;
+}
+
+/** Saves a toggle-style draft through the existing PUT /settings/* endpoints (thresholds, then keyword families, then rules). */
+export async function saveDraft(patch: Patch): Promise<RerunResponse> {
+  if (isFixtures) throw unsupported("Saving settings");
+  let last: RerunResponse | null = null;
+  if (patch.thresholds && Object.keys(patch.thresholds).length) last = await putThresholds({ ...(await getThresholds()), ...patch.thresholds });
+  const fams = patch.keywords && "disable_families" in patch.keywords ? patch.keywords.disable_families : [];
+  if (fams.length) { const k = await getKeywords(); for (const f of fams) delete k.families[f]; last = await putKeywords(k); }
+  const off = patch.rules && "disable" in patch.rules ? patch.rules.disable : [];
+  if (off.length) { const r = await getRules(); for (const x of r.rules) if (off.includes(x.criterion)) x.enabled = false; last = await putRules(r); }
+  if (!last) throw new ApiError(422, "invalid", "Nothing to save");
+  return last;
 }
