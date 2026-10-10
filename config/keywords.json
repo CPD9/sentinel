@@ -1,0 +1,145 @@
+{
+  "source": "example-0.2 (provisional_not_official); gsw variants are provisional case spellings",
+  "fuzzy_threshold": 0.85,
+  "min_fuzzy_len": 5,
+  "families": {
+    "numbers": {
+      "criterion": "payment_card_data",
+      "label": "Zahlenobjekte",
+      "terms": [
+        "Kartennummer",
+        "Kreditkartennummer",
+        "Kreditkarte"
+      ],
+      "variants": {
+        "Kartennummer": [],
+        "Kreditkartennummer": [],
+        "Kreditkarte": []
+      }
+    },
+    "trade": {
+      "criterion": "insider_trading",
+      "label": "Information und Kaufwunsch",
+      "terms": [
+        "nicht öffentlich",
+        "noch nicht veröffentlicht",
+        "noch nicht publiziert",
+        "interne Zahlen",
+        "Finanzabteilung",
+        "Quartalszahlen",
+        "Übernahme",
+        "Insiderhandel",
+        "Insider Trading",
+        "vor der Meldung",
+        "vor der Bekanntgabe",
+        "vertraulich",
+        "unter uns"
+      ],
+      "variants": {
+        "nicht öffentlich": [
+          "nöd öffentlich"
+        ],
+        "noch nicht veröffentlicht": [
+          "no nöd publiziert"
+        ],
+        "noch nicht publiziert": [
+          "no nöd use"
+        ],
+        "interne Zahlen": [
+          "interni Zahle"
+        ],
+        "Finanzabteilung": [
+          "Finanzabteilig"
+        ],
+        "Quartalszahlen": [
+          "Quartalszahle"
+        ],
+        "Übernahme": [
+          "Übernahm"
+        ],
+        "Insiderhandel": [],
+        "Insider Trading": [],
+        "vor der Meldung": [
+          "vor de Meldig"
+        ],
+        "vor der Bekanntgabe": [
+          "vor de Bekanntgab"
+        ],
+        "vertraulich": [],
+        "unter uns": [
+          "under eus"
+        ]
+      }
+    },
+    "access": {
+      "criterion": "credential_sharing",
+      "label": "Zugangsinformation",
+      "terms": [
+        "PIN",
+        "Passwort",
+        "TAN",
+        "Bestätigungscode"
+      ],
+      "variants": {
+        "PIN": [],
+        "Passwort": [],
+        "TAN": [],
+        "Bestätigungscode": []
+      }
+    },
+    "disclosure": {
+      "criterion": "third_party_disclosure",
+      "label": "Auskunft an Dritte",
+      "terms": [
+        "Vollmacht",
+        "Kundendaten"
+      ],
+      "variants": {
+        "Vollmacht": [],
+        "Kundendaten": [
+          "Kundendate"
+        ]
+      }
+    },
+    "documentation": {
+      "criterion": "documentation_concealment",
+      "label": "Relevante Angabe auslassen",
+      "terms": [
+        "nicht protokollieren",
+        "nicht in die Notiz"
+      ],
+      "variants": {
+        "nicht protokollieren": [
+          "nöd protokolliere"
+        ],
+        "nicht in die Notiz": [
+          "nöd i d Notiz"
+        ]
+      }
+    },
+    "splitting": {
+      "criterion": "control_evasion",
+      "label": "Zuständigkeit verhindern",
+      "terms": [
+        "aufteilen",
+        "mehrere Zahlungen",
+        "Kontrolle umgehen",
+        "Prüfung umgehen"
+      ],
+      "variants": {
+        "aufteilen": [
+          "ufteile"
+        ],
+        "mehrere Zahlungen": [
+          "mehreri Zahlige"
+        ],
+        "Kontrolle umgehen": [
+          "Kontrolle umgah"
+        ],
+        "Prüfung umgehen": [
+          "Prüefig umgah"
+        ]
+      }
+    }
+  }
+}

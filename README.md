@@ -54,7 +54,7 @@ Banks record client phone calls, but people can only listen to a small sample of
 | Infrastructure | GPU server in Switzerland, vLLM, SSH tunnel | ⬜ not in the repo yet |
 | Transcription | Swiss German speech-to-text, model chosen by bake-off | ⬜ |
 | Speaker roles, keywords, fact extraction | Who said what, keyword families, LLM facts | ⬜ |
-| Evidence check, rules, confidence, decision | The deterministic core | ⬜ |
+| Evidence check, rules, confidence, decision | The deterministic core | 🟡 keywords, rules, confidence gate and decision built and tested on synthetic facts (`pipeline/decide.py`); the evidence validator and fact extraction are not built, nothing run on real data, all numbers are untuned placeholders |
 | Narrative, audio snippets, trigger | Explanations, playable clips, call to the Outcept API | ⬜ |
 | `run.sh` command line | `./run.sh <folder>` produces `out/results.json` and snippets | ⬜ |
 | Audio analysis | Waveform, spectrogram, quality score for the UI | 🟡 |

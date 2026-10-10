@@ -1,0 +1,68 @@
+# One rule per criterion in pipeline/schemas.CRITERIA. Rules are data over validated facts and keyword hits.
+# ALL NUMBERS ARE JUDGEMENT PLACEHOLDERS: nothing here has been tuned or evaluated on data.
+version: rules-v1
+
+defaults:
+  fire_at: 0.5            # a rule "fires" when it has a supporting fact and risk >= fire_at
+  keyword_boost: 0.05     # added when a family keyword hit sits in a supporting fact's cited segments
+  keyword_only_risk: 0.15 # risk from family hits alone (no supporting fact); can never alarm (needs a fact)
+  # Counter-evidence: a valid fact in the rule's scope with one of these acts, at or after the supporting fact
+  # (and not sharing its segments), multiplies the fact's risk by (1 - discount). "self" = the fact's own
+  # non-empty counter_evidence text.
+  counter_discount:
+    warn: 0.5
+    refuse: 0.7
+    hypothetical: 0.6
+    quote: 0.6
+    self: 0.4
+
+rules:
+  - criterion: credential_sharing
+    enabled: true
+    scope: {info_types: [credentials]}
+    facts:
+      - {when: {act: disclose, info_type: credentials}, risk: 0.9}
+      - {when: {act: disclose, info_type: credentials, recipient_third_party: true}, risk: 0.95}
+      - {when: {act: request, info_type: credentials}, risk: 0.8}
+
+  - criterion: insider_trading
+    enabled: true
+    scope: {info_types: [nonpublic_info]}
+    facts:
+      - {when: {act: request, info_type: nonpublic_info}, risk: 0.85}
+      - {when: {act: disclose, info_type: nonpublic_info}, risk: 0.5}
+
+  - criterion: third_party_disclosure
+    enabled: true
+    scope: {info_types: [client_data]}
+    facts:
+      - {when: {act: disclose, info_type: client_data, recipient_third_party: true}, risk: 0.9}
+      - {when: {act: disclose, info_type: client_data}, risk: 0.5}
+      - {when: {act: request, info_type: client_data, recipient_third_party: true}, risk: 0.5}
+
+  - criterion: documentation_concealment
+    enabled: true
+    scope: {info_types: null}
+    needs_keyword: true      # facts have no "documentation" field: require the family keyword in the cited segments
+    facts:
+      - {when: {act: request, secrecy_cue: true}, risk: 0.8}
+      - {when: {act: request}, risk: 0.5}
+
+  - criterion: control_evasion
+    enabled: true
+    scope: {info_types: null}
+    needs_keyword: true      # facts have no "splitting" field: require the family keyword in the cited segments
+    facts:
+      - {when: {act: request}, risk: 0.8}
+
+  - criterion: payment_card_data
+    enabled: true
+    scope: {info_types: null}
+    keyword_only_risk: 0.3   # classify-only: a read-out number alone is never an alarm
+    max_risk: 0.5
+    facts: []
+
+  - criterion: other
+    enabled: false
+    scope: {info_types: null}
+    facts: []

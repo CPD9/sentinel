@@ -120,3 +120,18 @@ class DiskCache:
         tmp = p.with_suffix(".tmp")
         tmp.write_text(json.dumps(value, ensure_ascii=False, indent=1), encoding="utf-8")
         os.replace(tmp, p)
+
+
+def extraction_cache_key(segments: list[dict], model_id: str, model_revision: str, prompt_version: str) -> str:
+    """Cache key of one fact-extraction request: transcript content + model id/revision + prompt version + runtime.
+
+    `segments` are {id, speaker, text} dicts. Keyword hits and every config/ file are deliberately NOT inputs, so
+    editing keywords.json, rules.yaml or thresholds.json never invalidates cached extractions. Provisional until
+    pipeline/extract.py (M4) adopts it.
+    """
+    return DiskCache.key({
+        "step": "extract",
+        "segments": [{"id": s["id"], "speaker": s["speaker"], "text": s["text"]} for s in segments],
+        "model_id": model_id, "model_revision": model_revision, "prompt_version": prompt_version,
+        "runtime": RUNTIME_VERSION,
+    })
