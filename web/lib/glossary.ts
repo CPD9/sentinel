@@ -81,6 +81,14 @@ export const GLOSSARY = {
     title: "False alarm",
     text: "An alarm on a call that should not be an alarm. Each one costs an officer time.",
   },
+  precision: {
+    title: "Precision",
+    text: "Of all the calls Sentinel flagged, the share that really needed it. Low precision means many false alarms.",
+  },
+  recall: {
+    title: "Recall",
+    text: "Of all the calls that really needed attention, the share Sentinel flagged. Low recall means missed cases.",
+  },
   ci: {
     title: "Confidence interval",
     text: "The range the true value likely lies in. With only a few test calls the range is wide, so read the range, not just the single number.",

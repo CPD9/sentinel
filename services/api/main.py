@@ -17,7 +17,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from pipeline import schemas
 
-from . import events, settings
+from . import events, feedback, settings
 from .deps import ApiError, checked, known_call, log, side_doc, store
 from .store import SNIPPET_NAME_RE
 
@@ -163,3 +163,4 @@ def get_quality(report_id: str) -> dict:
 app.include_router(api)
 app.include_router(events.router)
 app.include_router(settings.router)
+app.include_router(feedback.router)

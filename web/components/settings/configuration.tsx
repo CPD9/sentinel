@@ -40,7 +40,7 @@ function Keywords() {
     <section aria-labelledby="kw" className="space-y-3">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div><h2 id="kw" className="text-lg font-semibold">Keywords</h2>
-          <p className="max-w-prose text-sm text-muted-foreground">The words SENTINEL listens for, grouped by kind of fraud, each with its Swiss German variants. The number next to a word is how many transcript passages match it across all processed calls, live while you edit. Keywords only point to passages; they are never shown to the language model.</p></div>
+          <p className="max-w-prose text-sm text-muted-foreground">The words Sentinel listens for, grouped by kind of fraud, each with its Swiss German variants. The number next to a word is how many transcript passages match it across all processed calls, live while you edit. Keywords only point to passages; they are never shown to the language model.</p></div>
         <div className="flex gap-2">
           <Button size="sm" disabled={!dirty} onClick={async () => { try { const r = await putKeywords(draft); setMsg({ ok: true, text: `Saved. Re-running keywords, rules, confidence, decide for ${r.rerun.n_calls} calls.` }); setDraft(null); saved.reload(); } catch (e) { setMsg(fail(e)); } }}><Save className="size-4" />Save keywords</Button>
           <Button size="sm" variant="outline" disabled={!dirty} onClick={() => setDraft(null)}>Reset</Button>
