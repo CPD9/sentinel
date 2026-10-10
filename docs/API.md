@@ -144,7 +144,7 @@ Every key is optional. `keywords` and `rules` may also carry a full document (`{
 | Method + path | Body / response |
 |---|---|
 | `POST /simulate` | Body `{"patch": {…}, "with_feedback": true}` (`with_feedback` defaults to true). `200 SimulationResult`. **Does not save.** Must be fast (< 1 s for 60 calls). `flipped[]` lists every call whose decision changes, with `reasons`, the patch components that `attributed_to` it, and `feedback_verdict` when the officer labelled it. `workload` is alarms + reviews per 100 calls, before and after. `feedback_check` lists labelled calls that moved the right way (`fixed`) or the wrong way (`violations`, which includes any `correct` call that flips), so the UI can warn while the officer drags a slider. |
-| `POST /feedback` | Body `{"call_id", "verdict": "false_alarm" \| "missed" \| "correct", "note"?}`. `201 FeedbackEntry`. The server fills `ts`, `decision_at_feedback` (the call's current decision) and `config_version`, then calls `append_feedback` (atomic append to `out/feedback.jsonl`). `404 not_found` for an unknown call, `422 invalid` for a verdict that makes no sense (`false_alarm` on a `no_alert` call, `missed` on an `alarm`, bad note length). The log is append-only and the **latest verdict per call wins**: to change your mind, post again. |
+| `POST /feedback` | Body `{"call_id", "verdict": "false_alarm" \| "missed" \| "correct", "note"?}`. `201 FeedbackEntry`. The server fills `ts`, `decision_at_feedback` (the call's current decision) and `config_version`, then calls `append_feedback` (atomic append to `out/feedback.jsonl`). `404 not_found` for an unknown call, `409 conflict` for a call that has no decision yet (queued or processing), `422 invalid` for a verdict that makes no sense (`false_alarm` on a `no_alert` call, `missed` on an `alarm`, bad note length). The log is append-only and the **latest verdict per call wins**: to change your mind, post again. |
 | `GET /feedback` | `200 list[FeedbackEntry]`, the latest verdict per call. |
 | `GET /suggestions` | `200 SuggestionsResponse`. `suggestions` are ranked (most feedback fixed first, then fewest other calls flipped, fewest knobs, smallest change). Each carries its patch, `fixed` / `not_fixed` calls, `collateral_flips` (unlabelled calls that would change) and the full simulated `effect`. An empty list always has a `reason` (no feedback yet, only "correct" verdicts, everything already resolved, or no change satisfies the correct-marked calls); it is not an error. Query `?max=5`. Computed on demand (< 2 s for 60 calls). |
 | `POST /suggestions/{id}/apply` | **Needed for the apply flow.** Body `{"confirm": true, "note"?}`. Recomputes the suggestion `id` against the current config; `409 conflict` if the config changed since (the UI then reloads) or the id is unknown. Writes the config through the same code path as `PUT /settings/*` (`patched_docs(load_raw(), patch)` gives the three documents to save), re-runs steps 6-8, appends an `AuditEntry` (`append_audit`, `out/audit.jsonl`) and answers `202 {"rerun": …, "audit": AuditEntry}`. |
@@ -153,8 +153,9 @@ Every key is optional. `keywords` and `rules` may also carry a full document (`{
 Notes for implementation:
 - `feedback` is passed to the pure functions as an argument: `suggestions_response(inputs, latest_feedback(), load_raw())`.
 - Suggestions are fitted to a handful of officer verdicts. The body says so (`caveat`) and the UI shows it.
-- Fixture mode: `/simulate` and `/suggestions` serve `simulation.json` / `suggestions.json`, `GET /feedback` serves `feedback.json`,
-  `POST /feedback`, `POST /suggestions/{id}/apply` return 409 like uploads.
+- Fixture mode: `/simulate` and `/suggestions` serve `simulation.json` / `suggestions.json`, `POST /suggestions/{id}/apply`
+  returns 409 like uploads. `POST /feedback` works but keeps new verdicts in memory only (nothing is written to `out/`, they
+  are lost when the API restarts); `GET /feedback` returns the `feedback.json` sample plus those, latest verdict per call.
 
 ### Quality
 

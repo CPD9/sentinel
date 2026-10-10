@@ -8,8 +8,8 @@ import { Select } from "@/components/ui/select";
 import { CriterionChip, DecisionBadge, StageErrorChip, StatusPill } from "@/components/shell/badges";
 import { EmptyState, ErrorCard } from "@/components/shell/states";
 import { ScoreBar } from "@/components/shell/score";
-import { HitList } from "./hit-cards";
-import { StatCards, type Focus } from "./stat-cards";
+import { CallList, callsIn } from "./call-list";
+import { CallPanel } from "./call-panel";
 import { UploadButton, useWavUpload } from "./upload";
 import { getCalls, getThresholds, subscribeGlobalEvents } from "@/lib/data";
 import { fmtDateTime, fmtTime } from "@/lib/format";
@@ -34,7 +34,7 @@ function sortRows(rows: CallListItem[], sort: Sort): CallListItem[] {
   return out.sort((a, b) => decisionRank(a.decision) - decisionRank(b.decision) || risk(b) - risk(a));
 }
 
-export function InboxView() {
+export function InboxView({ selected }: { selected: string | null }) {
   const calls = useAsync(getCalls, "calls");
   const th = useAsync(getThresholds, "thresholds");
   const gate = th.data?.confidence_gate ?? null;
@@ -46,7 +46,6 @@ export function InboxView() {
   const [sort, setSort] = useState<Sort>("default");
   const [stages, setStages] = useState<Record<string, string>>({});
   const [dragging, setDragging] = useState(false);
-  const [focus, setFocus] = useState<Focus>("");
   const upload = useWavUpload(calls.reload);
 
   useReportMock("inbox", calls.data?.some((c) => c.is_mock) ? { is_mock: true } : null);
@@ -77,6 +76,13 @@ export function InboxView() {
 
   const stale = calls.status === "error" && calls.data;
 
+  // The call in the right panel: the one in the URL, else the first alarm, else the first review, and so on.
+  const current = useMemo(() => {
+    const all = calls.data ?? [];
+    return all.find((c) => c.call_id === selected)
+      ?? (["alarm", "review", "no_alert", "processing"] as const).map((g) => callsIn(all, g)[0]).find(Boolean) ?? null;
+  }, [calls.data, selected]);
+
   return (
     <div className="relative space-y-5"
       onDragOver={(e) => { if (e.dataTransfer.types.includes("Files")) { e.preventDefault(); setDragging(true); } }}
@@ -98,12 +104,21 @@ export function InboxView() {
 
       {calls.status === "error" && <ErrorCard error={calls.error} title="Could not load the call list" onRetry={calls.reload} />}
       {stale && <p className="text-xs text-review">Showing the last good data. It may be stale.</p>}
-      <StatCards calls={calls.data ?? null} stages={stages} focus={focus} onFocus={setFocus} />
-      {calls.data && calls.data.length === 0 && (
+      {calls.data && calls.data.length === 0 ? (
         <EmptyState>No calls yet. Drop .wav files on this page or run <code className="font-mono">./run.sh &lt;folder&gt;</code>.</EmptyState>
+      ) : (
+        // Two panels: the list on the left, the selected call on the right. Both stay in view and scroll on their own
+        // on wide screens; on narrow screens they stack (list first).
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] lg:items-start">
+          <div className="surface-tint rounded-2xl p-2 lg:sticky lg:top-24 lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto">
+            <CallList calls={calls.data ?? null} selected={current?.call_id ?? null} stages={stages} />
+          </div>
+          <div className="min-w-0 lg:sticky lg:top-24 lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto">
+            {current ? <CallPanel key={current.call_id} item={current} thresholds={th.data ?? null} />
+              : calls.data ? null : <Skeleton className="h-96 rounded-2xl" />}
+          </div>
+        </div>
       )}
-
-      <HitList calls={calls.data ?? null} thresholds={th.data} focus={focus} onClearFocus={() => setFocus("")} />
 
       <details className="group rounded-2xl border border-border bg-card/40">
         <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-semibold [&::-webkit-details-marker]:hidden">

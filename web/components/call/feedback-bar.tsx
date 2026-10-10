@@ -15,7 +15,7 @@ const WHY_NOT: Record<Verdict, string> = {
   correct: "",
 };
 
-/** Officer verdict on this call. It never changes the decision; it feeds the suggested changes in Settings. */
+/** Officer verdict on this call. It never changes the decision; it feeds the suggested changes in Sensitivity. */
 export function FeedbackBar({ callId, decision }: { callId: string; decision: Decision }) {
   const all = useAsync(getFeedback, "feedback");
   const [pending, setPending] = useState<Verdict | null>(null);
@@ -62,7 +62,7 @@ export function FeedbackBar({ callId, decision }: { callId: string; decision: De
           : mine ? <>You marked this <b>{VERDICT_LABEL[mine.verdict].toLowerCase()}</b> on {fmtDateTime(mine.ts)}{mine.note && <> — “{mine.note}”</>}. Click another button to change it.</>
           : unavailable ? "Officer feedback is not available on this server yet."
           : all.status === "error" ? "Your earlier verdicts could not be loaded; you can still add one."
-          : "No verdict yet. Your verdicts feed the suggested changes in Settings; they never change a decision by themselves."}
+          : "No verdict yet. Your verdicts feed the suggested changes in Sensitivity; they never change a decision by themselves."}
         {isFixtures && " (MOCK: kept in this browser only.)"}
       </p>
     </section>
