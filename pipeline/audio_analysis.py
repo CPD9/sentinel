@@ -22,6 +22,7 @@ from typing import Callable
 
 import numpy as np
 
+from pipeline.io import write_json_atomic
 from pipeline.schemas import (Axis, AnalysisArtifact, AnalysisVersions, AudioQuality, Contour, Interval,
                               MelSpectrogram, QualitySegment, SpeechActivity, StageError, WaveformPeaks)
 
@@ -304,11 +305,7 @@ def save_analysis(art: AnalysisArtifact, out_dir: Path = OUT_DIR) -> Path:
     if errs:
         raise ValueError(f"{art.call_id}: invalid AnalysisArtifact: {errs[:3]}")
     p = analysis_path(art.call_id, out_dir)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    tmp = p.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(d, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    tmp.replace(p)
-    return p
+    return write_json_atomic(p, d)
 
 
 def _carry_over_asr(fresh: AnalysisArtifact, old: AnalysisArtifact) -> bool:

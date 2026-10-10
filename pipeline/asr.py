@@ -25,6 +25,7 @@ import sys
 import time
 from pathlib import Path
 
+from pipeline.io import write_json_atomic
 from pipeline.llm import load_env
 from pipeline.schemas import (AsrConfidence, AsrConfidencePoint, Axis, StageError, Transcript,
                               TranscriptSegment)
@@ -153,12 +154,8 @@ def timing_config(device: str, compute_type: str) -> dict:
 
 
 def write_cache(path: Path, asr_model: str, raw: dict, elapsed_s: float, timing: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps({"asr_model": asr_model, "decode": DECODE, "asr_version": ASR_VERSION,
-                               **timing, "elapsed_s": round(elapsed_s, 3), "raw": raw},
-                              ensure_ascii=False) + "\n", encoding="utf-8")
-    tmp.replace(path)
+    write_json_atomic(path, {"asr_model": asr_model, "decode": DECODE, "asr_version": ASR_VERSION,
+                             **timing, "elapsed_s": round(elapsed_s, 3), "raw": raw}, indent=None)
 
 
 def cached_elapsed(entry: dict, timing: dict) -> float | None:
@@ -208,9 +205,7 @@ def write_outputs(t: Transcript, sample_rate: int, transcripts_dir: Path = TRANS
     errs = Transcript.validate(d)
     if errs:
         raise AsrError(f"{t.call_id}: invalid Transcript: {errs[:3]}")
-    transcripts_dir.mkdir(parents=True, exist_ok=True)
-    tp = transcripts_dir / f"{t.call_id}.json"
-    tp.write_text(json.dumps(d, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    tp = write_json_atomic(transcripts_dir / f"{t.call_id}.json", d)
 
     analysis_dir = analysis_dir or aa.OUT_DIR
     art = aa.load_or_init_analysis(t.call_id, t.duration_s, sample_rate, analysis_dir, audio_sha256)
