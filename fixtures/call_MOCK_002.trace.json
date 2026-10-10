@@ -21,7 +21,8 @@
       "secrecy_cue": null,
       "counter_evidence": null,
       "valid": true,
-      "drop_reason": null
+      "drop_reason": null,
+      "gloss_de": null
     },
     {
       "fact_id": "F2",
@@ -34,7 +35,8 @@
       "secrecy_cue": null,
       "counter_evidence": "Advisor refuses to receive the password.",
       "valid": true,
-      "drop_reason": null
+      "drop_reason": null,
+      "gloss_de": null
     }
   ],
   "keyword_hits": [

@@ -36,6 +36,18 @@ def test_reference_mode_evidence_without_timestamps_is_valid():
     assert validate_call_result(d) == []
 
 
+def test_versions_provider_fields_roundtrip_and_stay_optional():
+    d = call(versions={"llm": "m@r", "provider": "openrouter", "self_hosted": False})
+    assert CallResult.from_dict(d).versions.self_hosted is False
+    assert CallResult.from_dict(call()).versions.provider is None            # old results stay valid
+    assert validate_call_result(call(versions={"provider": "apertus_aws", "self_hosted": True})) == []
+
+
+@pytest.mark.parametrize("versions", [{"provider": 3}, {"self_hosted": "yes"}, {"self_hosted": 1}])
+def test_versions_provider_fields_are_typed(versions):
+    assert validate_call_result(call(versions=versions))
+
+
 @pytest.mark.parametrize("over, fragment", [
     ({"decision": "maybe"}, "decision"),
     ({"risk_score": 1.5}, "risk_score"),
@@ -232,3 +244,17 @@ def test_processing_event_semantics(ev, fragment):
 ])
 def test_quality_report_semantics(mutate, fragment):
     assert any(fragment in e for e in errs_after(QualityReport, "quality_report.json", mutate))
+
+
+def test_fact_gloss_de_is_optional_and_roundtrips_through_the_trace():
+    from dataclasses import fields
+    from pipeline.schemas import Fact
+    assert "gloss_de" in {f.name for f in fields(Fact)}
+    f = Fact(fact_id="f001", speaker="customer", act="disclose", info_type="credentials", segment_ids=["T004"],
+             quote="Mis Passwort isch Sunneblueme")
+    assert f.gloss_de is None
+    d = DecisionTrace.from_dict({
+        "call_id": "call_001", "decision": "no_alert", "decision_path": "no_alert", "risk_score": 0.0, "confidence": 1.0,
+        "thresholds": {"alarm": 0.8, "review": 0.4, "confidence_gate": 0.5},
+        "facts": [{**f.__dict__, "gloss_de": "Mein Passwort ist Sonnenblume"}]})
+    assert d.facts[0].gloss_de == "Mein Passwort ist Sonnenblume"

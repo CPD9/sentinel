@@ -147,7 +147,7 @@ def test_raising_alarm_threshold_never_creates_an_alarm_from_any_other_decision(
 def test_editing_keywords_json_does_not_change_the_llm_cache_key():
     t = transcript()
     segs = [{"id": s.id, "speaker": s.speaker, "text": s.text} for s in t.segments]
-    key = llm.extraction_cache_key(segs, "swiss-ai/Apertus-v1.5-8B", "rev1", "prompt-v1")
+    key = llm.extraction_cache_key(segs, "swiss-ai/Apertus-v1.5-8B", "rev1", "prompt-v1", provider="apertus_aws")
     kws, rules, th = raw()
     before = find_hits(t, config_from_dicts(kws, rules, th).keywords)
     edited = copy.deepcopy(kws)
@@ -156,11 +156,12 @@ def test_editing_keywords_json_does_not_change_the_llm_cache_key():
     edited["families"].pop("trade")
     cfg2 = config_from_dicts(edited, rules, th)
     assert find_hits(t, cfg2.keywords) != [] and cfg2.rules_version != load_config().rules_version
-    assert llm.extraction_cache_key(segs, "swiss-ai/Apertus-v1.5-8B", "rev1", "prompt-v1") == key
+    assert llm.extraction_cache_key(segs, "swiss-ai/Apertus-v1.5-8B", "rev1", "prompt-v1", provider="apertus_aws") == key
     assert before == find_hits(t, load_config().keywords)
     # the key depends on content, model, revision and prompt only
-    assert llm.extraction_cache_key(segs, "m", "rev1", "prompt-v1") != key
-    assert llm.extraction_cache_key(segs, "swiss-ai/Apertus-v1.5-8B", "rev1", "prompt-v2") != key
+    assert llm.extraction_cache_key(segs, "m", "rev1", "prompt-v1", provider="apertus_aws") != key
+    assert llm.extraction_cache_key(segs, "swiss-ai/Apertus-v1.5-8B", "rev1", "prompt-v1", provider="openrouter") != key
+    assert llm.extraction_cache_key(segs, "swiss-ai/Apertus-v1.5-8B", "rev1", "prompt-v2", provider="apertus_aws") != key
     assert "keyword" not in "".join(llm.extraction_cache_key.__code__.co_varnames)
 
 
