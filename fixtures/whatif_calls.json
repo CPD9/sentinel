@@ -1,0 +1,276 @@
+{
+  "is_mock": true,
+  "config_version": "rules-v1+05033d70",
+  "thresholds": {
+    "alarm": 0.7,
+    "review": 0.4,
+    "confidence_gate": 0.5
+  },
+  "components": ["keywords.disable:access", "keywords.disable:disclosure", "keywords.disable:documentation", "keywords.disable:numbers", "keywords.disable:splitting", "keywords.disable:trade", "rules.disable:credential_sharing", "rules.disable:insider_trading", "rules.disable:third_party_disclosure", "rules.disable:documentation_concealment", "rules.disable:control_evasion", "rules.disable:payment_card_data"],
+  "calls": [
+    {
+      "call_id": "call_MOCK_101",
+      "decision": "no_alert",
+      "decision_path": "no_alert",
+      "risk_score": 0.0,
+      "confidence": 0.974,
+      "locked": false,
+      "if_disabled": {
+        "keywords.disable:access": "no_alert",
+        "keywords.disable:disclosure": "no_alert",
+        "keywords.disable:documentation": "no_alert",
+        "keywords.disable:numbers": "no_alert",
+        "keywords.disable:splitting": "no_alert",
+        "keywords.disable:trade": "no_alert",
+        "rules.disable:credential_sharing": "no_alert",
+        "rules.disable:insider_trading": "no_alert",
+        "rules.disable:third_party_disclosure": "no_alert",
+        "rules.disable:documentation_concealment": "no_alert",
+        "rules.disable:control_evasion": "no_alert",
+        "rules.disable:payment_card_data": "no_alert"
+      }
+    },
+    {
+      "call_id": "call_MOCK_102",
+      "decision": "no_alert",
+      "decision_path": "no_alert",
+      "risk_score": 0.0,
+      "confidence": 0.8535,
+      "locked": false,
+      "if_disabled": {
+        "keywords.disable:access": "no_alert",
+        "keywords.disable:disclosure": "no_alert",
+        "keywords.disable:documentation": "no_alert",
+        "keywords.disable:numbers": "no_alert",
+        "keywords.disable:splitting": "no_alert",
+        "keywords.disable:trade": "no_alert",
+        "rules.disable:credential_sharing": "no_alert",
+        "rules.disable:insider_trading": "no_alert",
+        "rules.disable:third_party_disclosure": "no_alert",
+        "rules.disable:documentation_concealment": "no_alert",
+        "rules.disable:control_evasion": "no_alert",
+        "rules.disable:payment_card_data": "no_alert"
+      }
+    },
+    {
+      "call_id": "call_MOCK_103",
+      "decision": "alarm",
+      "decision_path": "alarm",
+      "risk_score": 0.9,
+      "confidence": 0.9601,
+      "locked": false,
+      "if_disabled": {
+        "keywords.disable:access": "alarm",
+        "keywords.disable:disclosure": "alarm",
+        "keywords.disable:documentation": "alarm",
+        "keywords.disable:numbers": "alarm",
+        "keywords.disable:splitting": "alarm",
+        "keywords.disable:trade": "alarm",
+        "rules.disable:credential_sharing": "alarm",
+        "rules.disable:insider_trading": "no_alert",
+        "rules.disable:third_party_disclosure": "alarm",
+        "rules.disable:documentation_concealment": "alarm",
+        "rules.disable:control_evasion": "alarm",
+        "rules.disable:payment_card_data": "alarm"
+      }
+    },
+    {
+      "call_id": "call_MOCK_104",
+      "decision": "review",
+      "decision_path": "review_band",
+      "risk_score": 0.54,
+      "confidence": 0.8401,
+      "locked": false,
+      "if_disabled": {
+        "keywords.disable:access": "review",
+        "keywords.disable:disclosure": "review",
+        "keywords.disable:documentation": "review",
+        "keywords.disable:numbers": "review",
+        "keywords.disable:splitting": "review",
+        "keywords.disable:trade": "review",
+        "rules.disable:credential_sharing": "no_alert",
+        "rules.disable:insider_trading": "review",
+        "rules.disable:third_party_disclosure": "review",
+        "rules.disable:documentation_concealment": "review",
+        "rules.disable:control_evasion": "review",
+        "rules.disable:payment_card_data": "review"
+      }
+    },
+    {
+      "call_id": "call_MOCK_105",
+      "decision": "alarm",
+      "decision_path": "alarm",
+      "risk_score": 0.9,
+      "confidence": 0.9019,
+      "locked": false,
+      "if_disabled": {
+        "keywords.disable:access": "alarm",
+        "keywords.disable:disclosure": "alarm",
+        "keywords.disable:documentation": "alarm",
+        "keywords.disable:numbers": "alarm",
+        "keywords.disable:splitting": "alarm",
+        "keywords.disable:trade": "alarm",
+        "rules.disable:credential_sharing": "alarm",
+        "rules.disable:insider_trading": "no_alert",
+        "rules.disable:third_party_disclosure": "alarm",
+        "rules.disable:documentation_concealment": "alarm",
+        "rules.disable:control_evasion": "alarm",
+        "rules.disable:payment_card_data": "alarm"
+      }
+    },
+    {
+      "call_id": "call_MOCK_106",
+      "decision": "review",
+      "decision_path": "review_band",
+      "risk_score": 0.54,
+      "confidence": 0.8724,
+      "locked": false,
+      "if_disabled": {
+        "keywords.disable:access": "review",
+        "keywords.disable:disclosure": "review",
+        "keywords.disable:documentation": "review",
+        "keywords.disable:numbers": "review",
+        "keywords.disable:splitting": "review",
+        "keywords.disable:trade": "review",
+        "rules.disable:credential_sharing": "no_alert",
+        "rules.disable:insider_trading": "review",
+        "rules.disable:third_party_disclosure": "review",
+        "rules.disable:documentation_concealment": "review",
+        "rules.disable:control_evasion": "review",
+        "rules.disable:payment_card_data": "review"
+      }
+    },
+    {
+      "call_id": "call_MOCK_107",
+      "decision": "alarm",
+      "decision_path": "alarm",
+      "risk_score": 0.85,
+      "confidence": 0.9262,
+      "locked": false,
+      "if_disabled": {
+        "keywords.disable:access": "alarm",
+        "keywords.disable:disclosure": "alarm",
+        "keywords.disable:documentation": "alarm",
+        "keywords.disable:numbers": "alarm",
+        "keywords.disable:splitting": "no_alert",
+        "keywords.disable:trade": "alarm",
+        "rules.disable:credential_sharing": "alarm",
+        "rules.disable:insider_trading": "alarm",
+        "rules.disable:third_party_disclosure": "alarm",
+        "rules.disable:documentation_concealment": "alarm",
+        "rules.disable:control_evasion": "no_alert",
+        "rules.disable:payment_card_data": "alarm"
+      }
+    },
+    {
+      "call_id": "call_MOCK_108",
+      "decision": "no_alert",
+      "decision_path": "no_alert",
+      "risk_score": 0.0,
+      "confidence": 0.7678,
+      "locked": false,
+      "if_disabled": {
+        "keywords.disable:access": "no_alert",
+        "keywords.disable:disclosure": "no_alert",
+        "keywords.disable:documentation": "no_alert",
+        "keywords.disable:numbers": "no_alert",
+        "keywords.disable:splitting": "no_alert",
+        "keywords.disable:trade": "no_alert",
+        "rules.disable:credential_sharing": "no_alert",
+        "rules.disable:insider_trading": "no_alert",
+        "rules.disable:third_party_disclosure": "no_alert",
+        "rules.disable:documentation_concealment": "no_alert",
+        "rules.disable:control_evasion": "no_alert",
+        "rules.disable:payment_card_data": "no_alert"
+      }
+    },
+    {
+      "call_id": "call_MOCK_109",
+      "decision": "alarm",
+      "decision_path": "alarm",
+      "risk_score": 0.85,
+      "confidence": 0.8131,
+      "locked": false,
+      "if_disabled": {
+        "keywords.disable:access": "alarm",
+        "keywords.disable:disclosure": "alarm",
+        "keywords.disable:documentation": "alarm",
+        "keywords.disable:numbers": "alarm",
+        "keywords.disable:splitting": "no_alert",
+        "keywords.disable:trade": "alarm",
+        "rules.disable:credential_sharing": "alarm",
+        "rules.disable:insider_trading": "alarm",
+        "rules.disable:third_party_disclosure": "alarm",
+        "rules.disable:documentation_concealment": "alarm",
+        "rules.disable:control_evasion": "no_alert",
+        "rules.disable:payment_card_data": "alarm"
+      }
+    },
+    {
+      "call_id": "call_MOCK_110",
+      "decision": "no_alert",
+      "decision_path": "no_alert",
+      "risk_score": 0.15,
+      "confidence": 0.8131,
+      "locked": false,
+      "if_disabled": {
+        "keywords.disable:access": "no_alert",
+        "keywords.disable:disclosure": "no_alert",
+        "keywords.disable:documentation": "no_alert",
+        "keywords.disable:numbers": "no_alert",
+        "keywords.disable:splitting": "no_alert",
+        "keywords.disable:trade": "no_alert",
+        "rules.disable:credential_sharing": "no_alert",
+        "rules.disable:insider_trading": "no_alert",
+        "rules.disable:third_party_disclosure": "no_alert",
+        "rules.disable:documentation_concealment": "no_alert",
+        "rules.disable:control_evasion": "no_alert",
+        "rules.disable:payment_card_data": "no_alert"
+      }
+    },
+    {
+      "call_id": "call_MOCK_111",
+      "decision": "no_alert",
+      "decision_path": "no_alert",
+      "risk_score": 0.0,
+      "confidence": 0.9521,
+      "locked": false,
+      "if_disabled": {
+        "keywords.disable:access": "no_alert",
+        "keywords.disable:disclosure": "no_alert",
+        "keywords.disable:documentation": "no_alert",
+        "keywords.disable:numbers": "no_alert",
+        "keywords.disable:splitting": "no_alert",
+        "keywords.disable:trade": "no_alert",
+        "rules.disable:credential_sharing": "no_alert",
+        "rules.disable:insider_trading": "no_alert",
+        "rules.disable:third_party_disclosure": "no_alert",
+        "rules.disable:documentation_concealment": "no_alert",
+        "rules.disable:control_evasion": "no_alert",
+        "rules.disable:payment_card_data": "no_alert"
+      }
+    },
+    {
+      "call_id": "call_MOCK_112",
+      "decision": "alarm",
+      "decision_path": "alarm",
+      "risk_score": 0.85,
+      "confidence": 0.7678,
+      "locked": false,
+      "if_disabled": {
+        "keywords.disable:access": "alarm",
+        "keywords.disable:disclosure": "alarm",
+        "keywords.disable:documentation": "alarm",
+        "keywords.disable:numbers": "alarm",
+        "keywords.disable:splitting": "no_alert",
+        "keywords.disable:trade": "alarm",
+        "rules.disable:credential_sharing": "alarm",
+        "rules.disable:insider_trading": "alarm",
+        "rules.disable:third_party_disclosure": "alarm",
+        "rules.disable:documentation_concealment": "alarm",
+        "rules.disable:control_evasion": "no_alert",
+        "rules.disable:payment_card_data": "alarm"
+      }
+    }
+  ]
+}

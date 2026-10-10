@@ -29,7 +29,7 @@ from pipeline import confidence as conf
 from pipeline import keywords as kw
 from pipeline import rules as rl
 from pipeline.keywords import ConfigError
-from pipeline.schemas import (AnalysisArtifact, DecisionTrace, Fact, SchemaError, StageError, Thresholds, Transcript,
+from pipeline.schemas import (AnalysisArtifact, DecisionTrace, Fact, KeywordHit, SchemaError, StageError, Thresholds, Transcript,
                               Versions)
 
 CONFIG_DIR = Path(__file__).resolve().parents[1] / "config"
@@ -84,14 +84,18 @@ def _reconcile(facts: list[Fact], transcript: Transcript) -> list[Fact]:
 
 
 def decide_call(transcript: Transcript, facts: list[Fact] | None, analysis: AnalysisArtifact | None, config: Config,
-                stage_errors: list[StageError] | None = None, versions: Versions | None = None) -> DecisionTrace:
+                stage_errors: list[StageError] | None = None, versions: Versions | None = None,
+                *, hits: list[KeywordHit] | None = None, validate: bool = True) -> DecisionTrace:
+    """`hits`: optional precomputed `keywords.find_hits(transcript, config.keywords)` (what-if search reuses them).
+    `validate=False` skips the schema self-check of the returned trace (only the suggestion search does, and it re-checks its results)."""
     timings: dict[str, float] = {}
     t0 = time.perf_counter()
     stage_failed = bool(stage_errors) or facts is None
     facts = _reconcile(facts or [], transcript)
     th = config.thresholds
 
-    hits = kw.find_hits(transcript, config.keywords)
+    if hits is None:
+        hits = kw.find_hits(transcript, config.keywords)
     timings["keywords"] = time.perf_counter() - t0
     t1 = time.perf_counter()
     ra = rl.evaluate(facts, hits, transcript, config.rules)
@@ -130,7 +134,7 @@ def decide_call(transcript: Transcript, facts: list[Fact] | None, analysis: Anal
                           confidence=cb.value, thresholds=th, facts=facts, keyword_hits=hits, rules=ra.results,
                           confidence_breakdown=cb, timings_s={k: round(x, 6) for k, x in timings.items()}, versions=v,
                           is_mock=transcript.is_mock)
-    errs = DecisionTrace.validate(trace.to_dict())
+    errs = DecisionTrace.validate(trace.to_dict()) if validate else []
     if errs:
         raise SchemaError(errs)
     return trace
