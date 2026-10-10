@@ -1,0 +1,295 @@
+// The ONLY module that fetches. Every UI surface goes through here.
+//   NEXT_PUBLIC_DATA_MODE=fixtures  → reads public/fixtures/*.json (copied from ../fixtures; MOCK data)
+//   NEXT_PUBLIC_DATA_MODE=api       → follows docs/API.md exactly, via the same-origin /api proxy (next.config.ts)
+import { replayDelayMs, synthFinishedEvents, synthRunningEvents } from "./mock-replay";
+import type {
+  AnalysisArtifact, ApiErrorBody, CallListItem, CallResult, DecisionTrace, KeywordsConfig, PreviewRequest,
+  PreviewResponse, ProcessingEvent, QualityReport, QualityReportSummary, RerunResponse, RulesConfig, Thresholds,
+  Transcript,
+} from "./types";
+import { CRITERIA, EVENT_TYPES } from "./types";
+
+export const DATA_MODE: "fixtures" | "api" = process.env.NEXT_PUBLIC_DATA_MODE === "api" ? "api" : "fixtures";
+export const isFixtures = DATA_MODE === "fixtures";
+
+export class ApiError extends Error {
+  constructor(public status: number, public code: string, public detail: string | string[]) {
+    super(Array.isArray(detail) ? detail.join("; ") : detail);
+  }
+  get notAvailable() { return this.status === 404; }
+}
+
+// ------------------------------------------------------------------ transport
+async function parseError(res: Response): Promise<ApiError> {
+  try {
+    const body = (await res.json()) as Partial<ApiErrorBody>;
+    return new ApiError(res.status, body.error ?? "internal", body.detail ?? res.statusText);
+  } catch {
+    return new ApiError(res.status, res.status === 404 ? "not_found" : "internal", res.statusText || `HTTP ${res.status}`);
+  }
+}
+
+async function getJson<T>(url: string): Promise<{ status: number; data: T }> {
+  let res: Response;
+  try {
+    res = await fetch(url, { cache: "no-store" });
+  } catch (e) {
+    throw new ApiError(0, "unreachable", `Cannot reach ${url}: ${(e as Error).message}`);
+  }
+  if (res.status === 404) throw await parseError(res);
+  if (!res.ok && res.status !== 202) throw await parseError(res);
+  return { status: res.status, data: (await res.json()) as T };
+}
+
+const fx = (name: string) => `/fixtures/${name}`;
+const api = (path: string) => `/api${path}`;
+const unsupported = (what: string) =>
+  new ApiError(409, "conflict", `${what} is disabled in fixtures mode (MOCK data only, as in API.md "Fixture mode").`);
+
+function notAvailable(what: string) {
+  return new ApiError(404, "not_available", `${what} not available`);
+}
+
+// ------------------------------------------------------------------ calls
+export async function getCalls(): Promise<CallListItem[]> {
+  return (await getJson<CallListItem[]>(isFixtures ? fx("calls.json") : api("/calls"))).data;
+}
+
+export type CallDetail = { kind: "result"; data: CallResult } | { kind: "pending"; item: CallListItem };
+
+export async function getCall(id: string): Promise<CallDetail> {
+  if (isFixtures) {
+    try {
+      return { kind: "result", data: (await getJson<CallResult>(fx(`${id}.result.json`))).data };
+    } catch (e) {
+      if (!(e instanceof ApiError) || e.status !== 404) throw e;
+      const row = (await getCalls()).find((c) => c.call_id === id);
+      if (!row) throw new ApiError(404, "not_found", `Unknown call ${id}`);
+      if (row.status === "queued" || row.status === "processing") return { kind: "pending", item: row };
+      throw notAvailable("Result");
+    }
+  }
+  const { status, data } = await getJson<CallResult | CallListItem>(api(`/calls/${id}`));
+  return status === 202 ? { kind: "pending", item: data as CallListItem } : { kind: "result", data: data as CallResult };
+}
+
+export async function getTranscript(id: string): Promise<Transcript> {
+  return (await getJson<Transcript>(isFixtures ? fx(`${id}.transcript.json`) : api(`/calls/${id}/transcript`))).data;
+}
+export async function getTrace(id: string): Promise<DecisionTrace> {
+  return (await getJson<DecisionTrace>(isFixtures ? fx(`${id}.trace.json`) : api(`/calls/${id}/trace`))).data;
+}
+export async function getAnalysis(id: string): Promise<AnalysisArtifact> {
+  return (await getJson<AnalysisArtifact>(isFixtures ? fx(`${id}.analysis.json`) : api(`/calls/${id}/analysis`))).data;
+}
+
+/** Audio URLs. In fixtures mode there is no audio (*.wav is gitignored): callers get null and show the 404 state. */
+export const audioUrl = (id: string): string | null => (isFixtures ? null : api(`/calls/${id}/audio`));
+export function snippetUrl(id: string, snippetPath: string | null): string | null {
+  if (isFixtures || !snippetPath) return null;
+  const name = snippetPath.split("/").pop() ?? "";
+  return api(`/calls/${id}/snippets/${encodeURIComponent(name)}`);
+}
+
+export async function uploadCall(file: File, variant?: string): Promise<CallListItem> {
+  if (isFixtures) throw unsupported("Upload");
+  const form = new FormData();
+  form.append("file", file);
+  if (variant) form.append("variant", variant);
+  const res = await fetch(api("/calls"), { method: "POST", body: form });
+  if (!res.ok) throw await parseError(res);
+  return (await res.json()) as CallListItem;
+}
+
+// ------------------------------------------------------------------ events (SSE)
+export type StreamStatus = "connecting" | "open" | "reconnecting" | "failed" | "closed";
+export interface Subscription { close(): void }
+
+/** Per-call events: past events are replayed first, then live. Closes after job_finished. */
+export function subscribeCallEvents(
+  id: string,
+  onEvent: (e: ProcessingEvent) => void,
+  onStatus: (s: StreamStatus) => void,
+): Subscription {
+  return isFixtures ? mockReplay(id, onEvent, onStatus) : sse(api(`/calls/${id}/events`), onEvent, onStatus, true);
+}
+
+/** Global stream for the Inbox. Live only. Nothing arrives in fixtures mode. */
+export function subscribeGlobalEvents(onEvent: (e: ProcessingEvent) => void, onStatus: (s: StreamStatus) => void): Subscription {
+  if (isFixtures) { onStatus("closed"); return { close() {} }; }
+  return sse(api("/events"), onEvent, onStatus, false);
+}
+
+function sse(url: string, onEvent: (e: ProcessingEvent) => void, onStatus: (s: StreamStatus) => void, closeOnFinish: boolean): Subscription {
+  // The browser resumes with Last-Event-ID by itself on reconnect (API.md).
+  const es = new EventSource(url);
+  let failures = 0;
+  onStatus("connecting");
+  es.onopen = () => { failures = 0; onStatus("open"); };
+  es.onerror = () => {
+    failures += 1;
+    if (failures >= 3) { es.close(); onStatus("failed"); } else onStatus("reconnecting");
+  };
+  for (const type of EVENT_TYPES) {
+    es.addEventListener(type, (m) => {
+      const ev = JSON.parse((m as MessageEvent).data) as ProcessingEvent;
+      onEvent(ev);
+      if (closeOnFinish && type === "job_finished") { es.close(); onStatus("closed"); }
+    });
+  }
+  return { close: () => es.close() };
+}
+
+function mockReplay(id: string, onEvent: (e: ProcessingEvent) => void, onStatus: (s: StreamStatus) => void): Subscription {
+  let cancelled = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  onStatus("connecting");
+  (async () => {
+    let events: ProcessingEvent[];
+    try {
+      events = (await getJson<ProcessingEvent[]>(fx(`${id}.events.json`))).data;
+    } catch {
+      const detail = await getCall(id).catch(() => null);
+      if (!detail) events = [];
+      else if (detail.kind === "pending") events = synthRunningEvents(id);
+      else {
+        const trace = await getTrace(id).catch(() => null);
+        events = synthFinishedEvents(id, detail.data, trace);
+      }
+    }
+    if (cancelled) return;
+    onStatus("open");
+    let prev: ProcessingEvent | null = null;
+    let i = 0;
+    const step = () => {
+      if (cancelled) return;
+      const ev = events[i];
+      if (!ev) { onStatus(events.at(-1)?.event === "job_finished" ? "closed" : "open"); return; }
+      onEvent(ev);
+      prev = ev;
+      i += 1;
+      const next = events[i];
+      if (next) timer = setTimeout(step, replayDelayMs(prev, next));
+      else onStatus(ev.event === "job_finished" ? "closed" : "open");
+    };
+    timer = setTimeout(step, replayDelayMs(null, events[0] ?? ({ ts: "" } as ProcessingEvent)));
+  })();
+  return { close: () => { cancelled = true; if (timer) clearTimeout(timer); } };
+}
+
+// ------------------------------------------------------------------ quality
+export async function getQualityReports(): Promise<QualityReportSummary[]> {
+  if (isFixtures) {
+    const r = (await getJson<QualityReport>(fx("quality_report.json"))).data;
+    return [{ report_id: r.report_id, run_id: r.run_id, split: r.split, mode: r.mode, system: r.system, created_at: r.created_at, is_mock: r.is_mock }];
+  }
+  return (await getJson<QualityReportSummary[]>(api("/quality"))).data;
+}
+export async function getQualityReport(reportId: string): Promise<QualityReport> {
+  if (isFixtures) {
+    const r = (await getJson<QualityReport>(fx("quality_report.json"))).data;
+    if (r.report_id !== reportId) throw new ApiError(404, "not_found", `Unknown report ${reportId}`);
+    return r;
+  }
+  return (await getJson<QualityReport>(api(`/quality/${reportId}`))).data;
+}
+
+// ------------------------------------------------------------------ settings
+// Fixtures mode has no settings files (PRODUCT.md §8). Defaults below are MOCK and edits are not persisted
+// across reloads; the preview is a client-side approximation over the two traced fixture calls.
+const MOCK_THRESHOLDS: Thresholds = { alarm: 0.7, review: 0.4, confidence_gate: 0.5 };
+const MOCK_KEYWORDS: KeywordsConfig = {
+  fuzzy_threshold: 0.85,
+  families: {
+    access: { criterion: "credential_sharing", terms: ["Passwort", "PIN", "Zugangscode"], variants: { Passwort: ["Passwörter", "Passwoort"], PIN: ["Pin-Code"] } },
+    trade: { criterion: "insider_trading", terms: ["Aktie", "Kauforder"], variants: { Aktie: ["Aktie", "Aktiä"] } },
+    disclosure: { criterion: "third_party_disclosure", terms: ["Kontostand", "Vermögen"], variants: {} },
+    documentation: { criterion: "documentation_concealment", terms: ["nöd notiere", "nicht protokollieren"], variants: {} },
+    splitting: { criterion: "control_evasion", terms: ["aufteile", "Teilbeträge"], variants: {} },
+    numbers: { criterion: "payment_card_data", terms: ["Kartenummer", "IBAN"], variants: {} },
+  },
+};
+const MOCK_RULES: RulesConfig = { version: "MOCK", rules: CRITERIA.filter((c) => c !== "other").map((criterion) => ({ criterion, enabled: true })) };
+
+export async function getThresholds(): Promise<Thresholds> {
+  if (isFixtures) {
+    const t = await getTrace("call_MOCK_001").catch(() => null);
+    return t?.thresholds ?? MOCK_THRESHOLDS;
+  }
+  return (await getJson<Thresholds>(api("/settings/thresholds"))).data;
+}
+export async function getKeywords(): Promise<KeywordsConfig> {
+  return isFixtures ? structuredClone(MOCK_KEYWORDS) : (await getJson<KeywordsConfig>(api("/settings/keywords"))).data;
+}
+export async function getRules(): Promise<RulesConfig> {
+  return isFixtures ? structuredClone(MOCK_RULES) : (await getJson<RulesConfig>(api("/settings/rules"))).data;
+}
+
+async function put<T>(path: string, body: unknown): Promise<T> {
+  if (isFixtures) throw unsupported("Saving settings");
+  const res = await fetch(api(path), { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (!res.ok) throw await parseError(res);
+  return (await res.json()) as T;
+}
+export const putThresholds = (t: Thresholds) => put<RerunResponse>("/settings/thresholds", t);
+export const putKeywords = (k: KeywordsConfig) => put<RerunResponse>("/settings/keywords", k);
+export const putRules = (r: RulesConfig) => put<RerunResponse>("/settings/rules", r);
+
+export async function previewSettings(req: PreviewRequest): Promise<PreviewResponse> {
+  if (!isFixtures) {
+    const res = await fetch(api("/settings/preview"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(req) });
+    if (!res.ok) throw await parseError(res);
+    return (await res.json()) as PreviewResponse;
+  }
+  return mockPreview(req);
+}
+
+/** MOCK approximation of POST /settings/preview. Mirrors decide.py priority only roughly. */
+async function mockPreview(req: PreviewRequest): Promise<PreviewResponse> {
+  const rows = await getCalls();
+  const base = await getThresholds();
+  const next = req.thresholds ?? base;
+  const traces = new Map<string, DecisionTrace>();
+  const transcripts = new Map<string, Transcript>();
+  await Promise.all(rows.map(async (r) => {
+    const [t, tr] = await Promise.all([getTrace(r.call_id).catch(() => null), getTranscript(r.call_id).catch(() => null)]);
+    if (t) traces.set(r.call_id, t);
+    if (tr) transcripts.set(r.call_id, tr);
+  }));
+  const decide = (row: CallListItem, th: Thresholds) => {
+    if (row.decision == null || row.risk_score == null) return null;
+    const tr = traces.get(row.call_id);
+    const forced = row.n_stage_errors > 0 || (tr && ["stage_error", "missing_evidence", "contradictory_evidence"].includes(tr.decision_path));
+    if (forced || row.confidence == null || row.confidence < th.confidence_gate) return "review" as const;
+    if (row.risk_score >= th.alarm) return "alarm" as const;
+    if (row.risk_score >= th.review) return "review" as const;
+    return "no_alert" as const;
+  };
+  const counts = (th: Thresholds) => {
+    const c: Record<string, number> = { alarm: 0, review: 0, no_alert: 0 };
+    for (const r of rows) { const d = decide(r, th); if (d) c[d] += 1; }
+    return c;
+  };
+  const changed = rows.flatMap((r) => {
+    const before = decide(r, base), after = decide(r, next);
+    return before && after && before !== after
+      ? [{ call_id: r.call_id, decision_before: before, decision_after: after, risk_before: r.risk_score ?? 0, risk_after: r.risk_score ?? 0 }]
+      : [];
+  });
+  const kw = req.keywords ?? MOCK_KEYWORDS;
+  const keyword_hit_counts: PreviewResponse["keyword_hit_counts"] = {};
+  for (const [family, f] of Object.entries(kw.families)) {
+    keyword_hit_counts[family] = {};
+    for (const term of [...f.terms, ...Object.values(f.variants).flat()]) {
+      const needle = term.toLowerCase();
+      let n = 0;
+      for (const tr of transcripts.values()) n += tr.segments.filter((s) => s.text.toLowerCase().includes(needle)).length;
+      keyword_hit_counts[family][term] = n;
+    }
+  }
+  const rule_fire_counts: Record<string, number> = {};
+  for (const tr of traces.values()) for (const rule of tr.rules) {
+    rule_fire_counts[rule.criterion] = (rule_fire_counts[rule.criterion] ?? 0) + (rule.risk >= next.review ? 1 : 0);
+  }
+  return { decision_counts: { before: counts(base), after: counts(next) }, changed, keyword_hit_counts, rule_fire_counts };
+}
