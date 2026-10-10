@@ -5,6 +5,7 @@ import { AlertTriangle, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { useCallback } from "react";
 import { CallAudioProvider } from "./audio-context";
+import { FeedbackBar } from "./feedback-bar";
 import { AuditTab } from "./tabs/audit-tab";
 import { AudioTab } from "./tabs/audio-tab";
 import { EvidenceTab } from "./tabs/evidence-tab";
@@ -84,6 +85,7 @@ function Loaded({ result, tab, sel }: { result: CallResult; tab: TabValue; sel: 
             <StageErrorChip count={result.stage_errors.length} />
             <RiskConfidence risk={result.risk_score} confidence={result.confidence} gate={gate} />
           </div>
+          <FeedbackBar callId={id} decision={result.decision} />
           {result.stage_errors.length > 0 && (
             <div role="alert" className="rounded-md border border-alarm bg-alarm-bg px-3 py-2 text-sm text-alarm">
               <p className="flex items-center gap-2 font-semibold"><AlertTriangle className="size-4" />Stage error — this call was not fully analysed, so it is routed to review.</p>
