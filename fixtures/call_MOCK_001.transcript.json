@@ -1,0 +1,155 @@
+{
+  "call_id": "call_MOCK_001",
+  "mode": "asr",
+  "segments": [
+    {
+      "id": "s001",
+      "speaker": "advisor",
+      "text": "Grüezi, Bank Lindenhof, Sie spräched mit de Frau Keller. Wie chan ich Ihne hälfe?",
+      "start_s": 0.8,
+      "end_s": 6.2,
+      "avg_logprob": -0.21,
+      "no_speech_prob": 0.02
+    },
+    {
+      "id": "s002",
+      "speaker": "customer",
+      "text": "Grüezi. Ich chume nöd i mis E-Banking ine, es seit immer, d Aamäldig seig gsperrt.",
+      "start_s": 6.9,
+      "end_s": 14.5,
+      "avg_logprob": -0.34,
+      "no_speech_prob": 0.03
+    },
+    {
+      "id": "s003",
+      "speaker": "advisor",
+      "text": "Das tuet mer leid. Mir fröged normalerwiis nie nach Passwörter, aber ich lueg emal, was ich mache cha.",
+      "start_s": 15.2,
+      "end_s": 24.0,
+      "avg_logprob": -0.27,
+      "no_speech_prob": 0.02
+    },
+    {
+      "id": "s004",
+      "speaker": "customer",
+      "text": "Danke. Ich mues hüt no e Rechnig zahle, das isch dringend.",
+      "start_s": 24.8,
+      "end_s": 31.3,
+      "avg_logprob": -0.3,
+      "no_speech_prob": 0.04
+    },
+    {
+      "id": "s005",
+      "speaker": "advisor",
+      "text": "Verstande. Chönd Sie mir zerscht Ihres Geburtsdatum und d Vertragsnummer säge?",
+      "start_s": 32.0,
+      "end_s": 41.6,
+      "avg_logprob": -0.25,
+      "no_speech_prob": 0.02
+    },
+    {
+      "id": "s006",
+      "speaker": "customer",
+      "text": "Ja, de vierzähti März, und d Vertragsnummer isch drü sibe vier nüün.",
+      "start_s": 42.3,
+      "end_s": 51.9,
+      "avg_logprob": -0.41,
+      "no_speech_prob": 0.05
+    },
+    {
+      "id": "s007",
+      "speaker": "advisor",
+      "text": "Merci, das stimmt. Ich gseh, dass d Aamäldig nach drü Fählversüech gsperrt worde isch.",
+      "start_s": 52.5,
+      "end_s": 60.2,
+      "avg_logprob": -0.22,
+      "no_speech_prob": 0.02
+    },
+    {
+      "id": "s008",
+      "speaker": "customer",
+      "text": "Genau, ich ha mi glaub vertippt.",
+      "start_s": 61.0,
+      "end_s": 67.4,
+      "avg_logprob": -0.36,
+      "no_speech_prob": 0.06
+    },
+    {
+      "id": "s009",
+      "speaker": "advisor",
+      "text": "Ich chan das entsperre. Dänn mues ich aber teste, öb s Passwort funktioniert.",
+      "start_s": 68.1,
+      "end_s": 79.5,
+      "avg_logprob": -0.24,
+      "no_speech_prob": 0.02
+    },
+    {
+      "id": "s010",
+      "speaker": "customer",
+      "text": "Okay, was bruuched Sie vo mir?",
+      "start_s": 80.2,
+      "end_s": 86.0,
+      "avg_logprob": -0.29,
+      "no_speech_prob": 0.03
+    },
+    {
+      "id": "s011",
+      "speaker": "advisor",
+      "text": "Säged Sie mir eifach Ihres aktuelle Passwort, dänn probier ich s grad sälber us.",
+      "start_s": 92.3,
+      "end_s": 97.8,
+      "avg_logprob": -0.31,
+      "no_speech_prob": 0.03
+    },
+    {
+      "id": "s012",
+      "speaker": "customer",
+      "text": "Also, es isch Sunneblueme, grossgschribe, und dänn zwei drü.",
+      "start_s": 98.6,
+      "end_s": 104.1,
+      "avg_logprob": -0.48,
+      "no_speech_prob": 0.07
+    },
+    {
+      "id": "s013",
+      "speaker": "advisor",
+      "text": "Perfekt, ich ha s notiert. Das bliibt under üs.",
+      "start_s": 104.8,
+      "end_s": 112.0,
+      "avg_logprob": -0.26,
+      "no_speech_prob": 0.03
+    },
+    {
+      "id": "s014",
+      "speaker": "customer",
+      "text": "Guet, merci vilmal.",
+      "start_s": 112.9,
+      "end_s": 118.5,
+      "avg_logprob": -0.33,
+      "no_speech_prob": 0.05
+    },
+    {
+      "id": "s015",
+      "speaker": "advisor",
+      "text": "Gärn gscheh. Ich mälde mich, sobald s wieder gaht. En schöne Tag no.",
+      "start_s": 119.2,
+      "end_s": 131.0,
+      "avg_logprob": -0.23,
+      "no_speech_prob": 0.02
+    },
+    {
+      "id": "s016",
+      "speaker": "customer",
+      "text": "Ihne au, adieu.",
+      "start_s": 131.6,
+      "end_s": 134.2,
+      "avg_logprob": -0.4,
+      "no_speech_prob": 0.08
+    }
+  ],
+  "asr_model": "MOCK",
+  "duration_s": 138.6,
+  "is_mock": true,
+  "notes": ["MOCK - invented data for frontend/API development, not model output"],
+  "schema_version": 1
+}

@@ -1,0 +1,54 @@
+[
+  {
+    "call_id": "call_MOCK_001",
+    "status": "done",
+    "duration_s": 138.6,
+    "variant": "clean",
+    "decision": "alarm",
+    "risk_score": 0.91,
+    "confidence": 0.78,
+    "criteria": ["credential_sharing", "payment_card_data"],
+    "n_stage_errors": 0,
+    "updated_at": "2026-10-10T14:02:11Z",
+    "is_mock": true
+  },
+  {
+    "call_id": "call_MOCK_002",
+    "status": "done",
+    "duration_s": 96.4,
+    "variant": "noisy",
+    "decision": "no_alert",
+    "risk_score": 0.12,
+    "confidence": 0.84,
+    "criteria": ["credential_sharing"],
+    "n_stage_errors": 0,
+    "updated_at": "2026-10-10T14:03:40Z",
+    "is_mock": true
+  },
+  {
+    "call_id": "call_MOCK_003",
+    "status": "processing",
+    "duration_s": 212.0,
+    "variant": "unspecified",
+    "decision": null,
+    "risk_score": null,
+    "confidence": null,
+    "criteria": [],
+    "n_stage_errors": 0,
+    "updated_at": "2026-10-10T14:05:02Z",
+    "is_mock": true
+  },
+  {
+    "call_id": "call_MOCK_004",
+    "status": "error",
+    "duration_s": 175.3,
+    "variant": "noisy",
+    "decision": "review",
+    "risk_score": 0.0,
+    "confidence": null,
+    "criteria": [],
+    "n_stage_errors": 1,
+    "updated_at": "2026-10-10T14:04:19Z",
+    "is_mock": true
+  }
+]

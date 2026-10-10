@@ -1,0 +1,41 @@
+{
+  "call_id": "call_MOCK_002",
+  "decision": "no_alert",
+  "risk_score": 0.12,
+  "confidence": 0.84,
+  "findings": [
+    {
+      "criterion": "credential_sharing",
+      "risk": 0.12,
+      "reason": "[MOCK] 'Passwort' is mentioned, but no secret is disclosed and the advisor explicitly refuses to hear it; a reset link is sent instead.",
+      "evidence": [
+        {
+          "segment_ids": ["s002"],
+          "speaker": "customer",
+          "text": "Ich ha mis Passwort fürs E-Banking vergässe",
+          "start_s": 6.5,
+          "end_s": 15.8,
+          "snippet_path": null
+        }
+      ],
+      "counter_evidence": [
+        {
+          "segment_ids": ["s003"],
+          "speaker": "advisor",
+          "text": "Bitte säged Sie mir Ihres Passwort uf kei Fall",
+          "start_s": 16.4,
+          "end_s": 27.9,
+          "snippet_path": null
+        }
+      ]
+    }
+  ],
+  "narrative": "[MOCK] No alert. The keyword 'Passwort' occurs three times, but only in a password reset: the customer never reveals a secret and the advisor warns against doing so (00:16).",
+  "stage_errors": [],
+  "versions": {
+    "asr": "MOCK",
+    "llm": "MOCK",
+    "prompt": "MOCK",
+    "rules": "MOCK"
+  }
+}

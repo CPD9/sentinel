@@ -1,0 +1,196 @@
+{
+  "call_id": "call_MOCK_001",
+  "decision": "alarm",
+  "decision_path": "alarm",
+  "risk_score": 0.91,
+  "confidence": 0.78,
+  "thresholds": {
+    "alarm": 0.7,
+    "review": 0.4,
+    "confidence_gate": 0.5
+  },
+  "facts": [
+    {
+      "fact_id": "F1",
+      "speaker": "advisor",
+      "act": "request",
+      "info_type": "credentials",
+      "segment_ids": ["s011"],
+      "quote": "Säged Sie mir eifach Ihres aktuelle Passwort",
+      "recipient_third_party": false,
+      "secrecy_cue": false,
+      "counter_evidence": null,
+      "valid": true,
+      "drop_reason": null
+    },
+    {
+      "fact_id": "F2",
+      "speaker": "customer",
+      "act": "disclose",
+      "info_type": "credentials",
+      "segment_ids": ["s012"],
+      "quote": "es isch Sunneblueme, grossgschribe, und dänn zwei drü",
+      "recipient_third_party": false,
+      "secrecy_cue": false,
+      "counter_evidence": null,
+      "valid": true,
+      "drop_reason": null
+    },
+    {
+      "fact_id": "F3",
+      "speaker": "advisor",
+      "act": "other",
+      "info_type": "credentials",
+      "segment_ids": ["s013"],
+      "quote": "Das bliibt under üs.",
+      "recipient_third_party": null,
+      "secrecy_cue": true,
+      "counter_evidence": null,
+      "valid": true,
+      "drop_reason": null
+    },
+    {
+      "fact_id": "F4",
+      "speaker": "advisor",
+      "act": "warn",
+      "info_type": "credentials",
+      "segment_ids": ["s003"],
+      "quote": "Mir fröged normalerwiis nie nach Passwörter",
+      "recipient_third_party": null,
+      "secrecy_cue": null,
+      "counter_evidence": "Advisor states the bank never asks for passwords.",
+      "valid": true,
+      "drop_reason": null
+    },
+    {
+      "fact_id": "F5",
+      "speaker": "customer",
+      "act": "disclose",
+      "info_type": "client_data",
+      "segment_ids": ["s007"],
+      "quote": "d Vertragsnummer isch drü sibe vier nüün",
+      "recipient_third_party": null,
+      "secrecy_cue": null,
+      "counter_evidence": null,
+      "valid": false,
+      "drop_reason": "quote does not match cited segment s007 (best match s006); speaker mismatch"
+    }
+  ],
+  "keyword_hits": [
+    {
+      "hit_id": "H1",
+      "family": "access",
+      "term": "Passwort",
+      "matched_text": "Passwörter",
+      "segment_id": "s003",
+      "score": 0.93
+    },
+    {
+      "hit_id": "H2",
+      "family": "access",
+      "term": "Passwort",
+      "matched_text": "Passwort",
+      "segment_id": "s009",
+      "score": 1.0
+    },
+    {
+      "hit_id": "H3",
+      "family": "access",
+      "term": "Passwort",
+      "matched_text": "Passwort",
+      "segment_id": "s011",
+      "score": 1.0
+    },
+    {
+      "hit_id": "H4",
+      "family": "numbers",
+      "term": "Nummer",
+      "matched_text": "Vertragsnummer",
+      "segment_id": "s006",
+      "score": 0.82
+    }
+  ],
+  "rules": [
+    {
+      "criterion": "credential_sharing",
+      "risk": 0.91,
+      "fired": true,
+      "reason": "[MOCK] request (F1) + disclosure (F2) of an active credential, secrecy cue (F3)",
+      "fact_ids": ["F1", "F2", "F3", "F4"],
+      "keyword_hit_ids": ["H1", "H2", "H3"]
+    },
+    {
+      "criterion": "payment_card_data",
+      "risk": 0.08,
+      "fired": false,
+      "reason": "[MOCK] number read out is a contract number used for identification",
+      "fact_ids": [],
+      "keyword_hit_ids": ["H4"]
+    },
+    {
+      "criterion": "insider_trading",
+      "risk": 0.0,
+      "fired": false,
+      "reason": "[MOCK] no trade facts",
+      "fact_ids": [],
+      "keyword_hit_ids": []
+    },
+    {
+      "criterion": "third_party_disclosure",
+      "risk": 0.0,
+      "fired": false,
+      "reason": "[MOCK] no third party",
+      "fact_ids": [],
+      "keyword_hit_ids": []
+    },
+    {
+      "criterion": "documentation_concealment",
+      "risk": 0.05,
+      "fired": false,
+      "reason": "[MOCK] secrecy cue (F3) concerns the password, not a documented fact",
+      "fact_ids": ["F3"],
+      "keyword_hit_ids": []
+    },
+    {
+      "criterion": "control_evasion",
+      "risk": 0.0,
+      "fired": false,
+      "reason": "[MOCK] no movements",
+      "fact_ids": [],
+      "keyword_hit_ids": []
+    }
+  ],
+  "confidence_breakdown": {
+    "value": 0.78,
+    "gate": 0.5,
+    "components": {
+      "asr": 0.81,
+      "threshold_proximity": 0.93,
+      "conflicts": 0.7,
+      "missing_evidence": 0.9,
+      "audio_quality": 0.664
+    }
+  },
+  "why_not_flagged": null,
+  "what_would_change": "[MOCK] Without the customer's disclosure (F2) the risk would drop to ~0.55 (review band): a request alone is reviewed, not alarmed.",
+  "timings_s": {
+    "asr": 34.8,
+    "diarize": 6.1,
+    "keywords": 0.02,
+    "extract": 11.4,
+    "validate": 0.03,
+    "rules": 0.01,
+    "confidence": 0.01,
+    "decide": 0.0,
+    "narrate": 3.9,
+    "snippets": 0.6
+  },
+  "versions": {
+    "asr": "MOCK",
+    "llm": "MOCK",
+    "prompt": "MOCK",
+    "rules": "MOCK"
+  },
+  "is_mock": true,
+  "schema_version": 1
+}
