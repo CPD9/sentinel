@@ -133,7 +133,9 @@ With `SENTINEL_FIXTURES=1`, the API serves `fixtures/` instead of real artifacts
 - `GET /calls` → `calls.json`
 - `GET /calls/{id}[/transcript|/trace|/analysis]` → `{id}.{result|transcript|trace|analysis}.json`
 - `/calls/{id}/events` → replays `{id}.events.json`
-- `GET /quality` → `quality_report.json`
+- `GET /quality` → a one-item **list** of summaries built from `quality_report.json`
+  (`[{report_id, run_id, split, mode, system, created_at, is_mock}]`), same shape as in normal mode
+- `GET /quality/{report_id}` → `quality_report.json` when `report_id` matches, else 404
 
 In fixture mode, audio and snippet endpoints return 404, uploads return 409, and every body carries
 `is_mock` (or MOCK `versions`), which the UI shows as a banner. The frontend can also import the

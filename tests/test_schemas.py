@@ -196,6 +196,8 @@ def test_analysis_minimal_is_valid():
     ({"call_id": "c", "status": "error", "decision": "no_alert", "risk_score": 0.1, "n_stage_errors": 1},
      "other than no_alert"),
     ({"call_id": "c", "status": "sleeping"}, "status"),
+    ({"call_id": "c", "status": "done", "decision": "review", "risk_score": 0.5, "n_stage_errors": 2},
+     "requires status error"),
     ({"call_id": "c", "status": "queued", "criteria": ["vibes"]}, "criteria item"),
 ])
 def test_call_list_item_semantics(row, fragment):
@@ -221,6 +223,9 @@ def test_processing_event_semantics(ev, fragment):
     (lambda d: d["breakdowns"]["variant"].pop("noisy"), "add up to overall.n"),
     (lambda d: d["threshold_curves"][0]["points"].reverse(), "strictly increasing"),
     (lambda d: d["reliability"]["bins"].pop(0), "tile [0, 1]"),
+    (lambda d: d["reliability"].update(bins=[
+        {"lo": 0.0, "hi": -0.5, "n": 0, "mean_confidence": None, "accuracy": None},
+        {"lo": -0.5, "hi": 1.0, "n": 0, "mean_confidence": None, "accuracy": None}]), "need 0 <= lo < hi <= 1"),
     (lambda d: d["ablations"][0].update(name="vibes_only"), "ablations[0].name"),
     (lambda d: d["latency"][0].update(p50_s=99.0), "p50_s <= p95_s"),
     (lambda d: d.update(split="train"), "split"),

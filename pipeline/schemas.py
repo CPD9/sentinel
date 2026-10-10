@@ -872,6 +872,8 @@ class CallListItem(_Artifact):
             errs.append(f"status {d['status']} needs decision and risk_score")
         if d["status"] == "error" and (d.get("decision") == "no_alert" or not d.get("n_stage_errors")):
             errs.append("status error needs n_stage_errors > 0 and a decision other than no_alert")
+        if d.get("n_stage_errors", 0) > 0 and d["status"] != "error":
+            errs.append("n_stage_errors > 0 requires status error")
         return errs
 
 
@@ -1064,6 +1066,8 @@ class QualityReport(_Artifact):
         if (r := d.get("reliability")) is not None:
             errs += _metric(r["ece"], "reliability.ece")
             bins = r["bins"]
+            errs += [f"reliability.bins[{i}]: need 0 <= lo < hi <= 1" for i, x in enumerate(bins)
+                     if not 0 <= x["lo"] < x["hi"] <= 1]
             if bins and (bins[0]["lo"] != 0 or bins[-1]["hi"] != 1 or any(a["hi"] != b["lo"] for a, b in zip(bins, bins[1:]))):
                 errs.append("reliability.bins must tile [0, 1] without gaps")
             if sum(x["n"] for x in bins) > n:
