@@ -32,6 +32,7 @@ export function Tuning() {
   const report = useAsync(async () => { const r = await getQualityReports(); return r.length ? getQualityReport(r[0].report_id) : null; }, "tuning-report");
   const { draft: d, setThreshold, toggleFamily, toggleRule, loadPatch, reset, toPatch } = useSettingsDraft();
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [applied, setApplied] = useState<string | null>(null);   // lives here, not in the keyed card, so a remount cannot clear it
   const [epoch, setEpoch] = useState(0);              // bumps after a save/apply so suggestions and the audit log reload
 
   const draft = d.thresholds ?? saved.data;
@@ -55,7 +56,9 @@ export function Tuning() {
 
   return (
     <div className="space-y-4">
-      <SuggestionsCard key={epoch} activePatch={patch} onPreview={(p) => { setMsg(null); loadPatch(saved.data!, p); }} onApplied={() => { reset(); saved.reload(); keywords.reload(); rules.reload(); setEpoch((e) => e + 1); }} />
+      {applied && <p role="status" className="rounded-md border border-ok bg-ok-bg p-3 text-sm text-ok">{applied}</p>}
+      <SuggestionsCard key={epoch} activePatch={patch} onPreview={(p) => { setMsg(null); setApplied(null); loadPatch(saved.data!, p); }}
+        onApplied={(message) => { setApplied(message); reset(); saved.reload(); keywords.reload(); rules.reload(); setEpoch((e) => e + 1); }} />
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_26rem]">
         <div className="min-w-0 space-y-4">
           {(Object.keys(draft) as (keyof Thresholds)[]).map((k) => {

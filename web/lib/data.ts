@@ -2,10 +2,10 @@
 //   NEXT_PUBLIC_DATA_MODE=fixtures  → reads public/fixtures/*.json (copied from ../fixtures; MOCK data)
 //   NEXT_PUBLIC_DATA_MODE=api       → follows docs/API.md exactly, via the same-origin /api proxy (next.config.ts)
 import { replayDelayMs, synthFinishedEvents, synthRunningEvents } from "./mock-replay";
-import { approxSimulate, samePatch, type WhatifCalls } from "./whatif-mock";
+import { approxSimulate, patchComponents, samePatch, type WhatifCalls } from "./whatif-mock";
 import type {
   AnalysisArtifact, ApiErrorBody, ApplyResponse, AuditEntry, CallListItem, CallResult, DecisionTrace, FeedbackEntry,
-  KeywordsConfig, Patch, PreviewRequest, PreviewResponse, ProcessingEvent, QualityReport, QualityReportSummary,
+  Decision, KeywordsConfig, Patch, PreviewRequest, PreviewResponse, ProcessingEvent, QualityReport, QualityReportSummary,
   RerunResponse, RulesConfig, SimulationResult, SuggestionsResponse, Thresholds, Transcript, Verdict,
 } from "./types";
 import { CRITERIA, EVENT_TYPES, verdictAllowed } from "./types";
@@ -310,9 +310,16 @@ function persistFeedback() {
   try { localStorage.setItem(LS_FEEDBACK, JSON.stringify(memoryFeedback ?? [])); } catch { /* private window: memory only */ }
 }
 
-/** Latest verdict per call. */
+/** The checked-in API may not have the what-if routes yet (docs/API.md "What-if, feedback and suggestions"): 404/405 means "not built". */
+const routeMissing = (e: unknown) => e instanceof ApiError && (e.status === 404 || e.status === 405);
+const notBuilt = (what: string, route: string) => new ApiError(404, "not_available", `${what}: not available on this server yet (${route} is not implemented).`);
+
+/** Latest verdict per call. Throws not_available when the server has no feedback route. */
 export async function getFeedback(): Promise<FeedbackEntry[]> {
-  if (!isFixtures) return (await getJson<FeedbackEntry[]>(api("/feedback"))).data;
+  if (!isFixtures) {
+    try { return (await getJson<FeedbackEntry[]>(api("/feedback"))).data; }
+    catch (e) { throw routeMissing(e) ? notBuilt("Officer feedback", "GET /api/feedback") : e; }
+  }
   const base = (await getJson<FeedbackEntry[]>(fx("feedback.json"))).data;
   const latest = new Map<string, FeedbackEntry>();
   for (const e of [...base, ...localFeedback()]) latest.set(e.call_id, e);
@@ -322,7 +329,7 @@ export async function getFeedback(): Promise<FeedbackEntry[]> {
 export async function postFeedback(callId: string, verdict: Verdict, note?: string): Promise<FeedbackEntry> {
   if (!isFixtures) {
     const res = await fetch(api("/feedback"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ call_id: callId, verdict, note: note || undefined }) });
-    if (!res.ok) throw await parseError(res);
+    if (!res.ok) { const e = await parseError(res); throw e.status === 405 ? notBuilt("Officer feedback", "POST /api/feedback") : e; }
     return (await res.json()) as FeedbackEntry;
   }
   const row = (await getCalls()).find((c) => c.call_id === callId);
@@ -335,11 +342,18 @@ export async function postFeedback(callId: string, verdict: Verdict, note?: stri
   return entry;
 }
 
+let simulateMissing = false;                       // remembered after the first 404/405, so a drag does not retry a missing route
+
 export async function simulate(patch: Patch): Promise<SimulationResult> {
   if (!isFixtures) {
-    const res = await fetch(api("/simulate"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ patch, with_feedback: true }) });
-    if (!res.ok) throw await parseError(res);
-    return (await res.json()) as SimulationResult;
+    if (!simulateMissing) {
+      const res = await fetch(api("/simulate"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ patch, with_feedback: true }) });
+      if (res.ok) return (await res.json()) as SimulationResult;
+      const err = await parseError(res);
+      if (!routeMissing(err)) throw err;
+      simulateMissing = true;
+    }
+    return simulateViaPreview(patch);
   }
   const [data, sugg, fb] = await Promise.all([
     getJson<WhatifCalls>(fx("whatif_calls.json")).then((r) => r.data),
@@ -350,19 +364,68 @@ export async function simulate(patch: Patch): Promise<SimulationResult> {
   return approxSimulate(patch, data, new Map(fb.map((f) => [f.call_id, f])));
 }
 
+/** Fallback while the server has no POST /simulate: the existing POST /settings/preview, mapped to the simulation shape.
+ *  It has no reasons, no workload from the server and no feedback check; the impact panel says so (baseline_version "unknown"). */
+async function simulateViaPreview(patch: Patch): Promise<SimulationResult> {
+  const req: PreviewRequest = {};
+  if (patch.thresholds && Object.keys(patch.thresholds).length) req.thresholds = { ...(await getThresholds()), ...patch.thresholds };
+  if (patch.keywords) {
+    if ("families" in patch.keywords) req.keywords = patch.keywords;
+    else if (patch.keywords.disable_families.length) {
+      const k = await getKeywords();
+      for (const f of patch.keywords.disable_families) delete k.families[f];
+      req.keywords = k;
+    }
+  }
+  if (patch.rules) {
+    if ("rules" in patch.rules) req.rules = patch.rules;
+    else if (patch.rules.disable.length) {
+      const off = patch.rules.disable;
+      const r = await getRules();
+      for (const x of r.rules) if (off.includes(x.criterion)) x.enabled = false;
+      req.rules = r;
+    }
+  }
+  const p = await previewSettings(req);
+  const full = (c: Record<string, number>) => ({ alarm: c.alarm ?? 0, review: c.review ?? 0, no_alert: c.no_alert ?? 0 }) as Record<Decision, number>;
+  const before = full(p.decision_counts.before), after = full(p.decision_counts.after);
+  const load = (c: Record<Decision, number>) => {
+    const n = c.alarm + c.review + c.no_alert, per = (x: number) => (n ? Math.round((10000 * x) / n) / 100 : 0);
+    return { n, alarms_per_100: per(c.alarm), reviews_per_100: per(c.review), flagged_per_100: per(c.alarm + c.review) };
+  };
+  const wb = load(before), wa = load(after);
+  const rank = { no_alert: 0, review: 1, alarm: 2 } as const;
+  return {
+    patch, baseline_version: "unknown", patched_version: "draft", n_calls: wa.n, n_locked: 0,
+    counts: { before, after },
+    workload: { before: wb, after: wa, delta_flagged_per_100: Math.round((wa.flagged_per_100 - wb.flagged_per_100) * 100) / 100 },
+    flipped: p.changed.map((c) => ({
+      call_id: c.call_id, before: c.decision_before, after: c.decision_after,
+      direction: (rank[c.decision_after] > rank[c.decision_before] ? "up" : "down") as "up" | "down",
+      risk_before: c.risk_before, risk_after: c.risk_after, confidence_before: null, confidence_after: null,
+      path_before: "n/a", path_after: "n/a", reasons: [], attributed_to: patchComponents(patch), feedback_verdict: null,
+    })),
+    feedback_check: null, is_mock: false, schema_version: 1,
+  };
+}
+
 export async function getSuggestions(max = 5): Promise<SuggestionsResponse> {
-  return (await getJson<SuggestionsResponse>(isFixtures ? fx("suggestions.json") : api(`/suggestions?max=${max}`))).data;
+  if (isFixtures) return (await getJson<SuggestionsResponse>(fx("suggestions.json"))).data;
+  try { return (await getJson<SuggestionsResponse>(api(`/suggestions?max=${max}`))).data; }
+  catch (e) { throw routeMissing(e) ? notBuilt("Suggestions", "GET /api/suggestions") : e; }
 }
 
 export async function applySuggestion(id: string, note?: string): Promise<ApplyResponse> {
   if (isFixtures) throw unsupported("Applying a suggestion");
   const res = await fetch(api(`/suggestions/${encodeURIComponent(id)}/apply`), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ confirm: true, note: note || undefined }) });
-  if (!res.ok) throw await parseError(res);
+  if (!res.ok) { const e = await parseError(res); throw e.status === 405 ? notBuilt("Applying a suggestion", "POST /api/suggestions/{id}/apply") : e; }
   return (await res.json()) as ApplyResponse;
 }
 
 export async function getAudit(): Promise<AuditEntry[]> {
-  return isFixtures ? [] : (await getJson<AuditEntry[]>(api("/audit"))).data;
+  if (isFixtures) return [];
+  try { return (await getJson<AuditEntry[]>(api("/audit"))).data; }
+  catch (e) { if (routeMissing(e)) return []; throw e; }          // no audit route yet: nothing to list, not an error
 }
 
 /** Saves a toggle-style draft through the existing PUT /settings/* endpoints (thresholds, then keyword families, then rules). */

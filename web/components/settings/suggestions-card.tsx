@@ -16,22 +16,21 @@ import { ConfirmDialog } from "./confirm-dialog";
 const errText = (e: unknown) => (e instanceof ApiError ? (Array.isArray(e.detail) ? e.detail.join("; ") : `${e.code}: ${e.detail}`) : String(e));
 
 /** Ranked, simulated config changes built from the officer's verdicts. Preview loads one into the draft; Apply asks for confirmation. */
-export function SuggestionsCard({ activePatch, onPreview, onApplied }: { activePatch: Patch | null; onPreview: (p: Patch) => void; onApplied: () => void }) {
+export function SuggestionsCard({ activePatch, onPreview, onApplied }: { activePatch: Patch | null; onPreview: (p: Patch) => void; onApplied: (message: string) => void }) {
   const state = useAsync(() => getSuggestions(), "suggestions");
   const [confirm, setConfirm] = useState<Suggestion | null>(null);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [done, setDone] = useState<string | null>(null);
 
   const apply = async () => {
     if (!confirm) return;
     setBusy(true); setErr(null);
     try {
       const r = await applySuggestion(confirm.id, note.trim() || undefined);
-      setDone(`Applied: ${confirm.title}. Re-running ${r.rerun.stages.join(" → ")} for ${r.rerun.n_calls} calls from cache; recorded in the audit log.`);
+      const message = `Applied: ${confirm.title}. Re-running ${r.rerun.stages.join(" → ")} for ${r.rerun.n_calls} calls from cache; recorded in the audit log.`;
       setConfirm(null); setNote("");
-      state.reload(); onApplied();
+      onApplied(message);          // the parent shows it and refreshes this card; it must outlive this component's remount
     } catch (e) {
       setErr(errText(e));
       if (e instanceof ApiError && e.status === 409) state.reload();     // config moved since the suggestion was made
@@ -51,8 +50,8 @@ export function SuggestionsCard({ activePatch, onPreview, onApplied }: { activeP
       </CardHeader>
       <CardContent className="space-y-3">
         {isFixtures && <p role="note" className="rounded-md border border-review bg-review-bg px-3 py-2 text-xs text-review">MOCK: sample suggestions computed by the real search over 12 invented calls. They are not recomputed from your clicks, and Apply is disabled.</p>}
-        {done && <p role="status" className="rounded-md border border-ok bg-ok-bg p-2.5 text-sm text-ok">{done}</p>}
         {state.status === "loading" && !d ? <SkeletonBlock rows={4} />
+          : state.status === "error" && !d && state.error.notAvailable ? <EmptyState>{state.error.message} The settings below still work.</EmptyState>
           : state.status === "error" && !d ? <ErrorCard error={state.error} onRetry={state.reload} title="Could not load suggestions" />
           : d && d.suggestions.length === 0 ? (
             <EmptyState>{d.reason ?? "No suggestions."} {d.n_feedback === 0 && "Open a call and use the False alarm / Missed / Correct buttons."}</EmptyState>
@@ -67,7 +66,7 @@ export function SuggestionsCard({ activePatch, onPreview, onApplied }: { activeP
                       <p className="font-medium"><span className="mr-2 text-muted-foreground">#{i + 1}</span>{s.title}</p>
                       <div className="flex gap-2">
                         <Button size="sm" variant={active ? "default" : "outline"} onClick={() => onPreview(s.patch)} aria-pressed={active}><Eye className="size-3.5" />{active ? "Previewing" : "Preview"}</Button>
-                        <Button size="sm" variant="outline" disabled={isFixtures} title={isFixtures ? "Disabled in fixtures mode (MOCK)" : undefined} onClick={() => { setErr(null); setDone(null); setConfirm(s); }}>Apply…</Button>
+                        <Button size="sm" variant="outline" disabled={isFixtures} title={isFixtures ? "Disabled in fixtures mode (MOCK)" : undefined} onClick={() => { setErr(null); setConfirm(s); }}>Apply…</Button>
                       </div>
                     </div>
                     <p className="mt-1 text-sm text-muted-foreground">{s.rationale}</p>

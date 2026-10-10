@@ -80,7 +80,8 @@ function Body({ data, loading, error }: { data: NonNullable<ReturnType<typeof us
         ))}</ul>
       )}
       <p className="mt-3 text-[11px] text-muted-foreground">
-        {isFixtures ? "MOCK: a hand-made draft is a client-side approximation over 12 invented sample calls; a suggestion’s Preview shows its real simulated result."
+        {data.baseline_version === "unknown" ? "This server has no /simulate yet, so these numbers come from /settings/preview: no reasons per call and no check against your verdicts."
+          : isFixtures ? "MOCK: a hand-made draft is a client-side approximation over 12 invented sample calls; a suggestion’s Preview shows its real simulated result."
           : `Re-decided from cached transcripts and extractions (${data.n_calls} calls, ${data.n_locked} with stage errors stay in review). Nothing is re-transcribed.`}
       </p>
     </div>

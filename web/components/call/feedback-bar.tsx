@@ -24,6 +24,7 @@ export function FeedbackBar({ callId, decision }: { callId: string; decision: De
   const [note, setNote] = useState("");
   const mine = all.data?.find((e) => e.call_id === callId) ?? null;
   const shown = pending ?? mine?.verdict ?? null;
+  const unavailable = all.status === "error" && all.error.notAvailable;       // the server has no feedback route yet
 
   const choose = async (v: Verdict) => {
     setErr(null); setPending(v); setBusy(true);
@@ -46,7 +47,7 @@ export function FeedbackBar({ callId, decision }: { callId: string; decision: De
             const ok = verdictAllowed(v, decision);
             const on = shown === v;
             return (
-              <Button key={v} size="sm" variant={on ? "default" : "outline"} aria-pressed={on} disabled={busy || all.status === "loading" || !ok}
+              <Button key={v} size="sm" variant={on ? "default" : "outline"} aria-pressed={on} disabled={busy || all.status === "loading" || unavailable || !ok}
                 title={ok ? undefined : WHY_NOT[v]} onClick={() => choose(v)}>
                 {on && !busy ? <Check className="size-3.5" aria-hidden /> : <Icon className="size-3.5" aria-hidden />}{VERDICT_LABEL[v]}
               </Button>
@@ -59,6 +60,7 @@ export function FeedbackBar({ callId, decision }: { callId: string; decision: De
       <p className="mt-1.5 text-xs text-muted-foreground" aria-live="polite">
         {err ? <span role="alert" className="text-alarm">Could not save your verdict: {err}</span>
           : mine ? <>You marked this <b>{VERDICT_LABEL[mine.verdict].toLowerCase()}</b> on {fmtDateTime(mine.ts)}{mine.note && <> — “{mine.note}”</>}. Click another button to change it.</>
+          : unavailable ? "Officer feedback is not available on this server yet."
           : all.status === "error" ? "Your earlier verdicts could not be loaded; you can still add one."
           : "No verdict yet. Your verdicts feed the suggested changes in Settings; they never change a decision by themselves."}
         {isFixtures && " (MOCK: kept in this browser only.)"}
