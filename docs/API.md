@@ -141,6 +141,14 @@ In fixture mode, audio and snippet endpoints return 404, uploads return 409, and
 `is_mock` (or MOCK `versions`), which the UI shows as a banner. The frontend can also import the
 fixture JSON directly, without the API.
 
+Implementation notes (`services/api/`, run with `SENTINEL_FIXTURES=1 python -m services.api` on `127.0.0.1:8001`):
+- `/calls/{id}/events` replays the recorded log paced at a fraction of its real gaps (`SENTINEL_REPLAY_SCALE`,
+  default 0.1) so the Processing view visibly ticks. Calls without an events file get a short synthesized
+  log consistent with their row and result (for example `call_MOCK_004`: asr `stage_failed`, then `review`).
+- Settings start from MOCK defaults. `PUT` validates (422 on bad values) and keeps the values in memory only
+  until `config/` exists, answering `202` with `n_calls: 0` because nothing is re-run. `POST /settings/preview`
+  re-applies the decide.py priority order to the cached rows (a MOCK approximation).
+
 ## Validation
 
 The API should validate what it serves with `<Schema>.validate(d)` (and `validate_call_result` for

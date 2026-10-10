@@ -1,0 +1,5 @@
+# API service only. The pipeline itself stays stdlib (requirements-dev.txt).
+fastapi>=0.110
+uvicorn>=0.29
+# tests only (FastAPI's TestClient)
+httpx>=0.27

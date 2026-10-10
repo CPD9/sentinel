@@ -58,7 +58,7 @@ Banks record client phone calls, but people can only listen to a small sample of
 | Narrative, audio snippets, trigger | Explanations, playable clips, call to the Outcept API | ⬜ |
 | `run.sh` command line | `./run.sh <folder>` produces `out/results.json` and snippets | ⬜ |
 | Audio analysis | Waveform, spectrogram, quality score for the UI | 📐 |
-| API service | FastAPI, job queue, live events | 📐 |
+| API service | FastAPI, job queue, live events ([`services/api/`](services/api/README.md)) | 🟡 every endpoint in API.md answers in fixture mode (MOCK data), with tests; uploads, audio and `process_call()` not wired yet |
 | Web app | Inbox, call dashboard, settings, quality lab ([`web/`](web/README.md)) | 🟡 all screens built and shown with MOCK fixtures; not yet run against the real API |
 
 ## Team
@@ -133,7 +133,8 @@ tests/             pytest suite
 data/              case data, read-only, gitignored
 artifacts/         manifests, splits, cache, predictions, metrics, gitignored
 web/               Next.js app (fixtures mode and api mode)
-config/ services/ run.sh      planned, not created yet
+services/api/       FastAPI service (fixture mode so far)
+config/ run.sh     planned, not created yet
 ```
 
 ## Documentation
