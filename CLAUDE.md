@@ -126,7 +126,7 @@ Two modes: reference transcripts and real ASR. Never report a metric you didn't 
 
 ## Environment
 - `.env`: `LLM_BASE_URL`, `LLM_MODEL`, `HF_TOKEN`, `ASR_MODEL_PATH`, `DATA_DIR`, `TRIGGER_URL`; for providers
-  other than the default also `SENTINEL_LLM_PROVIDER` (a name from `config/providers.yaml`), `OPENROUTER_API_KEY`,
+  other than the default also `SENTINEL_LLM_PROVIDER` (a name from `config/providers.yaml`) and `SENTINEL_LLM_MODEL` (needed for remote providers), `OPENROUTER_API_KEY`,
   `INFOMANIAK_API_TOKEN`, `INFOMANIAK_PRODUCT_ID`. `SENTINEL_ALLOW_REMOTE_LLM` is set per shell, not in `.env`.
 - Python 3.11, venv in `.venv`.
 - Development happens on the laptop. GPU work runs on the Exoscale VM (see `INFRA.md`); the LLM is

@@ -32,6 +32,7 @@ RUNTIME_VERSION = f"python-{platform.python_version()}/llm-client-2"
 ALLOW_REMOTE_ENV = "SENTINEL_ALLOW_REMOTE_LLM"
 ALLOW_REMOTE_VALUE = "fictional_data_only"
 PROVIDER_ENV = "SENTINEL_LLM_PROVIDER"
+MODEL_ENV = "SENTINEL_LLM_MODEL"       # model for the selected provider when it has no model_env (remote ones)
 
 
 class LLMError(RuntimeError):
@@ -257,6 +258,7 @@ class _Reply:
     usage: dict | None
     served_model: str | None
     ttft_s: float | None
+    streamed: bool = False          # True only when the reply really arrived as an SSE stream
 
 
 class OpenAICompatClient:
@@ -281,6 +283,12 @@ class OpenAICompatClient:
 
     def __repr__(self) -> str:
         return f"OpenAICompatClient(provider={self.spec.name!r}, model={self.model!r})"
+
+    def effective_extra_body(self) -> dict:
+        """The provider options that really go into every request (reserved and, for remote providers, unvetted
+        keys are dropped). Part of any cache key whose response depends on them."""
+        return {k: copy.deepcopy(v) for k, v in self.spec.extra_body.items()
+                if k not in RESERVED_BODY_KEYS and (self.spec.self_hosted or k in REMOTE_EXTRA_BODY_KEYS)}
 
     def version_info(self) -> dict:
         """Values for schemas.Versions: llm, provider, self_hosted."""
@@ -365,10 +373,7 @@ class OpenAICompatClient:
             if constrained:
                 payload["response_format"] = {"type": "json_schema",
                                               "json_schema": {"name": "answer", "schema": json_schema}}
-            for k, v in self.spec.extra_body.items():
-                if k in RESERVED_BODY_KEYS or (not self.spec.self_hosted and k not in REMOTE_EXTRA_BODY_KEYS):
-                    continue
-                payload[k] = copy.deepcopy(v)
+            payload.update(self.effective_extra_body())
             t0 = self._now()
             try:
                 reply = self._stream(payload, t0) if streamed else self._plain(payload)
@@ -382,7 +387,7 @@ class OpenAICompatClient:
             wall = self._now() - t0
             if self.model_revision is None and not self.spec.self_hosted:
                 self.model_revision = reply.served_model or "unversioned"
-            metrics = build_metrics(self.spec, self.model, reply.usage, reply.ttft_s, wall, streamed, i + 1)
+            metrics = build_metrics(self.spec, self.model, reply.usage, reply.ttft_s, wall, reply.streamed, i + 1)
             self.metrics.append(metrics)
             self.last_metrics = metrics
             return reply.text, metrics
@@ -452,7 +457,7 @@ class OpenAICompatClient:
             raise _StreamFailed("stream ended without a terminal event (truncated)")
         if not parts:
             raise _StreamFailed("stream carried no content")
-        return _Reply("".join(parts), usage, served, ttft)
+        return _Reply("".join(parts), usage, served, ttft, streamed=True)
 
 
 def get_client(provider: str | None = None, model: str | None = None, *, providers_file: Path = PROVIDERS_FILE,
@@ -461,7 +466,7 @@ def get_client(provider: str | None = None, model: str | None = None, *, provide
     """Client for a provider from config/providers.yaml. The policy gate runs here, before anything else.
 
     Provider: argument, else $SENTINEL_LLM_PROVIDER, else `default` in providers.yaml.
-    Model: argument, else the provider's `model_env`. A remote provider needs an explicit allowlisted model
+    Model: argument, else the provider's `model_env`, else $SENTINEL_LLM_MODEL. A remote provider needs an explicit allowlisted model
     (`need_model=False` only for model discovery, which still needs the remote opt-in).
     """
     load_env()
@@ -470,7 +475,7 @@ def get_client(provider: str | None = None, model: str | None = None, *, provide
     if name not in specs:
         raise LLMError(f"unknown provider {name!r}; configured: {sorted(specs)}")
     spec = specs[name]
-    model = model or (os.environ.get(spec.model_env) if spec.model_env else None) or None
+    model = model or (os.environ.get(spec.model_env) if spec.model_env else None) or os.environ.get(MODEL_ENV) or None
     check_permitted(spec, model, need_model=need_model)
     return OpenAICompatClient(spec.resolve_base_url(), model, timeout, spec=spec, now=now)
 

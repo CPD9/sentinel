@@ -308,6 +308,7 @@ def test_plain_json_answer_to_a_stream_request_is_accepted(monkeypatch):
     n = net(monkeypatch, FakeResp(json.dumps({"choices": [{"message": {"content": "pretty"}}]}, indent=2).encode()))
     text, m = get_client().chat_with_metrics(MSG)
     assert text == "pretty" and m.ttft_ms is None and len(n.calls) == 1
+    assert m.streamed is False                      # it arrived as one body, whatever was requested
 
 
 def test_json_schema_400_retries_unconstrained(monkeypatch):
@@ -511,3 +512,35 @@ def test_key_straddling_the_truncation_boundary_is_still_scrubbed(monkeypatch):
         c._stream({"model": OK_MODEL, "messages": MSG}, 0.0)
     for e in (e1, e2, e3):
         assert KEY[:8] not in str(e.value), str(e.value)
+
+
+# --------------------------------------------------------------------------- Codex review round 3 of PR #16
+
+def test_remote_provider_selected_by_env_needs_model_env_not_a_cli_flag(monkeypatch):
+    allow(monkeypatch)
+    monkeypatch.setenv(llm.PROVIDER_ENV, "openrouter")
+    with pytest.raises(ProviderNotPermitted, match="explicit model"):
+        llm.from_env()                                       # provider chosen, model missing
+    monkeypatch.setenv(llm.MODEL_ENV, OK_MODEL)
+    c = llm.from_env()
+    assert (c.spec.name, c.model) == ("openrouter", OK_MODEL)
+    monkeypatch.setenv(llm.MODEL_ENV, "openai/gpt-4o")      # the gate still applies to the env-selected model
+    with pytest.raises(ProviderNotPermitted):
+        llm.from_env()
+
+
+def test_default_provider_model_env_beats_sentinel_model(monkeypatch):
+    monkeypatch.setenv("LLM_MODEL", "swiss-ai/Apertus-v1.5-8B")
+    monkeypatch.setenv(llm.MODEL_ENV, "something-else")
+    assert get_client().model == "swiss-ai/Apertus-v1.5-8B"
+
+
+def test_effective_extra_body_reflects_what_is_really_sent():
+    remote = ProviderSpec(name="r", base_url="https://r/v1", key_env="K", self_hosted=False, allowed_models=("a/b",),
+                          extra_body={"provider": {"data_collection": "deny"}, "top_k": 5, "model": "x"})
+    local = ProviderSpec(name="l", base_url="http://127.0.0.1:1/v1", self_hosted=True,
+                         extra_body={"chat_template_kwargs": {"enable_thinking": False}, "model": "x"})
+    assert llm.OpenAICompatClient("https://r/v1", "a/b", spec=remote).effective_extra_body() == \
+        {"provider": {"data_collection": "deny"}}
+    assert llm.OpenAICompatClient("http://127.0.0.1:1/v1", "m", spec=local).effective_extra_body() == \
+        {"chat_template_kwargs": {"enable_thinking": False}}
