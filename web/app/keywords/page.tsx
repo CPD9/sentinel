@@ -1,4 +1,3 @@
-"use client";
 import { Configuration } from "@/components/settings/configuration";
 import { SettingsPage } from "@/components/settings/settings-view";
 

@@ -1,5 +1,5 @@
 "use client";
-import { Save } from "lucide-react";
+import { ChevronRight, Save } from "lucide-react";
 import { useState } from "react";
 import { CriterionChip } from "@/components/shell/badges";
 import { ErrorCard, SkeletonBlock } from "@/components/shell/states";
@@ -19,10 +19,13 @@ import { SuggestionsCard } from "./suggestions-card";
 const PARAM: Record<keyof Thresholds, "alarm_threshold" | "review_threshold" | "confidence_gate"> = {
   alarm: "alarm_threshold", review: "review_threshold", confidence_gate: "confidence_gate",
 };
+const TITLE: Record<keyof Thresholds, string> = {
+  alarm: "Alarm threshold", review: "Review threshold", confidence_gate: "Confidence gate",
+};
 const HELP: Record<keyof Thresholds, string> = {
-  alarm: "Risk at or above this, with validated evidence and enough confidence, is an alarm.",
-  review: "Risk from here up to the alarm threshold goes to review.",
-  confidence_gate: "Below this confidence a call is never a confident alarm or no-alert: it goes to review.",
+  alarm: "How much risk before SENTINEL raises an alarm (only with verified evidence and enough confidence). Lower catches more cases but gives more false alarms; higher gives fewer false alarms but misses more.",
+  review: "From this risk up to the alarm threshold, a call is handed to a person for review instead of being dropped.",
+  confidence_gate: "If SENTINEL is less sure than this (unclear audio, unverified evidence), it never decides alone: the call goes to review.",
 };
 
 export function Tuning() {
@@ -43,6 +46,28 @@ export function Tuning() {
   if (!draft) return <SkeletonBlock rows={6} />;
 
   const set = (k: keyof Thresholds, v: number) => { setMsg(null); setThreshold(saved.data!, k, v); };
+
+  /** One threshold: plain title + help, the slider, and its precision / recall curve from the latest quality report. */
+  const slider = (k: keyof Thresholds, main = false) => {
+    const curve = report.data?.threshold_curves.find((c) => c.param === PARAM[k]);
+    return (
+      <Card key={k} className={main ? "rounded-2xl" : ""}>
+        <CardHeader>
+          <div className="max-w-prose"><CardTitle className={main ? "text-base" : ""}><label htmlFor={`th-${k}`}>{TITLE[k]}</label></CardTitle><CardDescription>{HELP[k]}</CardDescription></div>
+          <div className={main ? "tabular text-3xl font-semibold tracking-tight" : "tabular text-lg font-semibold"}>{pct(draft[k])} <span className="text-xs font-normal text-muted-foreground">saved {pct(saved.data![k])}</span></div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div>
+            <input id={`th-${k}`} type="range" min={0} max={1} step={0.01} value={draft[k]} onChange={(e) => set(k, +e.target.value)} className="w-full" aria-valuetext={pct(draft[k])} />
+            {main && <div className="mt-1 flex justify-between text-xs text-muted-foreground"><span>← catches more (more false alarms)</span><span>stricter (fewer false alarms) →</span></div>}
+          </div>
+          {curve ? (
+            <div><p className="text-xs text-muted-foreground">Precision / recall on the {report.data!.split} split ({curve.convention.replace("_", " ")}), n = {report.data!.overall.n}{report.data!.is_mock ? " — MOCK curve" : ""}.</p><CurveChart curve={curve} dragged={draft[k]} /></div>
+          ) : report.status === "loading" ? <div className="skeleton h-24" /> : <p className="text-xs text-muted-foreground">No threshold curve available for this parameter (no evaluation run yet).</p>}
+        </CardContent>
+      </Card>
+    );
+  };
   const save = async () => {
     if (!patch) return;
     try {
@@ -57,27 +82,20 @@ export function Tuning() {
   return (
     <div className="space-y-4">
       {applied && <p role="status" className="rounded-md border border-ok bg-ok-bg p-3 text-sm text-ok">{applied}</p>}
-      <SuggestionsCard key={epoch} activePatch={patch} onPreview={(p) => { setMsg(null); setApplied(null); loadPatch(saved.data!, p); }}
-        onApplied={(message) => { setApplied(message); reset(); saved.reload(); keywords.reload(); rules.reload(); setEpoch((e) => e + 1); }} />
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_26rem]">
         <div className="min-w-0 space-y-4">
-          {(Object.keys(draft) as (keyof Thresholds)[]).map((k) => {
-            const curve = report.data?.threshold_curves.find((c) => c.param === PARAM[k]);
-            return (
-              <Card key={k}>
-                <CardHeader>
-                  <div><CardTitle><label htmlFor={`th-${k}`}>{k.replaceAll("_", " ")}</label></CardTitle><CardDescription>{HELP[k]}</CardDescription></div>
-                  <div className="tabular text-lg font-semibold">{draft[k].toFixed(2)} <span className="text-xs font-normal text-muted-foreground">saved {saved.data![k].toFixed(2)}</span></div>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <input id={`th-${k}`} type="range" min={0} max={1} step={0.01} value={draft[k]} onChange={(e) => set(k, +e.target.value)} className="w-full" aria-valuetext={pct(draft[k])} />
-                  {curve ? (
-                    <div><p className="text-xs text-muted-foreground">Precision / recall on the {report.data!.split} split ({curve.convention.replace("_", " ")}), n = {report.data!.overall.n}{report.data!.is_mock ? " — MOCK curve" : ""}.</p><CurveChart curve={curve} dragged={draft[k]} /></div>
-                  ) : report.status === "loading" ? <div className="skeleton h-24" /> : <p className="text-xs text-muted-foreground">No threshold curve available for this parameter (no evaluation run yet).</p>}
-                </CardContent>
-              </Card>
-            );
-          })}
+          {slider("alarm", true)}
+          <details className="group rounded-2xl border border-border bg-card/40">
+            <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-semibold [&::-webkit-details-marker]:hidden">
+              <ChevronRight className="size-4 transition-transform group-open:rotate-90 motion-reduce:transition-none" aria-hidden />
+              Advanced
+              <span className="font-normal text-muted-foreground">· review threshold {pct(draft.review)} · confidence gate {pct(draft.confidence_gate)}</span>
+            </summary>
+            <div className="space-y-4 border-t border-border p-4">
+              {slider("review")}
+              {slider("confidence_gate")}
+            </div>
+          </details>
 
           <Card>
             <CardHeader><div><CardTitle>Detection switches (what-if)</CardTitle>
@@ -101,6 +119,8 @@ export function Tuning() {
               {!keywords.data && !rules.data && <SkeletonBlock rows={2} />}
             </CardContent>
           </Card>
+          <SuggestionsCard key={epoch} activePatch={patch} onPreview={(p) => { setMsg(null); setApplied(null); loadPatch(saved.data!, p); }}
+            onApplied={(message) => { setApplied(message); reset(); saved.reload(); keywords.reload(); rules.reload(); setEpoch((e) => e + 1); }} />
         </div>
 
         <aside className="min-w-0 space-y-4 xl:sticky xl:top-16 xl:self-start">

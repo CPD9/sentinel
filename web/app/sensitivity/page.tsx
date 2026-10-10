@@ -1,4 +1,3 @@
-"use client";
 import { SettingsPage } from "@/components/settings/settings-view";
 import { Tuning } from "@/components/settings/tuning";
 import { SettingsDraftProvider } from "@/lib/settings-draft";
