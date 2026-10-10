@@ -8,7 +8,7 @@ import "./globals.css";
 const sans = localFont({ src: "./fonts/instrument-sans-latin-wght.woff2", weight: "400 700", variable: "--font-instrument", display: "swap" });
 
 export const metadata: Metadata = {
-  title: "SENTINEL — call compliance review",
+  title: "Sentinel",
   description: "Self-hosted compliance review of bank phone calls.",
 };
 

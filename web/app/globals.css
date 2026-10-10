@@ -118,3 +118,9 @@ body { background: var(--background); color: var(--foreground); font-family: var
 @keyframes shimmer { 0% { opacity: 1 } 50% { opacity: .5 } 100% { opacity: 1 } }
 .skeleton { animation: shimmer 1.4s ease-in-out infinite; background: var(--muted); border-radius: 6px; }
 @media (prefers-reduced-motion: reduce) { .skeleton { animation: none } }
+
+/* ⓘ info bubble: grows out of its icon on open, shrinks back on close. No motion when the user asks for less. */
+.info-tip { opacity: 0; transform: scale(0.94); transition: opacity 160ms cubic-bezier(0.2, 0.8, 0.2, 1), transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.info-tip[data-state="open"] { opacity: 1; transform: scale(1); }
+.info-tip[data-state="exit"] { opacity: 0; transform: scale(0.97); transition-duration: 110ms; transition-timing-function: ease-in; }
+@media (prefers-reduced-motion: reduce) { .info-tip { transition: none; } }

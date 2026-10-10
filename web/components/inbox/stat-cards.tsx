@@ -1,5 +1,7 @@
 "use client";
+import { InfoTip } from "@/components/ui/info-tip";
 import { Skeleton } from "@/components/ui/skeleton";
+import type { Term } from "@/lib/glossary";
 import type { CallListItem } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -17,16 +19,16 @@ export function StatCards({ calls }: { calls: CallListItem[] | null }) {
   const reviews = finished.filter((c) => c.decision === "review").length;
   const running = calls.filter((c) => c.status === "queued" || c.status === "processing").length;
   const items = [
-    { label: "Alarms", value: alarms, hint: "suspicious passages with a reason", tone: alarms > 0 ? "text-alarm" : "" },
-    { label: "To review", value: reviews, hint: "unsure: a person decides, not an alarm", tone: reviews > 0 ? "text-review" : "" },
-    { label: "Calls checked", value: finished.length, hint: "every call, not samples", tone: "" },
-    { label: "Processing", value: running, hint: running > 0 ? "analysis running now" : "nothing in the queue", tone: "" },
+    { label: "Alarms", term: "alarm" as Term, value: alarms, hint: "suspicious passages with a reason", tone: alarms > 0 ? "text-alarm" : "" },
+    { label: "To review", term: "review" as Term, value: reviews, hint: "unsure: a person decides, not an alarm", tone: reviews > 0 ? "text-review" : "" },
+    { label: "Calls checked", term: "calls_checked" as Term, value: finished.length, hint: "every call, not samples", tone: "" },
+    { label: "Processing", term: "processing" as Term, value: running, hint: running > 0 ? "analysis running now" : "nothing in the queue", tone: "" },
   ];
   return (
     <dl className="grid grid-cols-2 gap-3 lg:grid-cols-4">
       {items.map((it) => (
         <div key={it.label} className="rounded-2xl border border-border bg-card px-5 py-4">
-          <dt className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{it.label}</dt>
+          <dt className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{it.label}<InfoTip term={it.term} /></dt>
           <dd className={cn("tabular mt-1 text-4xl font-semibold tracking-tight", it.tone)}>{it.value}</dd>
           <dd className="mt-1 text-xs text-muted-foreground">{it.hint}</dd>
         </div>
