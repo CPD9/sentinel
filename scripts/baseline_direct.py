@@ -185,13 +185,17 @@ def run(split: str, provider_name: str, out_dir: Path = PRED_DIR, cache_dir: Pat
         provider = from_env()
         provider.probe()           # fails loudly if the tunnel / vLLM is down
         provider_id = f"llm:{provider.model}"
-    versions = Versions(llm=f"{provider.model}@{provider.model_revision}", prompt=PROMPT_VERSION)
+    if provider_name == "mock":
+        versions = Versions(llm=f"{provider.model}@{provider.model_revision}", prompt=PROMPT_VERSION)
+    else:
+        versions = Versions(**provider.version_info(), prompt=PROMPT_VERSION)
+    provider_key = "mock" if provider_name == "mock" else provider.spec.name
     cache = DiskCache(cache_dir)
     stats = {"calls": 0, "cache_hits": 0, "llm_requests": 0, "stage_errors": 0}
     results = []
     for cid in call_ids:
         messages = build_messages(reference_transcript(cid))
-        key = cache.key({"provider": provider_id, "model": provider.model, "revision": provider.model_revision,
+        key = cache.key({"provider": provider_id, "provider_name": provider_key, "model": provider.model, "revision": provider.model_revision,
                          "prompt_version": PROMPT_VERSION, "runtime": RUNTIME_VERSION, "messages": messages,
                          "temperature": 0.0, "schema": RESPONSE_SCHEMA})
         hit = cache.get(key)

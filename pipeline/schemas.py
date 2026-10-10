@@ -7,7 +7,7 @@ Per call:
   call_id, decision (alarm | review | no_alert), risk_score 0-1, confidence 0-1 (None = not computed),
   findings[] {criterion, risk, reason, evidence[], counter_evidence[]},
   evidence item {segment_ids, start_s, end_s, speaker, text, snippet_path},
-  narrative, stage_errors[] {stage, message}, versions {asr, llm, prompt, rules}.
+  narrative, stage_errors[] {stage, message}, versions {asr, llm, prompt, rules, provider, self_hosted}.
 
 A predictions file (`artifacts/predictions/<run>.json`) wraps the per-call results in a `RunResult`.
 
@@ -96,6 +96,19 @@ class Versions:
     llm: str | None = None
     prompt: str | None = None
     rules: str | None = None
+    provider: str | None = None      # LLM provider name from config/providers.yaml
+    self_hosted: bool | None = None  # False = the LLM ran on a remote provider (fictional data only)
+
+
+def _strip_unset_provenance(d: dict) -> dict:
+    """Omit versions.provider / versions.self_hosted while unset, so artifacts written before the provider
+    registry (and fixtures) stay byte-identical."""
+    for v in ([d.get("versions")] + [c.get("versions") for c in d.get("calls", [])]):
+        if isinstance(v, dict):
+            for k in ("provider", "self_hosted"):
+                if v.get(k, 0) is None:
+                    del v[k]
+    return d
 
 
 @dataclass
@@ -110,7 +123,7 @@ class CallResult:
     versions: Versions = field(default_factory=Versions)
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        return _strip_unset_provenance(asdict(self))
 
     @classmethod
     def from_dict(cls, d: dict) -> "CallResult":
@@ -142,7 +155,10 @@ class RunResult:
     notes: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        d = asdict(self)
+        for c in d["calls"]:
+            _strip_unset_provenance(c)
+        return d
 
     @classmethod
     def from_dict(cls, d: dict) -> "RunResult":
@@ -265,8 +281,13 @@ def validate_call_result(d: Any) -> list[str]:
     if stage_errors and d.get("decision") == "no_alert":
         errs.append("decision is no_alert although stage_errors is non-empty")
     v = d.get("versions", {})
-    if not isinstance(v, dict) or set(v) - {"asr", "llm", "prompt", "rules"}:
-        errs.append("versions must be an object with keys among asr, llm, prompt, rules")
+    if not isinstance(v, dict) or set(v) - {"asr", "llm", "prompt", "rules", "provider", "self_hosted"}:
+        errs.append("versions must be an object with keys among asr, llm, prompt, rules, provider, self_hosted")
+    else:
+        if v.get("provider") is not None and not isinstance(v["provider"], str):
+            errs.append("versions.provider must be a string or null")
+        if v.get("self_hosted") is not None and not isinstance(v["self_hosted"], bool):
+            errs.append("versions.self_hosted must be a boolean or null")
     return errs
 
 
@@ -364,7 +385,7 @@ class _Artifact:
         return _build(cls, d)
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        return _strip_unset_provenance(asdict(self))
 
 
 def _schema_version(d: dict) -> list[str]:

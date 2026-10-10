@@ -6,9 +6,15 @@ Hackathon: Inventx / Outcept case, sprintd Innovation Sprint Zurich, 9–11 Oct 
 Final submission: **Sunday 08:30** (team target 08:15). Feature freeze: **Saturday 23:00**.
 
 ## Hard rules (never break)
-- **Self-hosted only.** No OpenAI, ElevenLabs, AssemblyAI, Deepgram or any cloud inference API in the
-  pipeline — not even for a quick test. The LLM is reached only via `LLM_BASE_URL` (vLLM on our GPU,
-  OpenAI-compatible; possibly Exoscale Dedicated Inference later).
+- **Self-hosted by default; remote LLMs only through the gate.** No OpenAI, ElevenLabs, AssemblyAI, Deepgram or
+  any other cloud inference API, and no cloud ASR, ever. The only LLM routes are the providers in
+  `config/providers.yaml` via `pipeline/llm.py:get_client`; the default is our vLLM (`apertus_aws`, `LLM_BASE_URL`,
+  OpenAI-compatible; possibly Exoscale Dedicated Inference later). A provider with `self_hosted: false`
+  (OpenRouter, Infomaniak) is allowed only if **all** hold: `SENTINEL_ALLOW_REMOTE_LLM=fictional_data_only` is set
+  in the process environment (never in `.env`), the model is on that provider's open-weight allowlist (closed
+  models are rejected), and the data is fictional case data. Real or customer data never goes to a remote
+  provider. The gate raises `ProviderNotPermitted` before any network call. Keys live in `.env` and are never
+  logged, cached or traced. Results record `versions.provider` and `versions.self_hosted`.
 - **Label isolation is structural, not just a promise.**
   - `pipeline/` reads only `artifacts/manifests/inference.json` (neutral call IDs, audio paths,
     variant). It never opens `artifacts/manifests/evaluation.json` or the original label files.
@@ -119,7 +125,9 @@ valid segment refs, timestamps inside the audio, and a playable snippet containi
 Two modes: reference transcripts and real ASR. Never report a metric you didn't just compute.
 
 ## Environment
-- `.env`: `LLM_BASE_URL`, `LLM_MODEL`, `HF_TOKEN`, `ASR_MODEL_PATH`, `DATA_DIR`, `TRIGGER_URL`.
+- `.env`: `LLM_BASE_URL`, `LLM_MODEL`, `HF_TOKEN`, `ASR_MODEL_PATH`, `DATA_DIR`, `TRIGGER_URL`; for providers
+  other than the default also `SENTINEL_LLM_PROVIDER` (a name from `config/providers.yaml`), `OPENROUTER_API_KEY`,
+  `INFOMANIAK_API_TOKEN`, `INFOMANIAK_PRODUCT_ID`. `SENTINEL_ALLOW_REMOTE_LLM` is set per shell, not in `.env`.
 - Python 3.11, venv in `.venv`.
 - Development happens on the laptop. GPU work runs on the Exoscale VM (see `INFRA.md`); the LLM is
   reached from the laptop through an SSH tunnel on `127.0.0.1:8000`.

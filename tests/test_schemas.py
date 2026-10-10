@@ -36,6 +36,18 @@ def test_reference_mode_evidence_without_timestamps_is_valid():
     assert validate_call_result(d) == []
 
 
+def test_versions_provider_fields_roundtrip_and_stay_optional():
+    d = call(versions={"llm": "m@r", "provider": "openrouter", "self_hosted": False})
+    assert CallResult.from_dict(d).versions.self_hosted is False
+    assert CallResult.from_dict(call()).versions.provider is None            # old results stay valid
+    assert validate_call_result(call(versions={"provider": "apertus_aws", "self_hosted": True})) == []
+
+
+@pytest.mark.parametrize("versions", [{"provider": 3}, {"self_hosted": "yes"}, {"self_hosted": 1}])
+def test_versions_provider_fields_are_typed(versions):
+    assert validate_call_result(call(versions=versions))
+
+
 @pytest.mark.parametrize("over, fragment", [
     ({"decision": "maybe"}, "decision"),
     ({"risk_score": 1.5}, "risk_score"),

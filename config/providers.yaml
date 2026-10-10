@@ -1,0 +1,50 @@
+# LLM provider registry (read by pipeline/llm.py). NO SECRETS HERE: only the NAMES of environment variables.
+# Keys are read from os.environ at call time and never logged, cached or traced.
+#
+# Policy gate (pipeline/llm.py, check_permitted): a provider with self_hosted: false is refused BEFORE any network
+# call unless SENTINEL_ALLOW_REMOTE_LLM=fictional_data_only is set in the real process environment (it is
+# deliberately NOT loaded from .env) AND the requested model is listed in that provider's allowed_models
+# (exact IDs, open-weight models only). Real or customer data never goes to a remote provider.
+default: apertus_aws
+
+providers:
+  # Our GPU VM, vLLM through the SSH tunnel on 127.0.0.1:8000 (value of LLM_BASE_URL in .env).
+  apertus_aws:
+    base_url_env: LLM_BASE_URL
+    model_env: LLM_MODEL
+    self_hosted: true
+
+  ollama_local:
+    base_url: http://127.0.0.1:11434/v1
+    self_hosted: true
+
+  # Swiss-hosted OpenAI-compatible API. {INFOMANIAK_PRODUCT_ID} is replaced from the environment at call time.
+  infomaniak:
+    base_url: https://api.infomaniak.com/2/ai/{INFOMANIAK_PRODUCT_ID}/openai/v1
+    key_env: INFOMANIAK_API_TOKEN
+    self_hosted: false
+    region: CH
+    # UNVERIFIED: check against the Infomaniak catalog before relying on these (a wrong ID just fails closed).
+    allowed_models:
+      - llama3
+      - mistral3
+      - qwen3
+
+  openrouter:
+    base_url: https://openrouter.ai/api/v1
+    key_env: OPENROUTER_API_KEY
+    self_hosted: false
+    # data_collection deny: only route to providers that do not retain or train on prompts.
+    # usage include: ask OpenRouter to report the cost in the response (usage.cost).
+    extra_body:
+      provider: {data_collection: deny}
+      usage: {include: true}
+    # Open-weight models only; closed models are rejected by the gate. Exact IDs.
+    # UNVERIFIED until `scripts/llm_smoke.py --provider openrouter --list-models` confirms them.
+    allowed_models:
+      - meta-llama/llama-3.3-70b-instruct
+      - meta-llama/llama-3.1-8b-instruct
+      - qwen/qwen-2.5-72b-instruct
+      - qwen/qwen3-32b
+      - mistralai/mistral-nemo
+      - mistralai/mistral-small-3.2-24b-instruct

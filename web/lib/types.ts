@@ -57,7 +57,7 @@ export interface Finding {
   counter_evidence: Evidence[];
 }
 export interface StageError { stage: string; message: string }
-export interface Versions { asr: string | null; llm: string | null; prompt: string | null; rules: string | null }
+export interface Versions { asr: string | null; llm: string | null; prompt: string | null; rules: string | null; provider: string | null; self_hosted: boolean | null }
 export interface CallResult {
   call_id: string;
   decision: Decision;
