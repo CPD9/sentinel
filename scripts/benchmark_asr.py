@@ -170,21 +170,36 @@ class VramPoller:
 
 # --------------------------------------------------------------------------- decoding
 
-def decode_cached(model, asr_model: str, audio: Path, device: str, force: bool = False) -> tuple[dict, float, bool]:
-    """(raw, elapsed_s, from_cache). Same cache file layout as pipeline/asr.py."""
+RTF_NOT_MEASURED = "not measured in this config"
+
+
+def warm_up(model) -> int:
+    """Decode 5 s of silence so the first call's RTF excludes kernel set-up. faster-whisper returns a lazy
+    generator, so it must be consumed; VAD is off because it would drop silence and skip the decode."""
+    import numpy as np
+    segments, _ = model.transcribe(np.zeros(16000 * 5, dtype="float32"), language="de", beam_size=1,
+                                   vad_filter=False)
+    return len(list(segments))
+
+
+def decode_cached(model, asr_model: str, audio: Path, timing: dict,
+                  force: bool = False) -> tuple[dict, float | None, bool]:
+    """(raw, elapsed_s, from_cache). Same cache files as pipeline/asr.py. A cached hypothesis is always
+    reused; its elapsed time only if it was measured with this device + compute_type + host, else None."""
     cp = asr.CACHE_DIR / f"{asr.cache_key(asr._sha256(audio), asr_model)}.json"
     if cp.is_file() and not force:
         c = _load(cp)
-        return c["raw"], c["elapsed_s"], True
+        return c["raw"], asr.cached_elapsed(c, timing), True
     m = model()                      # load + warm-up stay outside the timed decode
     t0 = time.perf_counter()
     raw = asr.decode(m, audio)
     elapsed = time.perf_counter() - t0
-    cp.parent.mkdir(parents=True, exist_ok=True)
-    cp.write_text(json.dumps({"asr_model": asr_model, "decode": asr.DECODE, "asr_version": asr.ASR_VERSION,
-                              "device": device, "elapsed_s": round(elapsed, 3), "raw": raw},
-                             ensure_ascii=False) + "\n", encoding="utf-8")
+    asr.write_cache(cp, asr_model, raw, elapsed, timing)
     return raw, elapsed, False
+
+
+def _r(x: float | None, n: int = 3) -> float | None:
+    return None if x is None else round(x, n)
 
 
 def _hyp(raw: dict) -> str:
@@ -201,33 +216,42 @@ def summarise(rows: list[dict]) -> dict:
         return {}
     kp, kt = sum(r["keywords"]["presence_hits"] for r in rows), sum(r["keywords"]["presence_total"] for r in rows)
     op, ot = sum(r["keywords"]["occurrence_hits"] for r in rows), sum(r["keywords"]["occurrence_total"] for r in rows)
-    fresh = [r for r in rows if not r["cached"]]
-    rtf_rows = fresh or rows
+    timed = [r for r in rows if r["elapsed_s"] is not None]
     return {
         "n": len(rows),
         "wer": _pooled(rows, "word_errors"), "cer": _pooled(rows, "char_errors"),
         "keyword_recall": round(kp / kt, 4) if kt else None, "keyword_presence": [kp, kt],
         "keyword_occurrence_recall": round(op / ot, 4) if ot else None,
-        "rtf": round(sum(r["elapsed_s"] for r in rtf_rows) / sum(r["duration_s"] for r in rtf_rows), 4),
+        "rtf": round(sum(r["elapsed_s"] for r in timed) / sum(r["duration_s"] for r in timed), 4) if timed else None,
+        "rtf_n": len(timed),
+        **({} if timed else {"rtf_note": RTF_NOT_MEASURED}),
         "timestamps_ok_frac": round(sum(r["timestamps"]["ok"] for r in rows) / len(rows), 4),
     }
 
 
 def pick_winner(models: dict, vram_budget_mb: int | None) -> dict:
-    cands = []
+    cands, excluded = [], {}
     for name, m in models.items():
         s = m.get("summary") or {}
         if m.get("error") or s.get("keyword_recall") is None:
             continue
-        if vram_budget_mb and m.get("peak_vram_mb") and m["peak_vram_mb"] > vram_budget_mb:
-            continue
+        if vram_budget_mb:
+            # Under a budget, only a model that was loaded and measured here can be shown to fit.
+            vram = m.get("peak_vram_mb") if m.get("vram_measured") else None
+            if not vram:
+                excluded[name] = "VRAM not measured (model not loaded in this run, or no GPU)"
+                continue
+            if vram > vram_budget_mb:
+                excluded[name] = f"peak VRAM {vram} MiB > {vram_budget_mb} MiB"
+                continue
         cands.append((name, s))
     if not cands:
-        return {"model": None, "rule": "no eligible model"}
+        return {"model": None, "rule": "no eligible model", "excluded": excluded}
     best_recall = max(s["keyword_recall"] for _, s in cands)
     tied = [(n, s) for n, s in cands if s["keyword_recall"] >= best_recall - TIE_RECALL]
-    tied.sort(key=lambda x: (x[1]["wer"] if x[1]["wer"] is not None else 9, x[1]["rtf"]))
-    return {"model": tied[0][0], "tied_on_recall": [n for n, _ in tied],
+    tied.sort(key=lambda x: (x[1]["wer"] if x[1]["wer"] is not None else 9,
+                             x[1]["rtf"] if x[1]["rtf"] is not None else float("inf")))
+    return {"model": tied[0][0], "tied_on_recall": [n for n, _ in tied], "excluded": excluded,
             "rule": f"max keyword recall; within {TIE_RECALL:.0%} -> lowest WER, then lowest RTF"
                     + (f"; peak VRAM <= {vram_budget_mb} MiB" if vram_budget_mb else "")}
 
@@ -248,10 +272,12 @@ def run(args) -> dict:
         swiss = [u for u in swiss if u["sentence_id"] in keep]
     device = args.device or asr.default_device()[0]
     compute_type = args.compute_type or ("float16" if device == "cuda" else "int8")
-    print(f"device={device}/{compute_type}  calls={call_ids}  swissdial={len(swiss)} utts  models={specs}", flush=True)
+    timing = asr.timing_config(device, compute_type)
+    print(f"device={device}/{compute_type} host={timing['host']}  calls={call_ids}  swissdial={len(swiss)} utts  "
+          f"models={specs}", flush=True)
 
     result = {"created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "seed": args.seed,
-              "device": device, "compute_type": compute_type, "decode": asr.DECODE,
+              **timing, "decode": asr.DECODE,
               "asr_version": asr.ASR_VERSION, "selection": {"all_dev": args.all_dev, "dialogues": dialogues,
                                                              "call_ids": call_ids},
               "keywords_source": str(KEYWORDS_FILE.relative_to(REPO_ROOT)), "models": {}}
@@ -273,21 +299,21 @@ def run(args) -> dict:
                 t0 = time.perf_counter()
                 holder["m"] = asr.load_model(model_dir, device, compute_type)
                 entry["load_s"] = round(time.perf_counter() - t0, 2)
-                import numpy as np   # warm-up so the first call's RTF excludes kernel set-up
-                holder["m"].transcribe(np.zeros(16000 * 5, dtype="float32"), language="de", beam_size=1)
+                warm_up(holder["m"])
             return holder["m"]
 
         rows, srows = [], []
         try:
             for cid in call_ids:
                 audio = REPO_ROOT / inference[cid]["audio_path"]
-                raw, elapsed, cached = decode_cached(model, asr_model, audio, device, args.force)
+                raw, elapsed, cached = decode_cached(model, asr_model, audio, timing, args.force)
                 ref = " ".join(t["text"] for t in reference[cid])
                 hyp = _hyp(raw)
                 dur = inference[cid]["duration_s"]
                 rows.append({
                     "call_id": cid, "variant": inference[cid]["variant"], "duration_s": dur,
-                    "elapsed_s": round(elapsed, 3), "rtf": round(elapsed / dur, 4), "cached": cached,
+                    "elapsed_s": _r(elapsed), "rtf": _r(None if elapsed is None else elapsed / dur, 4),
+                    **({} if elapsed is not None else {"rtf_note": RTF_NOT_MEASURED}), "cached": cached,
                     "wer": wer(ref, hyp), "cer": cer(ref, hyp),
                     "word_errors": list(error_counts(ref, hyp, "word")),
                     "char_errors": list(error_counts(ref, hyp, "char")),
@@ -298,12 +324,13 @@ def run(args) -> dict:
                 r = rows[-1]
                 print(f"[{spec}] {cid} {r['variant']:5s} WER {r['wer']:.3f} CER {r['cer']:.3f} "
                       f"kw {r['keywords']['presence_hits']}/{r['keywords']['presence_total']} "
-                      f"RTF {r['rtf']:.3f}{' (cached)' if cached else ''} ts_ok={r['timestamps']['ok']}", flush=True)
+                      f"RTF {RTF_NOT_MEASURED if r['rtf'] is None else format(r['rtf'], '.3f')}"
+                      f"{' (cached)' if cached else ''} ts_ok={r['timestamps']['ok']}", flush=True)
             for u in swiss:
                 audio = REPO_ROOT / u["audio_path"]
-                raw, elapsed, cached = decode_cached(model, asr_model, audio, device, args.force)
+                raw, elapsed, cached = decode_cached(model, asr_model, audio, timing, args.force)
                 hyp = _hyp(raw)
-                srows.append({"utt_id": u["utt_id"], "dialect": u["dialect"], "elapsed_s": round(elapsed, 3),
+                srows.append({"utt_id": u["utt_id"], "dialect": u["dialect"], "elapsed_s": _r(elapsed),
                               "cached": cached, "hypothesis": hyp,
                               "de_word_errors": list(error_counts(u["ref_de"], hyp, "word")),
                               "de_char_errors": list(error_counts(u["ref_de"], hyp, "char")),
@@ -314,6 +341,7 @@ def run(args) -> dict:
             print(f"[{spec}] {entry['error']}", flush=True)
         finally:
             entry["peak_vram_mb"] = vram.stop()
+            entry["vram_measured"] = "m" in holder and entry["peak_vram_mb"] is not None
             holder.clear()
             asr.load_model.cache_clear()
 

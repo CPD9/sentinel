@@ -2,6 +2,7 @@
   "call_id": "call_MOCK_002",
   "duration_s": 96.4,
   "sample_rate": 16000,
+  "audio_sha256": null,
   "evidence_windows": [
     {
       "start_s": 6.5,

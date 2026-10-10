@@ -13,6 +13,7 @@ Label isolation: reads only artifacts/manifests/inference.json (neutral call ids
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 import time
@@ -208,13 +209,21 @@ def load_audio(path: Path) -> tuple[np.ndarray, int]:
     return y.mean(axis=1), int(sr)
 
 
+def sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with Path(path).open("rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
 def analyze_call(audio_path: str | Path, call_id: str) -> AnalysisArtifact:
     path = Path(audio_path)
     if not path.is_absolute():
         path = REPO_ROOT / path
     y, sr = load_audio(path)
     duration = round(len(y) / sr, 3)
-    art = AnalysisArtifact(call_id=call_id, duration_s=duration, sample_rate=sr,
+    art = AnalysisArtifact(call_id=call_id, duration_s=duration, sample_rate=sr, audio_sha256=sha256_file(path),
                            versions=AnalysisVersions(analysis=ANALYSIS_VERSION, asr=None))
     errors: list[StageError] = []
 
@@ -268,17 +277,24 @@ def analysis_path(call_id: str, out_dir: Path = OUT_DIR) -> Path:
 
 
 def load_or_init_analysis(call_id: str, duration_s: float, sample_rate: int,
-                          out_dir: Path = OUT_DIR) -> AnalysisArtifact:
+                          out_dir: Path = OUT_DIR, audio_sha256: str | None = None) -> AnalysisArtifact:
     """The call's existing artifact (validated), or an empty one. Other stages merge their block into
-    it and call save_analysis, so blocks written by different stages coexist."""
+    it and call save_analysis, so blocks written by different stages coexist. An existing artifact
+    whose audio_sha256 differs from the given one describes other audio: it is replaced, not merged."""
     p = analysis_path(call_id, out_dir)
     if p.is_file():
         art = AnalysisArtifact.from_dict(json.loads(p.read_text(encoding="utf-8")))
-        if abs(art.duration_s - duration_s) > 0.05 or art.sample_rate != sample_rate:
+        if audio_sha256 is not None and art.audio_sha256 != audio_sha256:
+            print(f"{call_id}: existing analysis has audio_sha256 {str(art.audio_sha256)[:12]}, audio is "
+                  f"{audio_sha256[:12]}; starting a fresh artifact", file=sys.stderr)
+        elif abs(art.duration_s - duration_s) > 0.05 or art.sample_rate != sample_rate:
             raise ValueError(f"{call_id}: existing analysis is for other audio "
                              f"({art.duration_s} s @ {art.sample_rate} Hz vs {duration_s} s @ {sample_rate} Hz)")
-        return art
-    return AnalysisArtifact(call_id=call_id, duration_s=duration_s, sample_rate=sample_rate)
+        else:
+            art.audio_sha256 = audio_sha256 or art.audio_sha256
+            return art
+    return AnalysisArtifact(call_id=call_id, duration_s=duration_s, sample_rate=sample_rate,
+                            audio_sha256=audio_sha256)
 
 
 def save_analysis(art: AnalysisArtifact, out_dir: Path = OUT_DIR) -> Path:
@@ -295,7 +311,17 @@ def save_analysis(art: AnalysisArtifact, out_dir: Path = OUT_DIR) -> Path:
     return p
 
 
-def _carry_over_asr(fresh: AnalysisArtifact, old: AnalysisArtifact) -> None:
+def _carry_over_asr(fresh: AnalysisArtifact, old: AnalysisArtifact) -> bool:
+    """Copy ASR-owned blocks from `old` only if both were computed from the same audio (sha256).
+    Otherwise (other audio, or an old artifact without a hash) drop them and log. True = carried over."""
+    has_asr = any(getattr(old, n) is not None for n in ASR_BLOCKS) or old.versions.asr
+    if not has_asr:
+        return False
+    if old.audio_sha256 is None or old.audio_sha256 != fresh.audio_sha256:
+        print(f"{fresh.call_id}: dropping ASR blocks {', '.join(n for n in ASR_BLOCKS if getattr(old, n) is not None)} "
+              f"(audio_sha256 {str(old.audio_sha256)[:12]} != {str(fresh.audio_sha256)[:12]}); re-run pipeline.asr",
+              file=sys.stderr)
+        return False
     for name in ASR_BLOCKS:
         if getattr(old, name) is not None:
             setattr(fresh, name, getattr(old, name))
@@ -303,6 +329,7 @@ def _carry_over_asr(fresh: AnalysisArtifact, old: AnalysisArtifact) -> None:
     fresh.stage_errors += [e for e in old.stage_errors if e.stage.startswith("asr")]
     if old.speech_rate is not None:
         fresh.stage_errors = [e for e in fresh.stage_errors if e.stage != "analysis.speech_rate"]
+    return True
 
 
 def render_png(art: AnalysisArtifact, audio_path: str | Path, out_path: Path) -> None:
@@ -393,7 +420,10 @@ def run(split: str | None = None, call_ids: list[str] | None = None, force: bool
     for cid in call_ids:
         target = analysis_path(cid, out_dir)
         old = AnalysisArtifact.from_dict(json.loads(target.read_text(encoding="utf-8"))) if target.exists() else None
-        if old is not None and old.versions.analysis == ANALYSIS_VERSION and not force:
+        audio = Path(index[cid]["audio_path"])
+        sha = sha256_file(audio if audio.is_absolute() else REPO_ROOT / audio)
+        if (old is not None and old.versions.analysis == ANALYSIS_VERSION and old.audio_sha256 == sha
+                and not force):
             rows.append({"call_id": cid, "skipped": True})
             continue
         t0 = time.perf_counter()

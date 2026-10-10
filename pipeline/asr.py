@@ -20,6 +20,7 @@ import functools
 import hashlib
 import json
 import os
+import socket
 import sys
 import time
 from pathlib import Path
@@ -128,6 +129,27 @@ def _sha256(path: Path) -> str:
     return h.hexdigest()
 
 
+def timing_config(device: str, compute_type: str) -> dict:
+    """Where a decode was timed. Caches from teammates' CPUs and GPUs get merged, so an elapsed time
+    is only comparable when all three match (the hypothesis itself is valid everywhere)."""
+    return {"device": device, "compute_type": compute_type, "host": socket.gethostname()}
+
+
+def write_cache(path: Path, asr_model: str, raw: dict, elapsed_s: float, timing: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps({"asr_model": asr_model, "decode": DECODE, "asr_version": ASR_VERSION,
+                               **timing, "elapsed_s": round(elapsed_s, 3), "raw": raw},
+                              ensure_ascii=False) + "\n", encoding="utf-8")
+    tmp.replace(path)
+
+
+def cached_elapsed(entry: dict, timing: dict) -> float | None:
+    """The entry's decode time if it was measured in exactly this timing config, else None."""
+    same = all(entry.get(k) == v for k, v in timing.items())
+    return entry.get("elapsed_s") if same else None
+
+
 def cache_key(audio_sha: str, asr_model: str, decode: dict = DECODE) -> str:
     blob = json.dumps({"audio": audio_sha, "model": asr_model, "decode": decode, "v": ASR_VERSION},
                       sort_keys=True)
@@ -162,7 +184,7 @@ def asr_confidence(t: Transcript) -> AsrConfidence:
 
 
 def write_outputs(t: Transcript, sample_rate: int, transcripts_dir: Path = TRANSCRIPTS_DIR,
-                  analysis_dir: Path | None = None) -> tuple[Path, Path]:
+                  analysis_dir: Path | None = None, audio_sha256: str | None = None) -> tuple[Path, Path]:
     from pipeline import audio_analysis as aa
     d = t.to_dict()
     errs = Transcript.validate(d)
@@ -173,7 +195,7 @@ def write_outputs(t: Transcript, sample_rate: int, transcripts_dir: Path = TRANS
     tp.write_text(json.dumps(d, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
     analysis_dir = analysis_dir or aa.OUT_DIR
-    art = aa.load_or_init_analysis(t.call_id, t.duration_s, sample_rate, analysis_dir)
+    art = aa.load_or_init_analysis(t.call_id, t.duration_s, sample_rate, analysis_dir, audio_sha256)
     art.asr_confidence = asr_confidence(t)
     art.versions.asr = t.asr_model
     art.stage_errors = [e for e in art.stage_errors if not e.stage.startswith("asr")]
@@ -193,7 +215,8 @@ def transcribe(audio_path: str | Path, call_id: str, model_spec: str | None = No
         raise AsrError(f"audio not found: {path}")
     duration_s, sample_rate = audio_info(path)
     model_dir, asr_model = resolve_model(model_spec)
-    cp = cache_dir / f"{cache_key(_sha256(path), asr_model)}.json"
+    audio_sha = _sha256(path)
+    cp = cache_dir / f"{cache_key(audio_sha, asr_model)}.json"
     if cp.is_file() and not force:
         raw = json.loads(cp.read_text(encoding="utf-8"))["raw"]
     else:
@@ -202,15 +225,11 @@ def transcribe(audio_path: str | Path, call_id: str, model_spec: str | None = No
         compute_type = compute_type or ("float16" if device == "cuda" else "int8")
         t0 = time.perf_counter()
         raw = decode(load_model(model_dir, device, compute_type), path)
-        elapsed = time.perf_counter() - t0
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        cp.write_text(json.dumps({"asr_model": asr_model, "decode": DECODE, "asr_version": ASR_VERSION,
-                                  "device": device, "elapsed_s": round(elapsed, 2), "raw": raw},
-                                 ensure_ascii=False) + "\n", encoding="utf-8")
+        write_cache(cp, asr_model, raw, time.perf_counter() - t0, timing_config(device, compute_type))
     t = to_transcript(call_id, raw, duration_s, asr_model)
     if not t.segments:
         raise AsrError(f"{call_id}: ASR produced no usable segments")
-    write_outputs(t, sample_rate, transcripts_dir, analysis_dir)
+    write_outputs(t, sample_rate, transcripts_dir, analysis_dir, audio_sha)
     return t
 
 

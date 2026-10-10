@@ -26,6 +26,7 @@ RunResult above keep their hand-written validators.
 from __future__ import annotations
 
 import functools
+import re
 import types
 from dataclasses import MISSING, asdict, dataclass, field, fields, is_dataclass
 from typing import Any, Union, get_args, get_origin, get_type_hints
@@ -743,6 +744,7 @@ class AnalysisArtifact(_Artifact):
     call_id: str
     duration_s: float
     sample_rate: int
+    audio_sha256: str | None = None      # identifies the audio the blocks were computed from
     evidence_windows: list[EvidenceWindow] = field(default_factory=list)
     waveform_peaks: WaveformPeaks | None = None
     mel_spectrogram: MelSpectrogram | None = None
@@ -767,6 +769,8 @@ class AnalysisArtifact(_Artifact):
         dur = d["duration_s"]
         if dur <= 0 or d["sample_rate"] <= 0:
             return errs + ["duration_s and sample_rate must be positive"]
+        if (h := d.get("audio_sha256")) is not None and not re.fullmatch(r"[0-9a-f]{64}", h):
+            errs.append("audio_sha256 must be 64 lowercase hex characters")
         for i, w in enumerate(d.get("evidence_windows", [])):
             errs += _span(w["start_s"], w["end_s"], dur, f"evidence_windows[{i}]")
             errs += _enum(w["criterion"], CRITERIA, f"evidence_windows[{i}].criterion")

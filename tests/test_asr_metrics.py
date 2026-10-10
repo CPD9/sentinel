@@ -140,8 +140,72 @@ def test_pick_winner_rule(bench):
               "d": {"error": "x", "summary": {}}}
     w = bench.pick_winner(models, None)
     assert w["model"] == "b" and set(w["tied_on_recall"]) == {"a", "b"}
-    models["b"]["peak_vram_mb"] = 20000
+    models["a"].update(peak_vram_mb=9000, vram_measured=True)
+    models["b"].update(peak_vram_mb=20000, vram_measured=True)
     assert bench.pick_winner(models, 16000)["model"] == "a"
+
+
+def test_vram_budget_excludes_unmeasured(bench):
+    s = lambda kw, **m: {"summary": {"keyword_recall": kw, "wer": 0.5, "rtf": 0.1}, **m}  # noqa: E731
+    models = {"cached_only": s(0.99, peak_vram_mb=None, vram_measured=False),   # never loaded
+              "zero": s(0.98, peak_vram_mb=0, vram_measured=True),               # poller saw nothing
+              "measured": s(0.80, peak_vram_mb=6000, vram_measured=True)}
+    w = bench.pick_winner(models, 16000)
+    assert w["model"] == "measured" and set(w["excluded"]) == {"cached_only", "zero"}
+    assert bench.pick_winner(models, None)["model"] == "cached_only"     # no budget: VRAM not required
+
+
+def _row(elapsed, dur=100.0):
+    return {"elapsed_s": elapsed, "duration_s": dur, "cached": elapsed is None, "word_errors": [1, 10],
+            "char_errors": [1, 50], "timestamps": {"ok": True},
+            "keywords": {"presence_hits": 1, "presence_total": 1, "occurrence_hits": 1, "occurrence_total": 1}}
+
+
+def test_rtf_only_from_rows_timed_in_this_config(bench):
+    s = bench.summarise([_row(50.0), _row(None)])
+    assert s["rtf"] == 0.5 and s["rtf_n"] == 1 and s["wer"] == 0.1      # untimed row still counts for WER
+    s = bench.summarise([_row(None), _row(None)])
+    assert s["rtf"] is None and s["rtf_note"] == bench.RTF_NOT_MEASURED
+    models = {"timed": {"summary": {"keyword_recall": 0.9, "wer": 0.4, "rtf": 0.3}},
+              "untimed": {"summary": {"keyword_recall": 0.9, "wer": 0.4, "rtf": None}}}
+    assert bench.pick_winner(models, None)["model"] == "timed"
+
+
+def test_decode_cached_reports_timing_only_for_same_config(bench, tmp_path, monkeypatch):
+    from pipeline import asr
+    monkeypatch.setattr(asr, "CACHE_DIR", tmp_path)
+    audio = tmp_path / "a.wav"
+    audio.write_bytes(b"RIFF fake")
+    monkeypatch.setattr(asr, "decode", lambda m, a: {"segments": [], "language": "de"})
+    loads = []
+    model = lambda: loads.append(1) or "MOCK-model"  # noqa: E731
+    gpu = {"device": "cuda", "compute_type": "float16", "host": "aws-gpu"}
+    raw, elapsed, cached = bench.decode_cached(model, "m@1", audio, gpu)
+    assert not cached and elapsed is not None and len(loads) == 1
+    entry = json.loads(next(tmp_path.glob("*.json")).read_text())
+    assert {k: entry[k] for k in gpu} == gpu                          # config stored with the decode
+    assert bench.decode_cached(model, "m@1", audio, gpu)[1:] == (entry["elapsed_s"], True)
+    for other in ({**gpu, "host": "laptop"}, {**gpu, "compute_type": "int8"}, {**gpu, "device": "cpu"}):
+        raw2, elapsed2, cached2 = bench.decode_cached(model, "m@1", audio, other)
+        assert cached2 and elapsed2 is None and raw2 == raw           # hypothesis reused, timing not
+    assert len(loads) == 1                                            # a cache hit never loads the model
+    legacy = {k: v for k, v in entry.items() if k not in ("compute_type", "host")}
+    next(tmp_path.glob("*.json")).write_text(json.dumps(legacy))      # pre-fix entry without config
+    assert bench.decode_cached(model, "m@1", audio, gpu)[1] is None
+
+
+def test_warmup_consumes_segment_generator(bench):
+    decoded = []
+
+    class MockModel:   # MOCK: faster-whisper decodes only while its segment generator is consumed
+        def transcribe(self, audio, **kw):
+            assert kw["vad_filter"] is False and len(audio) == 16000 * 5
+            def gen():
+                decoded.append("decoded")
+                yield "seg"
+            return gen(), None
+
+    assert bench.warm_up(MockModel()) == 1 and decoded == ["decoded"]
 
 
 # --------------------------------------------------------------------------- SwissDial sampler

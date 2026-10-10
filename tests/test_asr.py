@@ -108,6 +108,62 @@ def test_cpu_reanalysis_keeps_asr_block(env, monkeypatch):
     assert aa.run(call_ids=["call_t01"], out_dir=an, png=False)[0]["skipped"]
 
 
+def _run_cpu(env, monkeypatch):
+    monkeypatch.setattr(aa, "_inference_index", lambda: {"call_t01": {"audio_path": str(env.wav)}})
+    monkeypatch.setattr(aa, "SPLITS_FILE", env.tmp / "splits.json")
+    (env.tmp / "splits.json").write_text(json.dumps({"splits": {"test": {"call_ids": []}}}))
+    return aa.run(call_ids=["call_t01"], out_dir=env.dirs["analysis_dir"], png=False)
+
+
+def _analysis(env):
+    return json.loads((env.dirs["analysis_dir"] / "call_t01" / "analysis.json").read_text())
+
+
+def test_audio_sha256_stored_by_both_stages(env):
+    sha = aa.sha256_file(env.wav)
+    asr.transcribe(env.wav, "call_t01", model_spec=env.model, **env.dirs)
+    assert _analysis(env)["audio_sha256"] == sha
+    assert aa.analyze_call(env.wav, "call_t01").audio_sha256 == sha
+
+
+def test_asr_blocks_dropped_when_audio_changed(env, monkeypatch, capsys):
+    asr.transcribe(env.wav, "call_t01", model_spec=env.model, **env.dirs)
+    old_sha = _analysis(env)["audio_sha256"]
+    rng = np.random.default_rng(0)       # same duration + rate, different content
+    sf.write(env.wav, (0.01 * rng.standard_normal(SR * 10)).astype(np.float32), SR, subtype="PCM_16")
+    rows = _run_cpu(env, monkeypatch)
+    d = _analysis(env)
+    assert not rows[0].get("skipped") and d["audio_sha256"] != old_sha
+    assert d["asr_confidence"] is None and d["versions"]["asr"] is None and d["waveform_peaks"]
+    assert "dropping ASR blocks asr_confidence" in capsys.readouterr().err
+
+
+def test_asr_blocks_dropped_from_artifact_without_hash(env, monkeypatch, capsys):
+    asr.transcribe(env.wav, "call_t01", model_spec=env.model, **env.dirs)
+    p = env.dirs["analysis_dir"] / "call_t01" / "analysis.json"
+    legacy = {**_analysis(env), "audio_sha256": None}
+    p.write_text(json.dumps(legacy))
+    _run_cpu(env, monkeypatch)
+    assert _analysis(env)["asr_confidence"] is None and "dropping ASR blocks" in capsys.readouterr().err
+
+
+def test_asr_merge_replaces_artifact_of_other_audio(env, capsys):
+    other = AnalysisArtifact(call_id="call_t01", duration_s=10.0, sample_rate=SR, audio_sha256="0" * 64)
+    other.energy = aa.analyze_call(env.wav, "call_t01").energy
+    aa.save_analysis(other, env.dirs["analysis_dir"])
+    asr.transcribe(env.wav, "call_t01", model_spec=env.model, **env.dirs)
+    d = _analysis(env)
+    assert d["audio_sha256"] == aa.sha256_file(env.wav) and d["energy"] is None and d["asr_confidence"]
+    assert "starting a fresh artifact" in capsys.readouterr().err
+
+
+def test_schema_rejects_malformed_audio_sha256():
+    base = {"call_id": "c", "duration_s": 1.0, "sample_rate": SR}
+    assert AnalysisArtifact.validate({**base, "audio_sha256": "a" * 64}) == []
+    assert AnalysisArtifact.validate(base) == []                       # optional: old artifacts stay valid
+    assert AnalysisArtifact.validate({**base, "audio_sha256": "ABC"})
+
+
 def test_load_or_init_rejects_other_audio(tmp_path):
     aa.save_analysis(AnalysisArtifact(call_id="c", duration_s=10.0, sample_rate=SR), tmp_path)
     assert aa.load_or_init_analysis("c", 10.0, SR, tmp_path).duration_s == 10.0
