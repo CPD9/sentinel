@@ -14,7 +14,6 @@ from __future__ import annotations
 import importlib
 from pathlib import Path
 
-from pipeline import audio_analysis as aa
 from pipeline import decide as dec
 from pipeline.reference import reference_transcript
 from pipeline.schemas import (AnalysisArtifact, DecisionTrace, EvidenceWindow, Evidence, Fact, Finding, StageError,
@@ -30,8 +29,13 @@ def _err(stage: str, exc: BaseException) -> list[StageError]:
 
 # --------------------------------------------------------------------------- analysis, transcript
 
+# pipeline.audio_analysis needs numpy (requirements-analysis.txt). It is optional, so it is imported inside the
+# functions below: a missing dependency becomes a recorded analysis error, never an ImportError at import time.
+
 def load_analysis(call_id: str, analysis_dir: Path) -> AnalysisArtifact | None:
     import json
+
+    from pipeline import audio_analysis as aa
     p = aa.analysis_path(call_id, analysis_dir)
     try:
         return AnalysisArtifact.from_dict(json.loads(p.read_text(encoding="utf-8")))
@@ -44,6 +48,7 @@ def run_analysis(audio_path: str | Path, call_id: str, analysis_dir: Path
     """CPU audio analysis; reuses the stored artifact when audio hash and analysis version match.
     Returns (artifact, errors, cached). Optional stage: its errors never touch the decision."""
     try:
+        from pipeline import audio_analysis as aa
         path = Path(audio_path)
         if not path.is_absolute():
             path = aa.REPO_ROOT / path
@@ -164,6 +169,7 @@ def add_evidence_windows(art: AnalysisArtifact | None, findings: list[Finding], 
     if art is None:
         return []
     try:
+        from pipeline import audio_analysis as aa
         wins = [EvidenceWindow(e.start_s, min(e.end_s, art.duration_s), f.criterion, fi, ei)
                 for fi, f in enumerate(findings) for ei, e in enumerate(f.evidence)
                 if e.start_s is not None and e.start_s < art.duration_s]
