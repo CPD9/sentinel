@@ -1,0 +1,15 @@
+// Tab definitions in one place (pattern from Leadership-Demo lib/tab-config.ts).
+export const CALL_TABS = [
+  { value: "summary", label: "Summary" },
+  { value: "evidence", label: "Evidence" },
+  { value: "transcript", label: "Transcript" },
+  { value: "audio", label: "Audio analysis" },
+  { value: "reasoning", label: "Reasoning" },
+  { value: "audit", label: "Audit" },
+] as const;
+export type TabValue = (typeof CALL_TABS)[number]["value"];
+export const isTab = (v: string | undefined): v is TabValue => CALL_TABS.some((t) => t.value === v);
+
+/** Display-only heuristic for dimming low-confidence ASR text. It does not feed any decision. */
+export const ASR_LOW_LOGPROB = -0.45;
+export const ASR_HIGH_NO_SPEECH = 0.25;

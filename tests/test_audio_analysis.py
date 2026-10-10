@@ -4,9 +4,9 @@ import re
 import time
 from pathlib import Path
 
-import numpy as np
 import pytest
 
+np = pytest.importorskip("numpy")
 pytest.importorskip("librosa")
 pytest.importorskip("soundfile")
 import soundfile as sf  # noqa: E402
@@ -137,3 +137,19 @@ def test_real_call_valid_and_size():
     assert AnalysisArtifact.validate(d) == []
     assert len(json.dumps(d)) < 400_000
     assert art.audio_quality and art.speech_activity.intervals
+
+
+def test_mel_times_match_true_bin_width(clean):
+    """Regression: 16 kHz groups 16 frames (0.512 s) per column; times must advance by that, not by 0.5 s."""
+    m = aa.analyze_call(clean, "x").mel_spectrogram
+    steps = np.diff(m.times_s[:-1])
+    assert steps.size and np.allclose(steps, 16 * aa.MEL_HOP / SR, atol=2e-3)
+
+
+@pytest.mark.skipif(not aa.SPLITS_FILE.exists(), reason="splits not available")
+def test_test_split_is_locked(tmp_path):
+    test_id = json.loads(aa.SPLITS_FILE.read_text())["splits"]["test"]["call_ids"][0]
+    with pytest.raises(SystemExit):
+        aa.run(call_ids=[test_id], out_dir=tmp_path)           # explicit id must not bypass the lock
+    with pytest.raises(SystemExit):
+        aa.run(split="test", out_dir=tmp_path)

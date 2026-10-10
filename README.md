@@ -59,7 +59,7 @@ Banks record client phone calls, but people can only listen to a small sample of
 | `run.sh` command line | `./run.sh <folder>` produces `out/results.json` and snippets | ⬜ |
 | Audio analysis | Waveform, spectrogram, quality score for the UI | 🟡 |
 | API service | FastAPI, job queue, live events | 📐 |
-| Web app | Inbox, call dashboard, settings, quality lab | 📐 |
+| Web app | Inbox, call dashboard, settings, quality lab ([`web/`](web/README.md)) | 🟡 all screens built and shown with MOCK fixtures; not yet run against the real API |
 
 ## Team
 
@@ -132,7 +132,8 @@ scripts/           prepare_data.py, baseline_direct.py
 tests/             pytest suite
 data/              case data, read-only, gitignored
 artifacts/         manifests, splits, cache, predictions, metrics, gitignored
-config/ services/ web/ run.sh      planned, not created yet
+web/               Next.js app (fixtures mode and api mode)
+config/ services/ run.sh      planned, not created yet
 ```
 
 ## Documentation
@@ -141,6 +142,8 @@ config/ services/ web/ run.sh      planned, not created yet
 - [docs/PRODUCT.md](docs/PRODUCT.md): what each screen shows and which JSON field feeds it
 - [docs/API.md](docs/API.md): endpoints, events, settings, error shapes
 - [fixtures/README.md](fixtures/README.md): the MOCK data and how to regenerate it
+- [web/README.md](web/README.md): running the web app
+- [docs/REFERENCE_NOTES.md](docs/REFERENCE_NOTES.md): which reference code the web app adapts, and what it drops
 
 ## Data policy
 

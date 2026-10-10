@@ -35,10 +35,13 @@ def auc(score: np.ndarray, pos: np.ndarray) -> float:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--split", default="dev")
+    ap.add_argument("--split", default="dev", choices=["dev", "holdout", "test"])
+    ap.add_argument("--allow-test", action="store_true", help="final run only: the test split is locked")
     ap.add_argument("--resamples", type=int, default=2000)
     ap.add_argument("--seed", type=int, default=0)
     a = ap.parse_args(argv)
+    if a.split == "test" and not a.allow_test:
+        raise SystemExit("the test split is locked; pass --allow-test only for the final run")
 
     variant = {c["call_id"]: c["variant"] for c in json.loads(INFERENCE.read_text())["calls"]}
     groups = json.loads(SPLITS.read_text())["splits"][a.split]["groups"]

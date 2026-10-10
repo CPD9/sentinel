@@ -146,8 +146,9 @@ def _mel(y: np.ndarray, sr: int, duration: float) -> MelSpectrogram:
     cols = [S[:, i * per:(i + 1) * per].mean(axis=1) for i in range(nb)]
     P = np.stack(cols, axis=1)
     db = np.clip(10.0 * np.log10(P / max(P.max(), 1e-20) + 1e-20), DB_MIN, DB_MAX)
-    starts = np.arange(nb) * MEL_BIN_S
-    ends = np.minimum(starts + MEL_BIN_S, duration)
+    bin_s = per * MEL_HOP / sr   # true width of a grouped column (e.g. 16 frames = 0.512 s at 16 kHz, not 0.5 s)
+    starts = np.arange(nb) * bin_s
+    ends = np.minimum(starts + bin_s, duration)
     times = (starts + ends) / 2
     freqs = librosa.mel_frequencies(n_mels=MEL_BANDS + 2, fmin=MEL_FMIN, fmax=MEL_FMAX)[1:-1]
     return MelSpectrogram(_r(times, 3), _r(freqs, 1), [_r(row, 1) for row in db], DB_MIN, DB_MAX,
@@ -343,10 +344,12 @@ def _inference_index() -> dict:
 def run(split: str | None = None, call_ids: list[str] | None = None, force: bool = False, png: bool = True,
         out_dir: Path = OUT_DIR, allow_test: bool = False) -> list[dict]:
     index = _inference_index()
+    splits = json.loads(SPLITS_FILE.read_text())["splits"]
     if call_ids is None:
-        if split == "test" and not allow_test:
-            raise SystemExit("the test split is locked; pass --allow-test only for the final run")
-        call_ids = json.loads(SPLITS_FILE.read_text())["splits"][split]["call_ids"]
+        call_ids = splits[split]["call_ids"]
+    locked = sorted(set(call_ids) & set(splits["test"]["call_ids"]))
+    if locked and not allow_test:
+        raise SystemExit(f"the test split is locked ({', '.join(locked[:3])}...); pass --allow-test only for the final run")
     rows = []
     for cid in call_ids:
         target = out_dir / cid / "analysis.json"

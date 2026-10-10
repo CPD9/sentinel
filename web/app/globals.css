@@ -1,0 +1,112 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Calm, high-contrast, no decoration. Colour carries meaning only (decision, speaker, criterion). */
+:root {
+  --background: #f6f6f4;
+  --foreground: #16181d;
+  --card: #ffffff;
+  --muted: #ecece8;
+  --muted-foreground: #4b505a;
+  --border: #d6d6d0;
+  --ring: #1f4fd8;
+  --primary: #16181d;
+  --primary-foreground: #ffffff;
+
+  --alarm: #b3261e;      --alarm-bg: #fbe4e2;
+  --review: #8a5a00;     --review-bg: #fcefc9;
+  --noalert: #4b505a;    --noalert-bg: #e6e6e2;
+  --ok: #1b6e3c;         --ok-bg: #dff3e6;
+  --info: #1f4fd8;       --info-bg: #e1e8fb;
+
+  --advisor: #1f4fd8;
+  --customer: #b45309;
+  --unknown: #6b7280;
+
+  /* Okabe–Ito based criterion palette (colour-blind safe) */
+  --c-insider_trading: #0072b2;
+  --c-credential_sharing: #d55e00;
+  --c-third_party_disclosure: #009e73;
+  --c-documentation_concealment: #cc79a7;
+  --c-control_evasion: #7a5cc4;
+  --c-payment_card_data: #b88a00;
+  --c-other: #6b7280;
+
+  --lane-bg: #ffffff;
+  --grid: #e3e3de;
+  --axis: #4b505a;
+  --trace: #16181d;
+}
+
+.dark {
+  --background: #0f1115;
+  --foreground: #eceef2;
+  --card: #171a20;
+  --muted: #232730;
+  --muted-foreground: #a9afbb;
+  --border: #353a45;
+  --ring: #7aa2ff;
+  --primary: #eceef2;
+  --primary-foreground: #0f1115;
+
+  --alarm: #ff8a80;      --alarm-bg: #3d1a18;
+  --review: #f5c451;     --review-bg: #3a2c08;
+  --noalert: #aab0bc;    --noalert-bg: #262a33;
+  --ok: #6fd19a;         --ok-bg: #12301f;
+  --info: #8fb0ff;       --info-bg: #17254a;
+
+  --advisor: #7aa2ff;
+  --customer: #f0a24b;
+  --unknown: #9aa1ae;
+
+  --c-insider_trading: #56b4e9;
+  --c-credential_sharing: #ff8f40;
+  --c-third_party_disclosure: #2fd1a0;
+  --c-documentation_concealment: #e79ac4;
+  --c-control_evasion: #a58df0;
+  --c-payment_card_data: #e8bb2e;
+  --c-other: #9aa1ae;
+
+  --lane-bg: #12151a;
+  --grid: #2a2e38;
+  --axis: #a9afbb;
+  --trace: #eceef2;
+}
+
+@theme inline {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-ring: var(--ring);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-alarm: var(--alarm);
+  --color-alarm-bg: var(--alarm-bg);
+  --color-review: var(--review);
+  --color-review-bg: var(--review-bg);
+  --color-noalert: var(--noalert);
+  --color-noalert-bg: var(--noalert-bg);
+  --color-ok: var(--ok);
+  --color-ok-bg: var(--ok-bg);
+  --color-info: var(--info);
+  --color-info-bg: var(--info-bg);
+  --color-advisor: var(--advisor);
+  --color-customer: var(--customer);
+  --color-unknown: var(--unknown);
+}
+
+html { color-scheme: light; }
+html.dark { color-scheme: dark; }
+body { background: var(--background); color: var(--foreground); font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
+*:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.tabular { font-variant-numeric: tabular-nums; }
+
+@keyframes shimmer { 0% { opacity: 1 } 50% { opacity: .5 } 100% { opacity: 1 } }
+.skeleton { animation: shimmer 1.4s ease-in-out infinite; background: var(--muted); border-radius: 6px; }
+@media (prefers-reduced-motion: reduce) { .skeleton { animation: none } }

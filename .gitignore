@@ -49,5 +49,9 @@ __pycache__/
 node_modules/
 .next/
 .DS_Store
+<<<<<<< HEAD
 /data
 /artifacts
+=======
+web/public/fixtures/
+>>>>>>> origin/main
