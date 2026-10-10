@@ -510,6 +510,7 @@ class Fact:
     counter_evidence: str | None = None
     valid: bool = True                    # False = dropped by the evidence validator
     drop_reason: str | None = None
+    gloss_de: str | None = None           # the quote in Standard German, for non-dialect reviewers
 
 
 @dataclass
