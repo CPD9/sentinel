@@ -151,7 +151,8 @@ def run(split: str, source: str, provider: str | None, model: str | None, limit:
 
 def run_id(provider, client, source, split) -> str:
     slug = re.sub(r"[^A-Za-z0-9.-]+", "-", client.model or "model")
-    return f"extract_{client.spec.name}_{slug}_{source}_{split}"
+    tag = "" if ex.PROMPT_VERSION == "extract-v1" else "_" + ex.PROMPT_VERSION.removeprefix("extract-")   # v1 ids stay as before
+    return f"extract_{client.spec.name}_{slug}_{source}_{split}{tag}"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -160,9 +161,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--source", choices=("reference", "asr"), default="reference")
     ap.add_argument("--provider", help="name from config/providers.yaml (default: registry default)")
     ap.add_argument("--model", help="model id; remote providers need an allowlisted one")
+    ap.add_argument("--prompt", choices=sorted(ex.PROMPTS), default="v2", help="prompt generation (default v2)")
     ap.add_argument("--limit", type=int, default=None)
     args = ap.parse_args(argv)
     try:
+        ex.set_prompt(args.prompt)
         pred, stats = run(args.split, args.source, args.provider, args.model, args.limit)
     except llm.LLMError as e:
         print(f"LLM unavailable or refused: {e}", file=sys.stderr)

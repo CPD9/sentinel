@@ -14,6 +14,7 @@ kept with valid=False and a reason: it is evidence that was lost, not a reason t
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 import re
 from dataclasses import replace
@@ -21,7 +22,7 @@ from pathlib import Path
 
 from pipeline import llm
 from pipeline.llm import DiskCache, extraction_cache_key
-from pipeline.prompts import extract_v1 as prompt
+from pipeline.prompts import extract_v1, extract_v2
 from pipeline.schemas import FACT_ACTS, INFO_TYPES, SPEAKERS, Fact, Transcript, TranscriptSegment
 from pipeline.validate import NO_CITATION, R_FIELD, norm, resolver, validate_facts
 
@@ -34,10 +35,41 @@ WINDOW_TOKENS = 3500         # estimated tokens of transcript text per window
 CHARS_PER_TOKEN = 2.5        # deliberately pessimistic for Swiss German (real usage is reported by the run script)
 OVERLAP_SEGMENTS = 4
 
+PROMPTS = {"v1": extract_v1, "v2": extract_v2}
+
+
+def max_output_tokens(p=None) -> int:
+    """Answer budget of a prompt generation (v1 keeps the module default so its cached runs stay valid)."""
+    return getattr(p or prompt, "MAX_OUTPUT_TOKENS", MAX_OUTPUT_TOKENS)
+
+
+def window_tokens(p=None) -> int:
+    """Transcript budget per window for a prompt generation (v1 keeps the module default)."""
+    return getattr(p or prompt, "WINDOW_TOKENS", WINDOW_TOKENS)
+
+
+def _prompt_hash(p) -> str:
+    """Version suffix: any edit to the text, schema, window constants (and, for v2, the user-message template)
+    invalidates the cache even without a version bump. The v1 formula is frozen so its cached runs stay valid."""
+    parts = [p.SYSTEM_PROMPT, p.FACT_SCHEMA, CHARS_PER_TOKEN, window_tokens(p), OVERLAP_SEGMENTS, max_output_tokens(p)]
+    if p is not extract_v1:
+        parts.append(inspect.getsource(p.user_message))
+    return hashlib.sha256(json.dumps(parts, sort_keys=True).encode()).hexdigest()[:8]
+
+
+prompt = extract_v2
 PROMPT_VERSION = prompt.PROMPT_VERSION
-PROMPT_VERSION_FULL = PROMPT_VERSION + "+" + hashlib.sha256(json.dumps(
-    [prompt.SYSTEM_PROMPT, prompt.FACT_SCHEMA, CHARS_PER_TOKEN, WINDOW_TOKENS, OVERLAP_SEGMENTS, MAX_OUTPUT_TOKENS],
-    sort_keys=True).encode()).hexdigest()[:8]
+PROMPT_VERSION_FULL = PROMPT_VERSION + "+" + _prompt_hash(prompt)
+
+
+def set_prompt(name: str) -> None:
+    """Select the prompt generation ("v1" | "v2") for this process (scripts/run_extract.py --prompt)."""
+    global prompt, PROMPT_VERSION, PROMPT_VERSION_FULL
+    prompt = PROMPTS[name]
+    PROMPT_VERSION = prompt.PROMPT_VERSION
+    PROMPT_VERSION_FULL = PROMPT_VERSION + "+" + _prompt_hash(prompt)
+    VERSIONS["prompt"] = PROMPT_VERSION_FULL
+
 
 # Read by pipeline/stages.py after a successful extraction.
 VERSIONS: dict = {"llm": None, "prompt": PROMPT_VERSION_FULL, "provider": None, "self_hosted": None}
@@ -59,7 +91,7 @@ def make_windows(segments: list[TranscriptSegment]) -> list[list[TranscriptSegme
     n, out, start = len(segments), [], 0
     while start < n:
         end, used = start, 0.0
-        while end < n and (end == start or used + _cost(segments[end]) <= WINDOW_TOKENS):
+        while end < n and (end == start or used + _cost(segments[end]) <= window_tokens()):
             used += _cost(segments[end])
             end += 1
         out.append(segments[start:end])
@@ -104,7 +136,7 @@ def parse_reply(text: str) -> list:
 # --------------------------------------------------------------------------- one window
 
 def _call(client, messages: list[dict], metrics: list[dict]) -> str:
-    text, m = client.chat_with_metrics(messages, temperature=0.0, max_tokens=MAX_OUTPUT_TOKENS,
+    text, m = client.chat_with_metrics(messages, temperature=0.0, max_tokens=max_output_tokens(),
                                        json_schema=prompt.FACT_SCHEMA)
     metrics.append(m.to_dict())
     return text
@@ -125,6 +157,9 @@ def _window_raw(client, cache: DiskCache, window: list[TranscriptSegment]) -> di
     try:
         facts = parse_reply(text)
     except ValueError as first:
+        if metrics[-1].get("output_tokens") is not None and metrics[-1]["output_tokens"] >= max_output_tokens():
+            # cut off at the token limit: a repair call would have to carry the whole reply and cannot fit the context
+            raise ExtractionError(f"model reply is not valid JSON: {first} (reply hit the max_tokens limit: truncated)") from None
         repaired = True
         messages += [{"role": "assistant", "content": text},
                      {"role": "user", "content": f"That answer was not usable ({first}). Answer again with ONLY the "
@@ -133,7 +168,9 @@ def _window_raw(client, cache: DiskCache, window: list[TranscriptSegment]) -> di
         try:
             facts = parse_reply(text)
         except ValueError as second:
-            raise ExtractionError(f"model reply is not valid JSON after one repair attempt: {second}") from None
+            cut = metrics[-1].get("output_tokens") is not None and metrics[-1]["output_tokens"] >= max_output_tokens()
+            raise ExtractionError(f"model reply is not valid JSON after one repair attempt: {second}"
+                                  f"{' (reply hit the max_tokens limit: truncated)' if cut else ''}") from None
     cache.put(key, {"response": text, "repaired": repaired, "metrics": metrics, "prompt_version": PROMPT_VERSION_FULL,
                     "provider": client.spec.name, "model": client.model, "revision": client.model_revision})
     return {"facts": facts, "repaired": repaired, "cached": False, "metrics": metrics}
@@ -175,6 +212,22 @@ def to_fact(raw, resolve) -> Fact:
         counter_evidence=ce.strip() or None if isinstance(ce, str) else None,
         gloss_de=gloss.strip() or None if isinstance(gloss, str) else None,
         valid=not problems, drop_reason=f"{R_FIELD}: {', '.join(problems)}" if problems else None)
+
+
+def check_span(f: Fact, pos: dict[str, int]) -> Fact:
+    """v2 rule: a fact cites at most MAX_SEGMENT_IDS segments and they are adjacent in the transcript (no ranges,
+    no scattered ids). Violations are kept as invalid facts, like any other bad field. v1 has no such rule."""
+    limit = getattr(prompt, "MAX_SEGMENT_IDS", None)
+    if not limit or not f.valid or f.segment_ids == [NO_CITATION]:
+        return f
+    where = sorted(pos[i] for i in f.segment_ids if i in pos)
+    if len(f.segment_ids) > limit:
+        why = f"cites {len(f.segment_ids)} segments (max {limit})"
+    elif len(where) == len(f.segment_ids) and where[-1] - where[0] != len(where) - 1:
+        why = "cites segments that are not adjacent"
+    else:
+        return f
+    return replace(f, valid=False, drop_reason=f"{R_FIELD}: {why}")
 
 
 # --------------------------------------------------------------------------- merge
@@ -220,11 +273,12 @@ def extract_facts(transcript: Transcript, *, client=None, cache: DiskCache | Non
     VERSIONS.update(llm=f"{client.model}@{client.model_revision}", prompt=PROMPT_VERSION_FULL,
                     provider=client.spec.name, self_hosted=client.spec.self_hosted)
     resolve = resolver(transcript)
+    pos = {s.id: i for i, s in enumerate(transcript.segments)}
     raw: list[Fact] = []
     for w, window in enumerate(make_windows(transcript.segments)):
         res = _window_raw(client, cache, window)
         if report is not None:
             report.append({"window": w, "n_segments": len(window), "n_facts_raw": len(res["facts"]),
                            "cached": res["cached"], "repaired": res["repaired"], "metrics": res["metrics"]})
-        raw += [to_fact(r, resolve) for r in res["facts"]]
+        raw += [check_span(to_fact(r, resolve), pos) for r in res["facts"]]
     return validate_facts(merge_facts(raw, transcript), transcript)

@@ -156,9 +156,9 @@ def test_windows_cover_everything_overlap_and_respect_budget():
     assert {s.id for w in ws for s in w} == {s.id for s in t.segments}
     for a, b in zip(ws, ws[1:]):
         assert len({s.id for s in a} & {s.id for s in b}) >= 1
-    assert all(sum(ex._cost(s) for s in w) <= ex.WINDOW_TOKENS for w in ws)
+    assert all(sum(ex._cost(s) for s in w) <= ex.window_tokens() for w in ws)
     # leaves room in the 8192 context for the prompt and the answer
-    assert ex.WINDOW_TOKENS + 900 + ex.MAX_OUTPUT_TOKENS < ex.CONTEXT_TOKENS - 1500
+    assert ex.window_tokens() + 1300 + ex.max_output_tokens() < ex.CONTEXT_TOKENS - 1000
 
 
 def test_short_call_is_one_window_and_single_oversized_segment_stands_alone():
@@ -173,7 +173,8 @@ def test_duplicate_across_windows_is_merged(tmp_path):
     shared = [s.id for s in ws[0] if s.id in {x.id for x in ws[1]}][0]
     seg = next(s for s in t.segments if s.id == shared)
     f_a = raw_fact(speaker=seg.speaker, segment_ids=[shared], quote=seg.text[:30])
-    f_b = raw_fact(speaker=seg.speaker, segment_ids=[shared, ws[1][-1].id], quote=seg.text)
+    nxt = t.segments[[x.id for x in t.segments].index(shared) + 1].id
+    f_b = raw_fact(speaker=seg.speaker, segment_ids=[shared, nxt], quote=seg.text)
     c = FakeClient([reply(f_a)] + [reply(f_b)] + [reply()] * 10)
     out = run(c, t, tmp=tmp_path)
     assert len(out) == 1 and shared in out[0].segment_ids and out[0].quote == seg.text
@@ -253,3 +254,71 @@ def test_dropped_high_risk_fact_never_alarms(tmp_path):
     bad = run(FakeClient([reply(raw_fact(segment_ids=["T042"]))]), t, tmp=tmp_path / "b")
     trace = decide_call(t, bad, None, cfg)
     assert trace.decision == "review" and trace.decision_path == "missing_evidence"
+
+
+# --------------------------------------------------------------------------- prompt v2
+
+@pytest.fixture
+def v1_then_restore():
+    ex.set_prompt("v1")
+    yield
+    ex.set_prompt("v2")
+
+
+def test_v2_is_default_and_v1_cache_version_is_frozen():
+    assert ex.PROMPT_VERSION == "extract-v2" and ex.PROMPT_VERSION_FULL.startswith("extract-v2+")
+    ex.set_prompt("v1")
+    try:
+        assert ex.PROMPT_VERSION_FULL == "extract-v1+034dec6b"       # changing this would orphan every cached v1 run
+    finally:
+        ex.set_prompt("v2")
+    assert ex.VERSIONS["prompt"] == ex.PROMPT_VERSION_FULL
+
+
+def test_v2_schema_caps_segment_ids_and_v1_schema_is_untouched():
+    caps = lambda p: p.FACT_SCHEMA["properties"]["facts"]["items"]["properties"]["segment_ids"]
+    assert caps(ex.extract_v2)["maxItems"] == 3 and "maxItems" not in caps(ex.extract_v1)
+
+
+def test_v2_message_names_the_id_format_and_stays_clean():
+    segs = [{"id": "T001", "speaker": "advisor", "text": "Grüezi"}, {"id": "T038", "speaker": "customer", "text": "Tschüss"}]
+    msg = ex.extract_v2.user_message(segs)
+    assert "[T001] to [T038]" in msg and "[T038] (customer) Tschüss" in msg
+    low = (ex.extract_v2.SYSTEM_PROMPT + msg).lower()
+    assert "leading zero" in low and "keyword" not in low and "stufe" not in low and "call_" not in low
+    assert "never a range" in low and "up to 3 adjacent" in low
+
+
+def test_span_guard_flags_too_many_and_non_adjacent_segments(tmp_path):
+    t = tr([(f"T{i:03d}", "customer" if i % 2 else "advisor", f"Satz {i} mit Passwort") for i in range(1, 9)])
+    pos = {s.id: i for i, s in enumerate(t.segments)}
+    mk = lambda ids: Fact("f", "customer", "request", "credentials", ids, "Satz 1 mit Passwort")
+    assert ex.check_span(mk(["T001", "T002", "T003"]), pos).valid
+    assert ex.check_span(mk(["T003"]), pos).valid
+    many = ex.check_span(mk(["T001", "T002", "T003", "T004"]), pos)
+    assert not many.valid and "cites 4 segments (max 3)" in many.drop_reason
+    gap = ex.check_span(mk(["T001", "T004"]), pos)
+    assert not gap.valid and "not adjacent" in gap.drop_reason
+
+
+def test_span_guard_end_to_end_and_off_for_v1(tmp_path, v1_then_restore):
+    t = tr([(f"T{i:03d}", "customer", f"Mis Passwort isch Nummer {i}") for i in range(1, 8)])
+    wide = raw_fact(segment_ids=[f"T{i:03d}" for i in range(1, 7)], quote="Mis Passwort isch Nummer 3")
+    (f,) = run(FakeClient([reply(wide)]), t, tmp=tmp_path / "v1")
+    assert f.valid                                                      # v1 has no span rule
+    ex.set_prompt("v2")
+    (f,) = run(FakeClient([reply(wide)]), t, tmp=tmp_path / "v2")
+    assert not f.valid and "max 3" in f.drop_reason
+
+
+def test_output_budget_per_prompt_and_truncation_is_named(tmp_path, v1_then_restore):
+    assert ex.max_output_tokens() == 1500 and ex.PROMPT_VERSION_FULL == "extract-v1+034dec6b"
+    ex.set_prompt("v2")
+    assert ex.max_output_tokens() == 3000
+    full = FakeClient(['{"facts": [{"speaker": "customer"'] * 2)
+    full.metrics_out = 3000
+    orig = full.chat_with_metrics
+    full.chat_with_metrics = lambda *a, **k: (lambda r: (r[0], metrics(output_tokens=3000)))(orig(*a, **k))
+    with pytest.raises(ex.ExtractionError, match="truncated"):
+        run(full, tmp=tmp_path)
+    assert full.calls[0]["max_tokens"] == 3000 and len(full.calls) == 1        # no repair call after a truncated reply
