@@ -169,8 +169,9 @@ def test_list_models_needs_env_but_no_model(monkeypatch):
 
 def test_self_hosted_needs_no_env(monkeypatch):
     n = net(monkeypatch, plain("ok"))
-    c = get_client()                                    # default = apertus_aws
-    assert c.spec.name == "apertus_aws" and c.spec.self_hosted
+    monkeypatch.delenv(llm.PROVIDER_ENV, raising=False)
+    c = get_client()                                    # default = builder_pod (model fixed in providers.yaml)
+    assert c.spec.name == "builder_pod" and c.spec.self_hosted and c.model == "apertus-8b"
     assert c.chat(MSG, stream=False) == "ok"
     assert n.calls[0]["url"] == "http://127.0.0.1:8000/v1/chat/completions"
     assert "Authorization" not in n.calls[0]["headers"]
@@ -339,7 +340,9 @@ def test_both_attempts_failing_raises(monkeypatch):
 
 def test_providers_yaml_contract():
     default, specs = load_providers()
-    assert default == "apertus_aws"
+    assert default == "builder_pod"
+    pod = specs["builder_pod"]
+    assert pod.self_hosted and pod.model == "apertus-8b" and pod.base_url == "http://127.0.0.1:8000/v1" and not pod.key_env
     assert specs["apertus_aws"].self_hosted and specs["apertus_aws"].base_url_env == "LLM_BASE_URL"
     assert specs["ollama_local"].base_url == "http://127.0.0.1:11434/v1"
     for name in ("infomaniak", "openrouter"):
@@ -529,10 +532,10 @@ def test_remote_provider_selected_by_env_needs_model_env_not_a_cli_flag(monkeypa
         llm.from_env()
 
 
-def test_default_provider_model_env_beats_sentinel_model(monkeypatch):
+def test_model_env_provider_model_env_beats_sentinel_model(monkeypatch):
     monkeypatch.setenv("LLM_MODEL", "swiss-ai/Apertus-v1.5-8B")
     monkeypatch.setenv(llm.MODEL_ENV, "something-else")
-    assert get_client().model == "swiss-ai/Apertus-v1.5-8B"
+    assert get_client("apertus_aws").model == "swiss-ai/Apertus-v1.5-8B"
 
 
 def test_effective_extra_body_reflects_what_is_really_sent():
@@ -568,3 +571,18 @@ def test_matching_origin_is_accepted_whatever_the_path_or_case(monkeypatch):
     assert llm.OpenAICompatClient(inf.resolve_base_url(), "llama3", spec=inf)
     with pytest.raises(ProviderNotPermitted):
         llm.OpenAICompatClient("https://api.infomaniak.com.evil.io/2/ai/42/openai/v1", "llama3", spec=inf)
+
+
+def test_fixed_model_key_precedence_and_validation(monkeypatch, tmp_path):
+    f = tmp_path / "p.yaml"
+    f.write_text("default: pod\nproviders:\n  pod: {base_url: 'http://127.0.0.1:9/v1', model: fixed-name, "
+                 "model_env: SOME_MODEL, self_hosted: true}\n", encoding="utf-8")
+    monkeypatch.setenv("SOME_MODEL", "from-env")
+    monkeypatch.setenv(llm.MODEL_ENV, "generic")
+    assert get_client(providers_file=f).model == "fixed-name"            # fixed key beats model_env and $SENTINEL_LLM_MODEL
+    assert get_client(model="explicit", providers_file=f).model == "explicit"
+    for bad in ("''", "3"):
+        with pytest.raises(LLMError, match="model must be a non-empty string"):
+            doc = {"default": "p", "providers": {"p": {"base_url": "http://127.0.0.1:1/v1", "self_hosted": True,
+                                                       "model": eval(bad)}}}
+            parse_providers(doc)

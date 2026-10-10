@@ -5,9 +5,16 @@
 # call unless SENTINEL_ALLOW_REMOTE_LLM=fictional_data_only is set in the real process environment (it is
 # deliberately NOT loaded from .env) AND the requested model is listed in that provider's allowed_models
 # (exact IDs, open-weight models only). Real or customer data never goes to a remote provider.
-default: apertus_aws
+default: builder_pod
 
 providers:
+  # Group 2 builder Pod (partner-provided Runpod A40, Montreal; fictional data only), vLLM through an SSH tunnel
+  # (scripts/pod_tunnel.sh maps Pod 127.0.0.1:8000 to laptop 127.0.0.1:8000). See docs/INFRA.md.
+  builder_pod:
+    base_url: http://127.0.0.1:8000/v1
+    model: apertus-8b
+    self_hosted: true
+
   # Our GPU VM, vLLM through the SSH tunnel on 127.0.0.1:8000 (value of LLM_BASE_URL in .env).
   apertus_aws:
     base_url_env: LLM_BASE_URL

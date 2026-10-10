@@ -1,0 +1,12 @@
+# ASR on the Group 2 builder Pod (Runpod A40, Python 3.12, driver 580, CUDA 12.8 runtime, no cuDNN in the image).
+# Same pins as requirements-asr.txt, minus the converter-only transformers/torch (faster-whisper needs neither),
+# plus the NVIDIA wheels CTranslate2 loads at runtime (versions tested in the partner handoff, ctranslate2 4.8.2).
+# Install: uv pip install --python /workspace/venvs/asr/bin/python -r requirements-analysis.txt -r requirements-asr-pod.txt
+# If PyAV fails to decode (TypeError: open() got an unexpected keyword argument 'metadata_errors'), pin av==16.0.1.
+faster-whisper==1.2.1
+ctranslate2==4.8.2
+av==18.1.0
+huggingface_hub==2.2.0
+nvidia-cublas-cu12==12.9.2.10
+nvidia-cudnn-cu12==9.27.0.42
+pyyaml
