@@ -386,3 +386,59 @@ def test_check_permitted_message_has_no_key():
     with pytest.raises(ProviderNotPermitted) as e:
         check_permitted(spec, "a/b")
     assert "R_KEY" not in str(e.value)
+
+
+# --------------------------------------------------------------------------- Codex review of PR #16
+
+@pytest.mark.parametrize("url", ["https://evil.example/v1", "http://10.0.0.5:8000/v1", "http://127.0.0.1.evil.io/v1",
+                                 "not a url"])
+def test_direct_client_without_spec_must_be_loopback(monkeypatch, url):
+    n = net(monkeypatch)
+    with pytest.raises(ProviderNotPermitted):
+        llm.OpenAICompatClient(url, "m")
+    assert n.calls == []
+
+
+@pytest.mark.parametrize("url", ["http://127.0.0.1:8000/v1", "http://localhost:11434/v1", "http://[::1]:8000/v1"])
+def test_direct_client_without_spec_loopback_is_fine(monkeypatch, url):
+    net(monkeypatch, plain("ok"))
+    assert llm.OpenAICompatClient(url, "m").chat(MSG, stream=False) == "ok"
+
+
+def test_extra_body_cannot_set_reserved_fields(monkeypatch):
+    doc = {"default": "r", "providers": {"r": {
+        "base_url": "https://r.example/v1", "key_env": "OPENROUTER_API_KEY", "self_hosted": False,
+        "allowed_models": [OK_MODEL], "extra_body": {"model": "openai/gpt-4o"}}}}
+    with pytest.raises(LLMError, match="reserved"):
+        parse_providers(doc)
+    # defence in depth: a spec built by hand still cannot override the gated model or the schema
+    allow(monkeypatch)
+    spec = ProviderSpec(name="r", base_url="https://r.example/v1", key_env="OPENROUTER_API_KEY", self_hosted=False,
+                        allowed_models=(OK_MODEL,),
+                        extra_body={"model": "openai/gpt-4o", "response_format": {"type": "text"}, "x": 1})
+    n = net(monkeypatch, plain("ok"))
+    llm.OpenAICompatClient(spec.base_url, OK_MODEL, spec=spec).chat(MSG, stream=False)
+    assert n.calls[0]["body"]["model"] == OK_MODEL
+    assert "response_format" not in n.calls[0]["body"] and n.calls[0]["body"]["x"] == 1
+
+
+def test_stream_that_ends_without_terminal_event_falls_back(monkeypatch):
+    n = net(monkeypatch, sse(delta("par"), delta("tial")), plain("complete answer"))
+    text, m = get_client().chat_with_metrics(MSG)
+    assert text == "complete answer" and not m.streamed and m.attempts == 2 and len(n.calls) == 2
+
+
+def test_finish_reason_counts_as_terminal_event(monkeypatch):
+    done = {"choices": [{"delta": {}, "finish_reason": "stop"}]}
+    net(monkeypatch, sse(delta("all"), done))
+    text, m = get_client().chat_with_metrics(MSG)
+    assert text == "all" and m.streamed and m.attempts == 1
+
+
+def test_malformed_plain_response_is_scrubbed(monkeypatch):
+    allow(monkeypatch)
+    body = json.dumps({"error": {"message": f"invalid token {KEY}"}}).encode()
+    net(monkeypatch, FakeResp(body))
+    with pytest.raises(LLMError) as ei:
+        get_client("openrouter", OK_MODEL).chat(MSG, stream=False)
+    assert KEY not in str(ei.value) and "unexpected response shape" in str(ei.value)

@@ -19,6 +19,7 @@ import platform
 import re
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -80,6 +81,12 @@ def load_env(path: Path = REPO_ROOT / ".env") -> None:
 
 _ENV_NAME = re.compile(r"[A-Z][A-Z0-9_]*")
 _PLACEHOLDER = re.compile(r"\{([A-Z][A-Z0-9_]*)\}")
+# Request fields the client owns. A provider's extra_body may add vendor options but never set these, so it
+# cannot swap the gated model or the constrained-output schema.
+RESERVED_BODY_KEYS = frozenset({
+    "model", "messages", "temperature", "max_tokens", "max_completion_tokens", "response_format", "stream",
+    "stream_options", "n", "tools", "tool_choice", "functions", "function_call"})
+_LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 _SPEC_KEYS = {"base_url", "base_url_env", "model_env", "key_env", "self_hosted", "region", "allowed_models",
               "extra_body"}
 
@@ -139,6 +146,8 @@ def parse_providers(doc: dict) -> tuple[str, dict[str, ProviderSpec]]:
         if not isinstance(extra, dict):
             errs.append(f"{name}.extra_body must be a mapping")
             extra = {}
+        errs += [f"{name}.extra_body may not set {k!r} (reserved request field)" for k in extra
+                 if k in RESERVED_BODY_KEYS]
         if hosted is False:
             if not p.get("key_env"):
                 errs.append(f"{name}: a remote provider needs key_env")
@@ -240,7 +249,15 @@ class OpenAICompatClient:
         self.timeout = timeout
         self.model = model
         self.model_revision: str | None = None
-        self.spec = spec or ProviderSpec(name="custom", base_url=base_url, self_hosted=True)
+        if spec is None:
+            # No registry entry, so no allowlist or opt-in to check: only a local endpoint is acceptable.
+            host = urllib.parse.urlparse(base_url).hostname
+            if host not in _LOOPBACK_HOSTS:
+                raise ProviderNotPermitted(
+                    "a client built without a ProviderSpec may only talk to a loopback URL "
+                    "(127.0.0.1 / localhost); use get_client() with a provider from config/providers.yaml")
+            spec = ProviderSpec(name="custom", base_url=base_url, self_hosted=True)
+        self.spec = spec
         self._now = now
         self.metrics: list[CallMetrics] = []
         self.last_metrics: CallMetrics | None = None
@@ -331,7 +348,9 @@ class OpenAICompatClient:
             if constrained:
                 payload["response_format"] = {"type": "json_schema",
                                               "json_schema": {"name": "answer", "schema": json_schema}}
-            payload.update(copy.deepcopy(self.spec.extra_body))
+            for k, v in self.spec.extra_body.items():
+                if k not in RESERVED_BODY_KEYS:
+                    payload[k] = copy.deepcopy(v)
             t0 = self._now()
             try:
                 reply = self._stream(payload, t0) if streamed else self._plain(payload)
@@ -355,12 +374,11 @@ class OpenAICompatClient:
         url = f"{self.base_url}/chat/completions"
         return self._parse_plain(self._get_json(url, self.timeout, payload))
 
-    @staticmethod
-    def _parse_plain(out: dict) -> _Reply:
+    def _parse_plain(self, out: dict) -> _Reply:
         try:
             text = out["choices"][0]["message"]["content"] or ""
-        except (KeyError, IndexError, TypeError, AttributeError) as e:
-            raise LLMError(f"unexpected response shape: {str(out)[:300]}") from e
+        except (KeyError, IndexError, TypeError, AttributeError):
+            raise LLMError(self._scrub(f"unexpected response shape: {str(out)[:300]}")) from None
         return _Reply(text, out.get("usage"), out.get("model"), None)
 
     def _stream(self, payload: dict, t0: float) -> _Reply:
@@ -370,6 +388,7 @@ class OpenAICompatClient:
         usage = served = None
         ttft: float | None = None
         first = True
+        finished = False        # saw [DONE] or a choice with a finish_reason
         with self._open(url, payload, self.timeout) as r:
             try:
                 for raw in r:
@@ -388,6 +407,7 @@ class OpenAICompatClient:
                         raise _StreamFailed("malformed stream line")
                     data = line[5:].strip()
                     if data == "[DONE]":
+                        finished = True
                         break
                     try:
                         chunk = json.loads(data)
@@ -401,6 +421,8 @@ class OpenAICompatClient:
                     usage = chunk.get("usage") or usage
                     choices = chunk.get("choices") or []
                     delta = (choices[0].get("delta") or {}) if choices and isinstance(choices[0], dict) else {}
+                    if choices and isinstance(choices[0], dict) and choices[0].get("finish_reason"):
+                        finished = True
                     piece = delta.get("content")
                     if isinstance(piece, str) and piece:
                         if ttft is None:
@@ -408,6 +430,8 @@ class OpenAICompatClient:
                         parts.append(piece)
             except (OSError, http.client.HTTPException) as e:
                 raise _StreamFailed(self._scrub(f"stream cut off: {e}")) from None
+        if not finished:
+            raise _StreamFailed("stream ended without a terminal event (truncated)")
         if not parts:
             raise _StreamFailed("stream carried no content")
         return _Reply("".join(parts), usage, served, ttft)
