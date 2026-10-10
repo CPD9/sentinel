@@ -10,7 +10,7 @@ import { pct } from "@/lib/format";
 import type { CallResult, DecisionTrace, Finding } from "@/lib/types";
 import type { Loadable } from "@/lib/use-async";
 
-export function SummaryTab({ result, trace }: { result: CallResult; trace: Loadable<DecisionTrace> }) {
+export function SummaryTab({ result, trace, stacked }: { result: CallResult; trace: Loadable<DecisionTrace>; stacked?: boolean }) {
   const th = trace.data?.thresholds;
   const sorted = [...result.findings].sort((a, b) => b.risk - a.risk);
   const flagged = th ? sorted.filter((f) => f.risk >= th.review) : sorted;
@@ -18,7 +18,7 @@ export function SummaryTab({ result, trace }: { result: CallResult; trace: Loada
   const markers = th ? [{ at: th.review, label: "review" }, { at: th.alarm, label: "alarm" }] : [];
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)]">
+    <div className={stacked ? "space-y-4" : "grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)]"}>
       <div className="space-y-4">
         <Card>
           <CardHeader><CardTitle>Narrative</CardTitle></CardHeader>
@@ -71,7 +71,7 @@ function FindingRow({ f, id, markers, muted }: { f: Finding; id: string; markers
           <CriterionChip criterion={f.criterion} />
           <div className="w-40"><ScoreBar value={f.risk} color={criterionColor(f.criterion)} markers={markers} label={`${f.criterion} risk`} /></div>
           <span className="tabular text-sm font-semibold">{pct(f.risk)}</span>
-          <Link href={`/calls/${id}?tab=evidence`} className="ml-auto text-xs underline underline-offset-2">
+          <Link href={`/calls/${id}#passages`} className="ml-auto text-xs underline underline-offset-2">
             {f.evidence.length} evidence passage{f.evidence.length === 1 ? "" : "s"}
           </Link>
         </div>

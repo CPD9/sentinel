@@ -1,10 +1,9 @@
 // Tab definitions in one place (pattern from Leadership-Demo lib/tab-config.ts).
+// Summary + Evidence are no longer tabs: they form the top block of the call page (verdict + passages).
 export const CALL_TABS = [
-  { value: "summary", label: "Summary" },
-  { value: "evidence", label: "Evidence" },
   { value: "transcript", label: "Transcript" },
-  { value: "audio", label: "Audio analysis" },
   { value: "reasoning", label: "Reasoning" },
+  { value: "audio", label: "Audio analysis" },
   { value: "audit", label: "Audit" },
 ] as const;
 export type TabValue = (typeof CALL_TABS)[number]["value"];

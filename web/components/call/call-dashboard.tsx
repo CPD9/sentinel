@@ -96,12 +96,27 @@ function Loaded({ result, tab, sel }: { result: CallResult; tab: TabValue; sel: 
           )}
         </header>
 
-        <nav aria-label="Call sections" className="-mx-4 overflow-x-auto border-b border-border px-4">
+        <div className="grid gap-6 lg:grid-cols-2">
+          <section aria-labelledby="verdict" className="min-w-0 space-y-3">
+            <h2 id="verdict" className="text-lg font-semibold tracking-tight">Verdict &amp; reasoning</h2>
+            <SummaryTab result={result} trace={trace} stacked />
+          </section>
+          <section id="passages" aria-labelledby="passages-h" className="min-w-0 scroll-mt-20 space-y-3">
+            <h2 id="passages-h" className="text-lg font-semibold tracking-tight">Passages that carry the decision</h2>
+            <EvidenceTab result={result} analysis={analysis} stacked />
+          </section>
+        </div>
+
+        <div className="space-y-1 pt-2">
+          <h2 className="text-lg font-semibold tracking-tight">Details for auditors</h2>
+          <p className="text-sm text-muted-foreground">The full transcript, the step-by-step decision, the audio signals and the versions used.</p>
+        </div>
+        <nav aria-label="Call details" className="-mx-4 overflow-x-auto border-b border-border px-4">
           <ul className="flex min-w-max gap-1">
             {CALL_TABS.map((t) => (
               <li key={t.value}>
-                <Link href={`/calls/${id}?tab=${t.value}`} aria-current={tab === t.value ? "page" : undefined}
-                  className={cn("relative flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm", tab === t.value ? "border-foreground font-semibold" : "border-transparent text-muted-foreground hover:text-foreground")}>
+                <Link href={`/calls/${id}?tab=${t.value}`} scroll={false} aria-current={tab === t.value ? "page" : undefined}
+                  className={cn("relative flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm", tab === t.value ? "border-primary font-semibold text-link" : "border-transparent text-muted-foreground hover:text-foreground")}>
                   {t.label}
                   {tabMarkers[t.value] && <span className="size-2 rounded-full bg-alarm" title="This tab's data failed to load" aria-label="error" />}
                 </Link>
@@ -111,8 +126,6 @@ function Loaded({ result, tab, sel }: { result: CallResult; tab: TabValue; sel: 
         </nav>
 
         <section aria-label={tab}>
-          {tab === "summary" && <SummaryTab result={result} trace={trace} />}
-          {tab === "evidence" && <EvidenceTab result={result} analysis={analysis} />}
           {tab === "transcript" && <TranscriptTab result={result} trace={trace} transcript={transcript} focusSeg={sel.seg} />}
           {tab === "audio" && <AudioTab result={result} analysis={analysis} selectedWindow={sel.win} />}
           {tab === "reasoning" && <ReasoningTab result={result} trace={trace} />}

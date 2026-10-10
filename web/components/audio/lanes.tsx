@@ -284,7 +284,7 @@ function WindowDetails({ w, result }: { w: EvidenceWindow; result: CallResult })
         {e && <blockquote lang="gsw" className="border-l-2 border-foreground/60 pl-3 text-sm">“{e.text}”</blockquote>}
         <div className="flex flex-wrap gap-3 text-xs">
           <Button size="sm" variant="outline" disabled={!audio.available} onClick={() => audio.play(w.start_s, { start: w.start_s, end: w.end_s })}><Repeat className="size-3.5" />Play window (loop)</Button>
-          <Link className="self-center underline underline-offset-2" href={`/calls/${result.call_id}?tab=evidence`}>Open evidence card</Link>
+          <Link className="self-center underline underline-offset-2" href={`/calls/${result.call_id}#passages`}>Open evidence card</Link>
           {e && <Link className="self-center underline underline-offset-2" href={`/calls/${result.call_id}?tab=transcript&seg=${e.segment_ids.join(",")}`}>Jump to transcript</Link>}
         </div>
       </CardContent>

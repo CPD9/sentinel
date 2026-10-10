@@ -10,7 +10,7 @@ import { fmtRange, pct } from "@/lib/format";
 import type { AnalysisArtifact, CallResult, Evidence } from "@/lib/types";
 import type { Loadable } from "@/lib/use-async";
 
-export function EvidenceTab({ result, analysis }: { result: CallResult; analysis: Loadable<AnalysisArtifact> }) {
+export function EvidenceTab({ result, analysis, stacked }: { result: CallResult; analysis: Loadable<AnalysisArtifact>; stacked?: boolean }) {
   const withEvidence = result.findings.map((f, fi) => ({ f, fi })).filter(({ f }) => f.evidence.length > 0 || f.counter_evidence.length > 0);
   if (withEvidence.length === 0) return <EmptyState>This call has no evidence passages.</EmptyState>;
   const wave = analysis.data?.waveform_peaks ?? null;
@@ -22,9 +22,9 @@ export function EvidenceTab({ result, analysis }: { result: CallResult; analysis
         <section key={fi} aria-label={f.criterion} className="space-y-3">
           <div className="flex flex-wrap items-center gap-3 border-l-4 pl-3" style={{ borderColor: criterionColor(f.criterion) }}>
             <CriterionChip criterion={f.criterion} /><span className="tabular text-sm font-semibold">risk {pct(f.risk)}</span>
-            <span className="text-sm text-muted-foreground">{f.reason}</span>
+            {!stacked && <span className="text-sm text-muted-foreground">{f.reason}</span>}
           </div>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <div className={stacked ? "grid gap-3" : "grid gap-3 md:grid-cols-2 xl:grid-cols-3"}>
             {f.evidence.map((e, ei) => (
               <EvidenceCard key={`e${ei}`} callId={result.call_id} e={e} wave={wave}
                 inAudio={windowOf(fi, ei) ? `/calls/${result.call_id}?tab=audio&win=${fi}.${ei}` : null} />
