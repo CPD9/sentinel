@@ -5,7 +5,8 @@ call artifacts. Nothing here reads the held-out answer key, and nothing here app
 (pipeline/simulate.py format) with its simulated effect, for a human to preview and apply.
 
 Search space: each threshold on a 0.01 grid, each keyword family switched off, each enabled rule switched off, then
-combinations of the useful ones (up to alarm + review + gate, or any three knobs). Every candidate is verified with the
+combinations of the useful ones (any three knobs), plus a joint alarm + review grid because a pair such as review 0.86
+under alarm 0.87 is valid although review 0.86 alone is not. Every candidate is verified with the
 real `decide_call` through `Simulator`, never inferred.
 
 Hard constraints (candidate is discarded): a call marked `correct` changes decision, or any labelled call moves the wrong
@@ -25,6 +26,8 @@ from pipeline.keywords import ConfigError
 from pipeline.schemas import (VERDICTS, FeedbackEntry, Suggestion, SuggestionsResponse)
 from pipeline.simulate import (THRESHOLD_KEYS, CallInputs, RawConfig, Simulator, canonical, merge_patches, patch_components)
 
+ZERO_POOL = 6         # best zero-credit singles allowed into pairs
+PAIR_RISKS = 8        # flagged-verdict risk levels used for the joint alarm + review grid
 POOL = 12             # best single changes combined into pairs / triples
 CAVEAT = ("Fitted to {n} officer verdict(s) on this set of calls; not validated on unseen calls. "
           "Preview the effect and review the flipped calls before applying.")
@@ -95,9 +98,12 @@ class _Search:
         return list(best.values())
 
     def combos(self, singles: list[_Cand]) -> list[_Cand]:
-        pool = sorted((c for c in singles if c.credit > 0 and not c.violated), key=lambda c: c.rank_key)[:POOL]
+        ok = [c for c in singles if not c.violated]
+        pos = sorted((c for c in ok if c.credit > 0), key=lambda c: c.rank_key)[:POOL]
+        # A change that does nothing for the verdicts alone can still enable another one (e.g. a lower alarm bar plus a rule off).
+        zero = sorted((c for c in ok if c.credit == 0), key=lambda c: (len(c.collateral), c.distance, canonical(c.patch)))[:ZERO_POOL]
         out = []
-        for r in (2, 3):
+        for r, pool in ((2, pos + zero), (3, pos)):
             for combo in itertools.combinations(pool, r):
                 knobs = [_knob(x) for c in combo for x in c.comps]
                 if len(set(knobs)) != len(knobs):
@@ -109,6 +115,16 @@ class _Search:
                 if cand is not None and cand.vec != self.base_vec:
                     out.append(cand)
         return out
+
+    def threshold_pairs(self) -> list[_Cand]:
+        """Joint (alarm, review) moves. Neither value need be valid alone (review 0.86 under alarm 0.70 is not), so these never
+        appear among the singles. Values sit at and just above the risk of each call the officer called wrong, which is where
+        a pair can change such a call."""
+        risks = sorted({round(self.sim.baseline[c].risk_score, 2) for c, fb in self.sim.feedback.items() if fb.verdict != "correct"})[:PAIR_RISKS]
+        vals = sorted({min(1.0, v) for r in risks for v in (r, round(r + 0.01, 2), round(r + 0.02, 2))})
+        cur_a, cur_r = round(self.cur.alarm, 2), round(self.cur.review, 2)
+        patches = [{"thresholds": {"alarm": a, "review": r}} for a in vals for r in vals if r < a and a != cur_a and r != cur_r]
+        return [c for c in map(self.candidate, patches) if c is not None and c.vec != self.base_vec]
 
 
 def _title(patch: dict, cur) -> str:
@@ -124,7 +140,7 @@ def _title(patch: dict, cur) -> str:
 
 def _rank(search: _Search) -> list[_Cand]:
     singles = search.singles()
-    cands = [c for c in singles + search.combos(singles) if c.credit > 0 and not c.violated]
+    cands = [c for c in singles + search.combos(singles) + search.threshold_pairs() if c.credit > 0 and not c.violated]
     cands.sort(key=lambda c: c.rank_key)
     kept: list[_Cand] = []
     for c in cands:

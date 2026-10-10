@@ -58,10 +58,31 @@ class CallInputs:
         return bool(self.stage_errors) or self.facts is None
 
 
+def _batch_results(out_dir: Path) -> dict[str, dict]:
+    """call_id -> result from the batch file out/results.json (run.sh), for runs without per-call files."""
+    try:
+        body = json.loads((out_dir / "results.json").read_text(encoding="utf-8"))
+        return {r["call_id"]: r for r in body.get("calls", []) if isinstance(r, dict) and "call_id" in r}
+    except (OSError, ValueError, AttributeError, TypeError):
+        return {}
+
+
+def _stage_errors(out_dir: Path, cid: str, batch: dict[str, dict]) -> list[StageError]:
+    """Stage errors from out/results/<id>.json, else from the batch out/results.json, else none."""
+    rp = out_dir / "results" / f"{cid}.json"
+    try:
+        doc = json.loads(rp.read_text(encoding="utf-8")) if rp.exists() else batch.get(cid)
+        return [StageError(**e) for e in (doc or {}).get("stage_errors", [])]
+    except (OSError, ValueError, TypeError):
+        return []
+
+
 def load_inputs(artifacts_dir: Path = REPO_ROOT / "artifacts", out_dir: Path = REPO_ROOT / "out") -> list[CallInputs]:
     """Calls that have a transcript and a decision trace (the trace carries the facts, dropped ones included).
-    Stage errors come from out/results/<id>.json when it exists. Unreadable calls are skipped, not fatal."""
+    Stage errors come from out/results/<id>.json, else the batch out/results.json; a trace that already records a
+    stage error keeps the call locked even when no result file is found. Unreadable calls are skipped, not fatal."""
     artifacts_dir, out_dir = Path(artifacts_dir), Path(out_dir)
+    batch = _batch_results(out_dir)
     calls = []
     for tp in sorted((artifacts_dir / "traces").glob("*.json")):
         cid = tp.stem
@@ -77,13 +98,11 @@ def load_inputs(artifacts_dir: Path = REPO_ROOT / "artifacts", out_dir: Path = R
                 analysis = AnalysisArtifact.from_dict(json.loads(ap.read_text(encoding="utf-8")))
             except (OSError, ValueError):
                 analysis = None
-        errors: list[StageError] = []
-        rp = out_dir / "results" / f"{cid}.json"
-        if rp.exists():
-            try:
-                errors = [StageError(**e) for e in json.loads(rp.read_text(encoding="utf-8")).get("stage_errors", [])]
-            except (OSError, ValueError, TypeError):
-                errors = []
+        errors = _stage_errors(out_dir, cid, batch)
+        if not errors and trace.decision_path == "stage_error":
+            # The result file is missing or unreadable but the cached trace says a stage failed: keep the call locked
+            # (always review) rather than re-deciding it from facts that may be incomplete.
+            errors = [StageError("unknown", "stage error recorded in the cached decision trace")]
         calls.append(CallInputs(transcript, trace.facts, analysis, errors, trace.versions))
     return calls
 
@@ -338,7 +357,13 @@ def _attribute(sim: Simulator, call: CallInputs, target: str, parts: list[dict])
     if len(parts) <= 1:
         return patch_components(parts[0]) if parts else []
     before = sim.baseline[call.call_id].decision
-    solo = [patch_components(p)[0] for p in parts if sim.trace(call, canonical(p)).decision == target != before]
+    solo = []
+    for p in parts:
+        try:                                    # a knob can be invalid alone (e.g. review 0.86 while alarm is 0.70)
+            if sim.trace(call, canonical(p)).decision == target != before:
+                solo.append(patch_components(p)[0])
+        except ConfigError:
+            continue                            # then it only works in combination: not a solo cause
     return solo or ["combination of " + ", ".join(c for p in parts for c in patch_components(p))]
 
 
