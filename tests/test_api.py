@@ -127,6 +127,20 @@ def test_keywords_and_rules_validation():
                  422, "invalid")
 
 
+def test_non_string_rule_criterion_is_422_not_500():
+    body = {"version": "x", "rules": [{"criterion": [], "enabled": True}]}
+    assert_error(client.put("/api/settings/rules", json=body), 422, "invalid")
+    assert_error(client.post("/api/settings/preview", json={"rules": body}), 422, "invalid")
+
+
+def test_keywords_without_variants_are_stored_with_empty_variants():
+    body = {"fuzzy_threshold": 0.85, "families": {"access": {"criterion": "credential_sharing", "terms": ["PIN"]}}}
+    assert client.put("/api/settings/keywords", json=body).status_code == 202
+    assert client.get("/api/settings/keywords").json()["families"]["access"]["variants"] == {}
+    r = client.post("/api/settings/preview", json={"keywords": body})
+    assert r.status_code == 200 and r.json()["keyword_hit_counts"]["access"] == {"PIN": 0}
+
+
 def test_preview_shows_alarm_flipping_to_review_without_saving():
     r = client.post("/api/settings/preview", json={"thresholds": {"alarm": 0.95, "review": 0.4, "confidence_gate": 0.5}})
     body = r.json()

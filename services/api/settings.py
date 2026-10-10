@@ -118,11 +118,12 @@ def validate_rules(r: Any) -> list[str]:
             errs.append(f"rules.rules[{i}]: must be an object")
             continue
         c = rule.get("criterion")
-        if c not in schemas.CRITERIA:
+        if not isinstance(c, str) or c not in schemas.CRITERIA:
             errs.append(f"rules.rules[{i}].criterion: unknown criterion {c!r}")
         elif c in seen:
             errs.append(f"rules.rules[{i}].criterion: duplicate {c!r}")
-        seen.add(c)
+        else:
+            seen.add(c)   # only valid strings; a list or dict here would crash set.add
         if not isinstance(rule.get("enabled"), bool):
             errs.append(f"rules.rules[{i}].enabled: must be true or false")
     return errs
@@ -131,11 +132,20 @@ def validate_rules(r: Any) -> list[str]:
 VALIDATORS = {"thresholds": validate_thresholds, "keywords": validate_keywords, "rules": validate_rules}
 
 
+def normalize_keywords(k: dict) -> dict:
+    """Copy of a valid keywords config where every family has a `variants` object (empty if omitted).
+    The web settings screen reads `variants[term]` directly, so the field must always exist."""
+    k = copy.deepcopy(k)
+    for fam in k["families"].values():
+        fam.setdefault("variants", {})
+    return k
+
+
 def _save(kind: str, body: Any) -> JSONResponse:
     errors = VALIDATORS[kind](body)
     if errors:
         raise ApiError(422, "invalid", errors)   # nothing is saved
-    current[kind] = copy.deepcopy(body)
+    current[kind] = normalize_keywords(body) if kind == "keywords" else copy.deepcopy(body)
     # Fixture mode: nothing is re-run, so no call changes.
     return JSONResponse(status_code=202, content={"rerun": {"stages": RERUN_STAGES[kind], "n_calls": 0}})
 
@@ -199,7 +209,7 @@ def preview(body: Any = Body(...)) -> dict:
 
     th_before = current["thresholds"]
     th_after = body.get("thresholds", th_before)
-    keywords = body.get("keywords", current["keywords"])
+    keywords = normalize_keywords(body["keywords"]) if "keywords" in body else current["keywords"]
     rules = body.get("rules", current["rules"])
 
     rows = store.list_calls()
