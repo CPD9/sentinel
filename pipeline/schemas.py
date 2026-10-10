@@ -217,7 +217,11 @@ def validate_call_result(d: Any) -> list[str]:
         errs.append(f"confidence {d.get('confidence')!r} must be null or a number in [0, 1]")
     if not isinstance(d.get("narrative", ""), str):
         errs.append("narrative must be a string")
-    for i, f in enumerate(d.get("findings", []) or []):
+    findings = d.get("findings", [])
+    if not isinstance(findings, list):
+        errs.append(f"findings must be a list, got {type(findings).__name__}")
+        findings = []
+    for i, f in enumerate(findings):
         w = f"findings[{i}]"
         if not isinstance(f, dict):
             errs.append(f"{w}: must be an object")

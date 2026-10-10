@@ -57,3 +57,17 @@ def test_run_result_rejects_duplicates_and_bad_mode():
         RunResult.from_dict(d)
     assert any("mode" in x for x in e.value.errors)
     assert any("duplicate" in x for x in e.value.errors)
+
+
+@pytest.mark.parametrize("bad, type_name", [(None, "NoneType"), ({}, "dict"), ("x", "str")])
+def test_findings_must_be_a_list(bad, type_name):
+    d = call(findings=bad)
+    assert validate_call_result(d) == [f"findings must be a list, got {type_name}"]
+    with pytest.raises(SchemaError) as e:
+        CallResult.from_dict(d)
+    assert "findings must be a list" in str(e.value)
+
+
+def test_findings_valid_list():
+    assert validate_call_result(call(findings=[])) == []
+    assert len(CallResult.from_dict(call()).findings) == 1
