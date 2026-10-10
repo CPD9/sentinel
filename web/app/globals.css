@@ -2,17 +2,21 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* Calm, high-contrast, no decoration. Colour carries meaning only (decision, speaker, criterion). */
+/* Calm, high-contrast. Colour carries meaning: red/amber/grey = decision, violet = interactive,
+   criterion and speaker colours = categories. Inspired by uxpeak (dark) and Proton (light). */
 :root {
-  --background: #f6f6f4;
-  --foreground: #16181d;
+  /* Light theme: calm, faintly violet-tinted (after Proton's light list section). */
+  --background: #f7f6fb;
+  --foreground: #1a1530;
   --card: #ffffff;
-  --muted: #ecece8;
-  --muted-foreground: #4b505a;
-  --border: #d6d6d0;
-  --ring: #1f4fd8;
-  --primary: #16181d;
+  --muted: #efedf6;
+  --muted-foreground: #5b5870;
+  --border: #e2dfec;
+  --ring: #6d4aff;
+  /* Violet = "you can click this". Never used for a decision. */
+  --primary: #6d4aff;
   --primary-foreground: #ffffff;
+  --link: #5b3ae6;
 
   --alarm: #b3261e;      --alarm-bg: #fbe4e2;
   --review: #8a5a00;     --review-bg: #fcefc9;
@@ -24,31 +28,34 @@
   --customer: #b45309;
   --unknown: #6b7280;
 
-  /* Okabe–Ito based criterion palette (colour-blind safe) */
+  /* Okabe–Ito based criterion palette (colour-blind safe). control_evasion moved off purple to cyan,
+     so no criterion can be confused with the violet accent. */
   --c-insider_trading: #0072b2;
   --c-credential_sharing: #d55e00;
   --c-third_party_disclosure: #009e73;
   --c-documentation_concealment: #cc79a7;
-  --c-control_evasion: #7a5cc4;
+  --c-control_evasion: #087a8e;
   --c-payment_card_data: #b88a00;
   --c-other: #6b7280;
 
   --lane-bg: #ffffff;
-  --grid: #e3e3de;
-  --axis: #4b505a;
-  --trace: #16181d;
+  --grid: #e6e3ee;
+  --axis: #5b5870;
+  --trace: #1a1530;
 }
 
 .dark {
-  --background: #0f1115;
-  --foreground: #eceef2;
-  --card: #171a20;
-  --muted: #232730;
-  --muted-foreground: #a9afbb;
-  --border: #353a45;
-  --ring: #7aa2ff;
-  --primary: #eceef2;
-  --primary-foreground: #0f1115;
+  /* Dark theme (default): near-black with a violet tint, after uxpeak. */
+  --background: #0b0a10;
+  --foreground: #f5f5f7;
+  --card: #16141e;
+  --muted: #221f2d;
+  --muted-foreground: #8a8f98;
+  --border: #2a2736;
+  --ring: #a78bfa;
+  --primary: #7c3aed;
+  --primary-foreground: #ffffff;
+  --link: #a78bfa;
 
   --alarm: #ff8a80;      --alarm-bg: #3d1a18;
   --review: #f5c451;     --review-bg: #3a2c08;
@@ -60,18 +67,18 @@
   --customer: #f0a24b;
   --unknown: #9aa1ae;
 
-  --c-insider_trading: #56b4e9;
+  --c-insider_trading: #4f9cf9;
   --c-credential_sharing: #ff8f40;
   --c-third_party_disclosure: #2fd1a0;
   --c-documentation_concealment: #e79ac4;
-  --c-control_evasion: #a58df0;
+  --c-control_evasion: #5ee0f0;
   --c-payment_card_data: #e8bb2e;
   --c-other: #9aa1ae;
 
-  --lane-bg: #12151a;
-  --grid: #2a2e38;
-  --axis: #a9afbb;
-  --trace: #eceef2;
+  --lane-bg: #110f18;
+  --grid: #262330;
+  --axis: #8a8f98;
+  --trace: #f5f5f7;
 }
 
 @theme inline {
@@ -86,6 +93,7 @@
   --color-ring: var(--ring);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
+  --color-link: var(--link);
   --color-alarm: var(--alarm);
   --color-alarm-bg: var(--alarm-bg);
   --color-review: var(--review);
@@ -101,7 +109,7 @@
   --color-unknown: var(--unknown);
 }
 
-html { color-scheme: light; }
+html { color-scheme: light; accent-color: var(--primary); }  /* sliders + checkboxes in the violet accent */
 html.dark { color-scheme: dark; }
 body { background: var(--background); color: var(--foreground); font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
 *:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
