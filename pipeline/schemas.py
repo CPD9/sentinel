@@ -148,7 +148,7 @@ class RunResult:
     run_id: str
     mode: str
     system: str                      # e.g. "baseline_direct", "pipeline"
-    provider: str                    # e.g. "llm:<model>" or "MOCK:keyword-v1"
+    provider: str                    # e.g. "llm:<provider>:<model>" or "MOCK:keyword-v1"
     created_at: str
     calls: list[CallResult]
     schema_version: int = SCHEMA_VERSION
