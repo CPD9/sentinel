@@ -143,6 +143,7 @@ def _run(audio_path, call_id, ev: _Events, P, mode, no_llm, config, do_trigger) 
         facts, errs, vinfo = ev.stage("extract", lambda: stages.run_extraction(transcript, call_id))
         errors += errs
         versions.llm, versions.prompt = vinfo.get("llm"), vinfo.get("prompt")
+        versions.provider, versions.self_hosted = vinfo.get("provider"), vinfo.get("self_hosted")
 
     ev.emit("stage_started", stage="decide")
     trace, errs = stages.run_decision(transcript, facts, analysis, config, errors, versions)

@@ -15,6 +15,7 @@ prompt version, messages, runtime). Clean and noisy recordings share a script, s
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -178,13 +179,18 @@ def run(split: str, provider_name: str, out_dir: Path = PRED_DIR, cache_dir: Pat
     call_ids = json.loads(SPLITS_FILE.read_text(encoding="utf-8"))["splits"][split]["call_ids"]
     if limit:
         call_ids = call_ids[:limit]
+    opts_tag = ""
     if provider_name == "mock":
         provider = MockProvider()
         provider_id = MOCK_ID
     else:
         provider = get_client(model=model)     # provider: $SENTINEL_LLM_PROVIDER, else the registry default
         provider.probe()           # fails loudly if the tunnel / vLLM is down
-        provider_id = f"llm:{provider.spec.name}:{provider.model}"
+        opts = provider.effective_extra_body()
+        # request options change the answers, so they are part of the run identity (same provider + model + options
+        # = same run; different options must not overwrite each other)
+        opts_tag = hashlib.sha256(json.dumps(opts, sort_keys=True).encode()).hexdigest()[:8] if opts else ""
+        provider_id = f"llm:{provider.spec.name}:{provider.model}" + (f"+opts-{opts_tag}" if opts_tag else "")
     if provider_name == "mock":
         versions = Versions(llm=f"{provider.model}@{provider.model_revision}", prompt=PROMPT_VERSION)
     else:
@@ -220,7 +226,8 @@ def run(split: str, provider_name: str, out_dir: Path = PRED_DIR, cache_dir: Pat
         print(f"{cid}: {res.decision:8s} {[f.criterion for f in res.findings]}"
               f"{'  (cached)' if hit is not None else ''}{'  STAGE ERROR' if res.stage_errors else ''}")
 
-    tag = "MOCK" if provider_name == "mock" else re.sub(r"[^A-Za-z0-9.-]+", "-", f"{provider.spec.name}-{provider.model}")
+    tag = "MOCK" if provider_name == "mock" else re.sub(r"[^A-Za-z0-9.-]+", "-", f"{provider.spec.name}-{provider.model}"
+                                            + (f"-opts-{opts_tag}" if opts_tag else ""))
     run_id = f"baseline_direct_{tag}_{split}"
     notes = [f"input: reference transcripts (organizer scripts), split={split}",
              "confidence is not computed by this baseline (null)",

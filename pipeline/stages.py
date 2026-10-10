@@ -5,7 +5,8 @@ Extraction is built in a parallel branch (pipeline/extract.py). It is imported l
 creates it. Assumed contract, adjust when that branch lands:
 
     pipeline.extract.extract_facts(transcript: Transcript) -> list[schemas.Fact]   # validated facts (valid flag set)
-    pipeline.extract.VERSIONS = {"llm": "<model>@<rev>", "prompt": "<prompt version>"}   # optional
+    pipeline.extract.VERSIONS = {"llm": "<model>@<rev>", "prompt": "<prompt version>",
+                                 "provider": "<provider name>", "self_hosted": True}   # optional, recorded in versions
 
 A missing module, an unreachable LLM_BASE_URL (probed first, 10 s) or any exception becomes StageError("extract").
 """

@@ -129,8 +129,11 @@ def test_baseline_run_identity_and_cache_key_include_provider_and_extra_body(tmp
     assert ra.provider == "llm:p1:same-model" and ra.calls[0].versions.provider == "p1"
     assert b.requests == 1                                                   # other provider: no cache sharing
     changed = _FakeClient("p1", {"chat_template_kwargs": {"enable_thinking": False}})
-    run_with(changed)
+    out_changed, _ = run_with(changed)
     assert changed.requests == 1                                             # new request options: cache miss
+    assert out_changed not in (out_a, out_b)                                 # ...and a separate run, no overwrite
+    rc = RunResult.from_dict(json.loads(out_changed.read_text(encoding="utf-8")))
+    assert rc.provider.startswith("llm:p1:same-model+opts-") and rc.run_id != ra.run_id
     same = _FakeClient("p1")
     run_with(same)
     assert same.requests == 0                                                # identical setup: served from cache
