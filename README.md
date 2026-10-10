@@ -55,9 +55,10 @@ Banks record client phone calls, but people can only listen to a small sample of
 | Transcription | Swiss German speech-to-text, model chosen by bake-off | ⬜ |
 | Speaker roles, keywords, fact extraction | Who said what, keyword families, LLM facts | ⬜ |
 | Evidence check, rules, confidence, decision | The deterministic core | 🟡 keywords, rules, confidence gate and decision built and tested on synthetic facts (`pipeline/decide.py`); the evidence validator and fact extraction are not built, nothing run on real data, all numbers are untuned placeholders |
-| Narrative, audio snippets, trigger | Explanations, playable clips, call to the Outcept API | ⬜ |
-| `run.sh` command line | `./run.sh <folder>` produces `out/results.json` and snippets | ⬜ |
+| Narrative, audio snippets, trigger | Explanations, playable clips, call to the Outcept API | 🟡 built and unit-tested: template narrative (no LLM), ffmpeg snippets (±10 s, ffprobe-checked), trigger in dry-run by default; snippets and a real trigger POST not yet run on real ASR output |
+| `run.sh` command line | `./run.sh <folder>` produces `out/results.json` and snippets | 🟡 `process_call` and `run.sh` work end to end on CPU; run so far only on the dev split with reference transcripts and no LLM (all 28 calls came out `no_alert`); ASR mode and LLM extraction not run |
 | Audio analysis | Waveform, spectrogram, quality score for the UI | 🟡 |
+| What-if, feedback, suggestions | Simulate a config change over cached calls (flipped calls with reasons, officer workload), record officer verdicts, rank the smallest change that fixes flagged false alarms / misses without touching calls marked correct ([`simulate.py`](pipeline/simulate.py), [`suggest.py`](pipeline/suggest.py), [`feedback.py`](pipeline/feedback.py)) | 🟡 engine built and tested on a synthetic corpus only (no real traces or officer feedback yet); web shows it with MOCK fixtures, the API endpoints in [API.md](docs/API.md) are specified but not built |
 | API service | FastAPI, job queue, live events ([`services/api/`](services/api/README.md)) | 🟡 every endpoint in API.md answers in fixture mode (MOCK data), with tests; uploads, audio and `process_call()` not wired yet |
 | Web app | Inbox, call dashboard, settings, quality lab ([`web/`](web/README.md)) | 🟡 all screens built and shown with MOCK fixtures; not yet run against the real API |
 
