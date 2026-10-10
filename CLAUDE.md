@@ -30,7 +30,8 @@ Final submission: **Sunday 08:30** (team target 08:15). Feature freeze: **Saturd
 3. **Keywords** (`pipeline/keywords.py`): `config/keywords.json` families + Swiss German variants,
    fuzzy matching. Deterministic. Keyword hits are **not** fed into the extraction prompt, so
    keyword edits never invalidate the LLM cache.
-4. **Fact extraction** (`pipeline/extract.py`): LLM (Apertus-8B by default), temperature 0, strict JSON
+4. **Fact extraction** (`pipeline/extract.py`): LLM (Apertus v1.5 8B, `swiss-ai/Apertus-v1.5-8B`,
+   served by the swiss-ai vLLM image, **thinking mode off**), temperature 0, strict JSON
    schema, run over the **whole** conversation in windows (not only keyword hits). Each fact:
    speaker, act (request | disclose | warn | refuse | hypothetical | quote | other),
    info_type (credentials | nonpublic_info | client_data | other), recipient_third_party,
@@ -45,8 +46,9 @@ Final submission: **Sunday 08:30** (team target 08:15). Feature freeze: **Saturd
    Rules combine validated facts and keyword hits.
 7. **Confidence gate** (`pipeline/confidence.py`): combines ASR confidence on evidence passages,
    threshold proximity, conflicting facts, missing evidence, audio noise → confidence 0–1.
-8. **Decision** (`pipeline/decide.py`), priority order: strong evidence + rule hit ≥ alarm threshold →
-   `alarm`; low confidence or mid risk → `review`; else `no_alert`. Thresholds in
+8. **Decision** (`pipeline/decide.py`), priority order: (1) failed stage, missing or contradictory
+   evidence, or confidence below the gate → `review` (never a confident alarm); (2) validated evidence
+   + rule hit ≥ alarm threshold → `alarm`; (3) risk in the review band → `review`; (4) else `no_alert`. Thresholds in
    `config/thresholds.json`. A failed stage is recorded as an error, never silently `no_alert`.
 9. **Narrative** (`pipeline/narrate.py`): LLM writes the reason and, for borderline calls, "why not
    flagged / what would change this" — only **after** the decision is locked.
@@ -78,6 +80,34 @@ Interface for Jules: `process_call(audio_path: str, call_id: str) -> dict` in `p
 Per call: `call_id`, `decision` (alarm | review | no_alert), `risk_score`, `confidence`,
 `findings[]` (criterion, risk, reason, evidence[{segment_ids, start_s, end_s, speaker, text,
 snippet_path}], counter_evidence), `narrative`, `stage_errors[]`, `versions` (asr, llm, prompt, rules).
+
+## Analysis artifacts (feed the UI's scientific views; never feed the decision unless stated)
+`pipeline/audio_analysis.py` writes `artifacts/analysis/<call_id>/analysis.json` (+ small .npy/.png),
+schema in `pipeline/schemas.py` (`AnalysisArtifact`), versioned like results:
+- `waveform_peaks` (downsampled min/max per bucket), `duration_s`, `sample_rate`
+- `mel_spectrogram` (downsampled, dB, with time/freq axes) for the whole call
+- `speech_activity` (VAD intervals), `turns` (speaker timeline), `speech_rate`, `pitch`/`energy` contours
+- `audio_quality`: SNR estimate per segment + call-level score → **this one does feed the confidence gate**
+- `asr_confidence` per segment (avg_logprob, no_speech_prob) aligned to the timeline
+- `feature_maps` for each evidence window (±10 s): Whisper encoder conv1/conv2 outputs and selected
+  transformer block activations, reduced to small 2-D arrays (channels pooled) normalised to [-1, 1],
+  computed lazily on demand (`--feature-maps`), so batch runs stay fast
+- optional later: `audio_quality_cnn` (small ResNet on mel spectrograms, clean vs noisy, trained on
+  dev only) with its own feature maps
+All analysis is optional per call: a missing artifact never breaks `run.sh` or the decision.
+
+## Product surfaces (web/, built against the JSON contracts)
+- **Inbox**: all calls, decision badges, risk, confidence, processing status, filters.
+- **Processing view**: live stage timeline per call (from Jules' SSE events).
+- **Call dashboard** (tabs): Summary · Evidence (snippets + player) · Transcript (highlighted) ·
+  Audio analysis (waveform, spectrogram, ASR-confidence and quality overlays, feature maps for each
+  evidence window) · Reasoning (facts → rules → confidence breakdown → decision, "why not flagged") ·
+  Audit (versions, config, timings).
+- **Settings**: Tuning (thresholds) and Configuration (keyword families, rules), live hit counts.
+- **Quality lab**: three metric conventions, confusion matrix, threshold curves (P/R vs threshold),
+  per-Stufe and clean/noisy bars, confidence reliability diagram, ablations (keyword-only vs LLM-only
+  vs combined; reference vs ASR transcripts), WER vs downstream recall, per-stage latency, all with
+  bootstrap confidence intervals because n is small.
 
 ## Evaluation (`python -m pipeline.evaluate --pred artifacts/predictions/<run>.json`)
 Always report all three until organizers confirm their convention:
