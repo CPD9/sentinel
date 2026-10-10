@@ -28,30 +28,10 @@ __pycache__/
 # node (web/)
 node_modules/
 .next/
-data/
-artifacts/
-out/
-.env
-.env.*
-!.env.example
-*.wav
-*.mp3
-*.flac
 *.db
 *.sqlite
-*.safetensors
-*.bin
 *.pt
 *.pth
-.venv/
-__pycache__/
-.pytest_cache/
-node_modules/
-.next/
-.DS_Store
-<<<<<<< HEAD
 /data
 /artifacts
-=======
 web/public/fixtures/
->>>>>>> origin/main
