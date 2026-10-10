@@ -9,17 +9,15 @@
   },
   "suggestions": [
     {
-      "id": "66cd9b81d84d",
+      "id": "9e7e92493c55",
       "patch": {
         "thresholds": {
-          "review": 0.55
-        },
-        "keywords": {
-          "disable_families": ["splitting"]
+          "alarm": 0.87,
+          "review": 0.86
         }
       },
-      "title": "Raise review threshold 0.40 → 0.55 + turn off keyword family 'splitting'",
-      "rationale": "Moves 3 of 3 flagged verdict(s) the right way (call_MOCK_104, call_MOCK_106, call_MOCK_107), fix credit 3 of 3. 2 unlabelled call(s) change decision; flagged calls per 100: 58.33 → 16.67. No call marked correct changes. Warning: this switches off keyword family splitting for every call, including real cases.",
+      "title": "Raise alarm threshold 0.70 → 0.87 + raise review threshold 0.40 → 0.86",
+      "rationale": "Moves 3 of 3 flagged verdict(s) the right way (call_MOCK_104, call_MOCK_106, call_MOCK_107), fix credit 3 of 3. 2 unlabelled call(s) change decision; flagged calls per 100: 58.33 → 16.67. No call marked correct changes.",
       "config_version": "rules-v1+05033d70",
       "n_knobs": 2,
       "fix_credit": 3.0,
@@ -29,14 +27,12 @@
       "effect": {
         "patch": {
           "thresholds": {
-            "review": 0.55
-          },
-          "keywords": {
-            "disable_families": ["splitting"]
+            "alarm": 0.87,
+            "review": 0.86
           }
         },
         "baseline_version": "rules-v1+05033d70",
-        "patched_version": "rules-v1+ac9eb050",
+        "patched_version": "rules-v1+6530f8c5",
         "n_calls": 12,
         "n_locked": 0,
         "counts": {
@@ -75,11 +71,11 @@
             "risk_before": 0.54,
             "risk_after": 0.54,
             "confidence_before": 0.8401,
-            "confidence_after": 0.6668,
+            "confidence_after": 0.8535,
             "path_before": "review_band",
             "path_after": "no_alert",
-            "reasons": ["decision path review_band → no_alert", "risk 0.54 < review threshold 0.55", "confidence 0.84 → 0.67"],
-            "attributed_to": ["thresholds.review=0.55"],
+            "reasons": ["decision path review_band → no_alert", "risk 0.54 < review threshold 0.86", "confidence 0.84 → 0.85"],
+            "attributed_to": ["combination of thresholds.alarm=0.87, thresholds.review=0.86"],
             "feedback_verdict": "false_alarm"
           },
           {
@@ -90,11 +86,11 @@
             "risk_before": 0.54,
             "risk_after": 0.54,
             "confidence_before": 0.8724,
-            "confidence_after": 0.6991,
+            "confidence_after": 0.8858,
             "path_before": "review_band",
             "path_after": "no_alert",
-            "reasons": ["decision path review_band → no_alert", "risk 0.54 < review threshold 0.55", "confidence 0.87 → 0.70"],
-            "attributed_to": ["thresholds.review=0.55"],
+            "reasons": ["decision path review_band → no_alert", "risk 0.54 < review threshold 0.86", "confidence 0.87 → 0.89"],
+            "attributed_to": ["combination of thresholds.alarm=0.87, thresholds.review=0.86"],
             "feedback_verdict": "false_alarm"
           },
           {
@@ -103,13 +99,13 @@
             "after": "no_alert",
             "direction": "down",
             "risk_before": 0.85,
-            "risk_after": 0.0,
+            "risk_after": 0.85,
             "confidence_before": 0.9262,
-            "confidence_after": 0.9262,
+            "confidence_after": 0.7395,
             "path_before": "alarm",
             "path_after": "no_alert",
-            "reasons": ["decision path alarm → no_alert", "risk 0.00 < review threshold 0.55", "risk 0.85 → 0.00", "rule control_evasion risk 0.85 → 0.00", "keyword hits 1 → 0"],
-            "attributed_to": ["keywords.disable:splitting"],
+            "reasons": ["decision path alarm → no_alert", "risk 0.85 < review threshold 0.86", "confidence 0.93 → 0.74"],
+            "attributed_to": ["combination of thresholds.alarm=0.87, thresholds.review=0.86"],
             "feedback_verdict": "false_alarm"
           },
           {
@@ -118,13 +114,13 @@
             "after": "no_alert",
             "direction": "down",
             "risk_before": 0.85,
-            "risk_after": 0.0,
+            "risk_after": 0.85,
             "confidence_before": 0.8131,
-            "confidence_after": 0.8131,
+            "confidence_after": 0.6264,
             "path_before": "alarm",
             "path_after": "no_alert",
-            "reasons": ["decision path alarm → no_alert", "risk 0.00 < review threshold 0.55", "risk 0.85 → 0.00", "rule control_evasion risk 0.85 → 0.00", "keyword hits 1 → 0"],
-            "attributed_to": ["keywords.disable:splitting"],
+            "reasons": ["decision path alarm → no_alert", "risk 0.85 < review threshold 0.86", "confidence 0.81 → 0.63"],
+            "attributed_to": ["combination of thresholds.alarm=0.87, thresholds.review=0.86"],
             "feedback_verdict": null
           },
           {
@@ -133,13 +129,13 @@
             "after": "no_alert",
             "direction": "down",
             "risk_before": 0.85,
-            "risk_after": 0.0,
+            "risk_after": 0.85,
             "confidence_before": 0.7678,
-            "confidence_after": 0.7678,
+            "confidence_after": 0.5812,
             "path_before": "alarm",
             "path_after": "no_alert",
-            "reasons": ["decision path alarm → no_alert", "risk 0.00 < review threshold 0.55", "risk 0.85 → 0.00", "rule control_evasion risk 0.85 → 0.00", "keyword hits 1 → 0"],
-            "attributed_to": ["keywords.disable:splitting"],
+            "reasons": ["decision path alarm → no_alert", "risk 0.85 < review threshold 0.86", "confidence 0.77 → 0.58"],
+            "attributed_to": ["combination of thresholds.alarm=0.87, thresholds.review=0.86"],
             "feedback_verdict": null
           }
         ],
@@ -155,15 +151,17 @@
       }
     },
     {
-      "id": "dba6d105c02f",
+      "id": "e7eed7edffe6",
       "patch": {
         "thresholds": {
-          "review": 0.55,
           "alarm": 0.86
+        },
+        "rules": {
+          "disable": ["credential_sharing"]
         }
       },
-      "title": "Raise review threshold 0.40 → 0.55 + raise alarm threshold 0.70 → 0.86",
-      "rationale": "Moves 3 of 3 flagged verdict(s) the right way (call_MOCK_104, call_MOCK_106, call_MOCK_107), fix credit 2.5 of 3; call_MOCK_107 only part of the way (alarm to review, or no_alert to review). 2 unlabelled call(s) change decision; flagged calls per 100: 58.33 → 41.67. No call marked correct changes.",
+      "title": "Raise alarm threshold 0.70 → 0.86 + turn off rule 'credential_sharing'",
+      "rationale": "Moves 3 of 3 flagged verdict(s) the right way (call_MOCK_104, call_MOCK_106, call_MOCK_107), fix credit 2.5 of 3; call_MOCK_107 only part of the way (alarm to review, or no_alert to review). 2 unlabelled call(s) change decision; flagged calls per 100: 58.33 → 41.67. No call marked correct changes. Warning: this switches off rule credential_sharing for every call, including real cases.",
       "config_version": "rules-v1+05033d70",
       "n_knobs": 2,
       "fix_credit": 2.5,
@@ -173,12 +171,14 @@
       "effect": {
         "patch": {
           "thresholds": {
-            "review": 0.55,
             "alarm": 0.86
+          },
+          "rules": {
+            "disable": ["credential_sharing"]
           }
         },
         "baseline_version": "rules-v1+05033d70",
-        "patched_version": "rules-v1+baed38e4",
+        "patched_version": "rules-v1+b31d5b9c",
         "n_calls": 12,
         "n_locked": 0,
         "counts": {
@@ -215,13 +215,13 @@
             "after": "no_alert",
             "direction": "down",
             "risk_before": 0.54,
-            "risk_after": 0.54,
+            "risk_after": 0.0,
             "confidence_before": 0.8401,
-            "confidence_after": 0.6668,
+            "confidence_after": 0.8535,
             "path_before": "review_band",
             "path_after": "no_alert",
-            "reasons": ["decision path review_band → no_alert", "risk 0.54 < review threshold 0.55", "confidence 0.84 → 0.67"],
-            "attributed_to": ["thresholds.review=0.55"],
+            "reasons": ["decision path review_band → no_alert", "risk 0.00 < review threshold 0.40", "risk 0.54 → 0.00", "confidence 0.84 → 0.85", "rule credential_sharing no longer evaluated (disabled)"],
+            "attributed_to": ["rules.disable:credential_sharing"],
             "feedback_verdict": "false_alarm"
           },
           {
@@ -230,13 +230,13 @@
             "after": "no_alert",
             "direction": "down",
             "risk_before": 0.54,
-            "risk_after": 0.54,
+            "risk_after": 0.0,
             "confidence_before": 0.8724,
-            "confidence_after": 0.6991,
+            "confidence_after": 0.8858,
             "path_before": "review_band",
             "path_after": "no_alert",
-            "reasons": ["decision path review_band → no_alert", "risk 0.54 < review threshold 0.55", "confidence 0.87 → 0.70"],
-            "attributed_to": ["thresholds.review=0.55"],
+            "reasons": ["decision path review_band → no_alert", "risk 0.00 < review threshold 0.40", "risk 0.54 → 0.00", "confidence 0.87 → 0.89", "rule credential_sharing no longer evaluated (disabled)"],
+            "attributed_to": ["rules.disable:credential_sharing"],
             "feedback_verdict": "false_alarm"
           },
           {
@@ -250,7 +250,7 @@
             "confidence_after": 0.7395,
             "path_before": "alarm",
             "path_after": "review_band",
-            "reasons": ["decision path alarm → review_band", "risk 0.85 is in the review band [0.55, 0.86)", "confidence 0.93 → 0.74"],
+            "reasons": ["decision path alarm → review_band", "risk 0.85 is in the review band [0.40, 0.86)", "confidence 0.93 → 0.74", "rule credential_sharing no longer evaluated (disabled)"],
             "attributed_to": ["thresholds.alarm=0.86"],
             "feedback_verdict": "false_alarm"
           },
@@ -265,7 +265,7 @@
             "confidence_after": 0.6264,
             "path_before": "alarm",
             "path_after": "review_band",
-            "reasons": ["decision path alarm → review_band", "risk 0.85 is in the review band [0.55, 0.86)", "confidence 0.81 → 0.63"],
+            "reasons": ["decision path alarm → review_band", "risk 0.85 is in the review band [0.40, 0.86)", "confidence 0.81 → 0.63", "rule credential_sharing no longer evaluated (disabled)"],
             "attributed_to": ["thresholds.alarm=0.86"],
             "feedback_verdict": null
           },
@@ -280,7 +280,7 @@
             "confidence_after": 0.5812,
             "path_before": "alarm",
             "path_after": "review_band",
-            "reasons": ["decision path alarm → review_band", "risk 0.85 is in the review band [0.55, 0.86)", "confidence 0.77 → 0.58"],
+            "reasons": ["decision path alarm → review_band", "risk 0.85 is in the review band [0.40, 0.86)", "confidence 0.77 → 0.58", "rule credential_sharing no longer evaluated (disabled)"],
             "attributed_to": ["thresholds.alarm=0.86"],
             "feedback_verdict": null
           }

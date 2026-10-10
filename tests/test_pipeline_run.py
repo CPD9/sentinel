@@ -202,18 +202,64 @@ def test_bad_call_id_rejected(env):
         process_call(str(env.wav), "../x", out_dir=env.out)
 
 
-def test_no_half_written_result_when_write_fails(env, monkeypatch):
+def _fail_writes(monkeypatch, needle):
     import pipeline.runner as rn
     real = rn.write_json_atomic
 
     def flaky(path, obj, *a, **k):
-        if "results" in str(path):
+        if needle in str(path) and not getattr(flaky, "armed_off", False):
             raise OSError("disk full")
         return real(path, obj, *a, **k)
     monkeypatch.setattr(rn, "write_json_atomic", flaky)
+
+
+def test_failed_result_write_is_review_not_healthy_no_alert(env, monkeypatch):
+    _fail_writes(monkeypatch, "/results/")
+    events = []
+    r = run(env, no_llm=True, on_event=events.append)
+    assert r["decision"] == "review" and "results" in {e["stage"] for e in r["stage_errors"]}
+    assert "Decision no_alert" not in r["narrative"] and validate_call_result(r) == []
+    assert events[-1]["event"] == "job_finished" and events[-1]["decision"] == "review"
+    assert not (env.out / "results").exists() or not list((env.out / "results").glob("*"))      # no half-written file
+    trace = json.loads((env.art / "traces" / "call_t1.json").read_text())
+    assert trace["decision"] == "review" and trace["decision_path"] == "stage_error"
+
+
+def test_failed_trace_write_regenerates_narrative(env, monkeypatch):
+    _fail_writes(monkeypatch, "/traces")
     r = run(env, no_llm=True)
-    assert r["decision"] in ("no_alert", "review")
-    assert not list((env.out / "results").glob("*")) if (env.out / "results").exists() else True
+    assert r["decision"] == "review" and "trace" in {e["stage"] for e in r["stage_errors"]}
+    assert "Decision no_alert" not in r["narrative"] and "Decision review" in r["narrative"]
+    assert json.loads((env.out / "results" / "call_t1.json").read_text())["decision"] == "review"
+
+
+def test_snippet_failure_keeps_alarm_and_its_narrative(env, monkeypatch):
+    fake_extract(monkeypatch, [Fact("F1", "customer", "disclose", "credentials", ["S3"], "Mis Passwort isch Sunneblueme")])
+    env.wav.write_bytes(b"corrupt")
+    r = run(env)
+    assert r["decision"] == "alarm" and "Decision alarm" in r["narrative"]
+
+
+def test_audio_analysis_dependency_is_optional(tmp_path, monkeypatch):
+    """numpy missing (only requirements-dev.txt installed): import works and the call still completes."""
+    import subprocess
+    code = ("import sys; sys.modules['numpy'] = None\n"
+            "import pipeline.stages, pipeline.runner, run\n"
+            "from pipeline import stages\n"
+            "art, errs, cached = stages.run_analysis('x.wav', 'call_t1', __import__('pathlib').Path('.'))\n"
+            "assert art is None and errs and errs[0].stage == 'analysis', errs\n")
+    r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
+                       cwd=str(__import__("pathlib").Path(__file__).resolve().parents[1]))
+    assert r.returncode == 0, r.stderr[-800:]
+
+
+def test_call_completes_without_analysis_dependency(env, monkeypatch):
+    monkeypatch.undo()           # drop the env stubs, keep tmp paths
+    monkeypatch.setitem(sys.modules, "numpy", None)
+    monkeypatch.delitem(sys.modules, "pipeline.audio_analysis", raising=False)
+    monkeypatch.setattr(stages, "run_asr", lambda audio, cid, **k: (asr_transcript(cid), []))
+    r = run(env, no_llm=True)
+    assert r["stage_errors"] == [] and r["decision"] in ("no_alert", "review")
 
 
 def test_pipeline_never_opens_labels(env, monkeypatch):
@@ -230,3 +276,14 @@ def test_pipeline_never_opens_labels(env, monkeypatch):
     monkeypatch.setattr(pathlib.Path, "read_text", lambda self, *a, **k: (opened.append(str(self)), real_read(self, *a, **k))[1])
     run(env, no_llm=True)
     assert not [o for o in opened if "evaluation" in o]
+
+
+def test_post_decision_escalation_rewrites_trace(env, monkeypatch):
+    import pipeline.narrate as nar
+    monkeypatch.setattr(nar, "narrate", lambda *a: (_ for _ in ()).throw(RuntimeError("narrate broke")))
+    r = run(env, no_llm=True)
+    trace = json.loads((env.art / "traces" / "call_t1.json").read_text())
+    assert r["decision"] == "review" and any(e["stage"] == "narrate" for e in r["stage_errors"])
+    assert trace["decision"] == r["decision"] == "review" and trace["decision_path"] == "stage_error"
+    from pipeline.schemas import DecisionTrace
+    assert DecisionTrace.validate(trace) == []

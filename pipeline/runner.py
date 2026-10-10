@@ -72,6 +72,25 @@ def _paths(artifacts_dir: Path | None, out_dir: Path | None, mode: str) -> dict[
             "triggers": o / "triggers"}
 
 
+def _escalate(trace: DecisionTrace, findings: list[Finding]) -> str:
+    """no_alert -> review after a stage error. Rewrites the trace (decision, path) and regenerates the narrative and
+    why-not texts from it, so trace, result and narrative never disagree. Returns the new narrative."""
+    trace.decision, trace.decision_path = "review", "stage_error"
+    try:
+        narrative, trace.why_not_flagged, trace.what_would_change = nar.narrate(trace, findings)
+    except Exception:
+        narrative = f"{nar.TEMPLATE_TAG} Decision review (a stage failed); needs human review."
+    return narrative
+
+
+def _escalate_result(result: CallResult, trace: DecisionTrace | None) -> None:
+    result.decision = "review"
+    if trace is not None:
+        result.narrative = _escalate(trace, result.findings)
+    else:
+        result.narrative = f"{nar.TEMPLATE_TAG} Decision review (a stage failed); needs human review."
+
+
 def _failed_result(call_id: str, errors: list[StageError], versions: Versions | None = None) -> CallResult:
     return CallResult(call_id=call_id, decision="review", risk_score=0.0, confidence=None,
                       narrative=f"{nar.TEMPLATE_TAG} Processing failed ({errors[0].stage}); needs human review.",
@@ -88,31 +107,49 @@ def process_call(audio_path: str, call_id: str, *, on_event: Callable[[dict], No
     ev = _Events(call_id, on_event)
     P = _paths(artifacts_dir, out_dir, transcripts)
     t_start = time.perf_counter()
+    trace = None
     try:
-        result = _run(audio_path, call_id, ev, P, transcripts, no_llm, config, trigger)
+        result, trace = _run(audio_path, call_id, ev, P, transcripts, no_llm, config, trigger)
     except Exception as exc:     # last line of defence: unknown failure is review, never no_alert, never a raise
         log.exception("%s: unexpected pipeline failure", call_id)
         result = _failed_result(call_id, stages._err("pipeline", exc))
-    d = result.to_dict()
-    problems = validate_call_result(d)
+
+    trace_path = P["traces"] / f"{call_id}.json"
+    if trace is not None:
+        try:
+            write_json_atomic(trace_path, trace.to_dict())
+        except Exception as exc:
+            log.error("%s: cannot write trace: %s", call_id, exc)
+            result.stage_errors += stages._err("trace", exc)
+            if result.decision == "no_alert":
+                _escalate_result(result, trace)
+    problems = validate_call_result(result.to_dict())
     if problems:      # a schema-invalid result must not leave the pipeline looking healthy
         result = _failed_result(call_id, result.stage_errors + [StageError("pipeline", f"invalid result: {problems[:3]}")],
                                 result.versions)
-        d = result.to_dict()
+        trace = None
     try:
-        write_json_atomic(P["results"] / f"{call_id}.json", d)
-    except Exception as exc:
+        write_json_atomic(P["results"] / f"{call_id}.json", result.to_dict())
+    except Exception as exc:      # the API reads this file: not persisting is a failed stage, never a healthy no_alert
         log.error("%s: cannot write result file: %s", call_id, exc)
+        result.stage_errors += stages._err("results", exc)
+        if result.decision == "no_alert":
+            _escalate_result(result, trace)
+            if trace is not None:
+                try:
+                    write_json_atomic(trace_path, trace.to_dict())      # best effort: keep trace and result in step
+                except Exception as exc2:
+                    log.error("%s: cannot rewrite trace: %s", call_id, exc2)
     ev.emit("job_finished", decision=result.decision, elapsed_s=round(time.perf_counter() - t_start, 3))
-    return d
+    return result.to_dict()
 
 
-def _run(audio_path, call_id, ev: _Events, P, mode, no_llm, config, do_trigger) -> CallResult:
+def _run(audio_path, call_id, ev: _Events, P, mode, no_llm, config, do_trigger) -> tuple[CallResult, DecisionTrace | None]:
     errors: list[StageError] = []        # errors that go into CallResult.stage_errors
     try:
         config = config or dec.load_config()
     except Exception as exc:
-        return _failed_result(call_id, stages._err("config", exc))
+        return _failed_result(call_id, stages._err("config", exc)), None
 
     analysis, _, _ = ev.stage("analysis", lambda: stages.run_analysis(audio_path, call_id, P["analysis"]),
                               cached=lambda r: r[2])       # optional: its errors never touch the decision
@@ -149,7 +186,7 @@ def _run(audio_path, call_id, ev: _Events, P, mode, no_llm, config, do_trigger) 
     trace, errs = stages.run_decision(transcript, facts, analysis, config, errors, versions)
     if trace is None:
         ev.emit("stage_failed", stage="decide", message="; ".join(e.message for e in errs)[:500])
-        return _failed_result(call_id, errors + errs, versions)
+        return _failed_result(call_id, errors + errs, versions), None
     for name in ("keywords", "rules", "confidence", "decide"):
         ev.emit("stage_finished", stage=name, elapsed_s=round(trace.timings_s.get(name, 0.0), 3))
 
@@ -176,16 +213,7 @@ def _run(audio_path, call_id, ev: _Events, P, mode, no_llm, config, do_trigger) 
         _, errs = ev.stage("trigger", lambda: (None, trg.send_triggers(call_id, trace.decision, findings, P["triggers"])[1]))
         errors += errs
 
-    decision = trace.decision
-    if errors and decision == "no_alert":    # hard rule: a failed stage is never a silent no_alert
-        decision = "review"
-        narrative += " Escalated to review because a stage failed after the decision."
-
-    try:
-        write_json_atomic(P["traces"] / f"{call_id}.json", trace.to_dict())
-    except Exception as exc:
-        errors += stages._err("trace", exc)
-        if decision == "no_alert":
-            decision = "review"
-    return CallResult(call_id=call_id, decision=decision, risk_score=trace.risk_score, confidence=trace.confidence,
-                      findings=findings, narrative=narrative, stage_errors=errors, versions=trace.versions)
+    if errors and trace.decision == "no_alert":    # hard rule: a failed stage is never a silent no_alert
+        narrative = _escalate(trace, findings)
+    return CallResult(call_id=call_id, decision=trace.decision, risk_score=trace.risk_score, confidence=trace.confidence,
+                      findings=findings, narrative=narrative, stage_errors=errors, versions=trace.versions), trace

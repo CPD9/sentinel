@@ -260,3 +260,60 @@ def test_simulation_is_fast():
 def test_all_scenarios_decide_without_error():
     for name in SCENARIOS:
         assert Simulator([make_call("call_x", name)], RAW).baseline["call_x"].decision in ("alarm", "review", "no_alert")
+
+
+# --------------------------------------------------------------------------- review follow-ups
+
+def test_a_patch_whose_knobs_are_only_valid_together_does_not_break_attribution():
+    # review 0.86 alone is invalid under alarm 0.70, but {alarm 0.87, review 0.86} is a valid patch.
+    calls = [make_call("call_a", "password_asked"), make_call("call_b", "password_to_third_party")]
+    sim = Simulator(calls, RAW)
+    r = sim.run({"thresholds": {"alarm": 0.87, "review": 0.86}})              # must not raise ConfigError
+    by = {f.call_id: f for f in r.flipped}
+    assert by["call_a"].after == "no_alert" and by["call_a"].attributed_to[0].startswith("combination of")
+    assert "call_b" not in by and SimulationResult.validate(r.to_dict()) == []
+
+
+def _write_call(root, cid, scenario="password_asked", stage_errors=None):
+    c = make_call(cid, scenario)
+    tr = decide_call(c.transcript, c.facts, None, RAW.build(), stage_errors)
+    for sub, doc in (("traces", tr), ("transcripts", c.transcript)):
+        (root / "artifacts" / sub).mkdir(parents=True, exist_ok=True)
+        (root / "artifacts" / sub / f"{cid}.json").write_text(json.dumps(doc.to_dict()), encoding="utf-8")
+
+
+def _load(root):
+    from pipeline.simulate import load_inputs
+    return {c.call_id: c for c in load_inputs(root / "artifacts", root / "out")}
+
+
+def test_a_trace_that_recorded_a_stage_error_stays_locked_without_a_result_file(tmp_path):
+    _write_call(tmp_path, "call_bad", stage_errors=[StageError("extract", "LLM unreachable")])
+    _write_call(tmp_path, "call_ok")
+    calls = _load(tmp_path)
+    assert calls["call_bad"].locked and calls["call_bad"].stage_errors[0].stage == "unknown" and not calls["call_ok"].locked
+    sim = Simulator(list(calls.values()), RAW)
+    for patch in ({"thresholds": {"alarm": 0.99, "review": 0.98}}, {"rules": {"disable": ["credential_sharing"]}}):
+        assert sim.decisions(patch)["call_bad"] == "review"
+
+
+def test_stage_errors_come_from_the_per_call_file_then_the_batch_file(tmp_path):
+    for cid in ("call_a", "call_b", "call_c"):
+        _write_call(tmp_path, cid)
+    out = tmp_path / "out"
+    (out / "results").mkdir(parents=True)
+    (out / "results.json").write_text(json.dumps({"calls": [
+        {"call_id": "call_a", "stage_errors": [{"stage": "asr", "message": "batch says broken"}]},
+        {"call_id": "call_b", "stage_errors": [{"stage": "asr", "message": "batch says broken"}]}]}), encoding="utf-8")
+    (out / "results" / "call_b.json").write_text(json.dumps({"call_id": "call_b", "stage_errors": []}), encoding="utf-8")   # the per-call file wins
+    calls = _load(tmp_path)
+    assert calls["call_a"].locked and calls["call_a"].stage_errors[0].message == "batch says broken"
+    assert not calls["call_b"].locked and not calls["call_c"].locked
+
+
+def test_corrupt_result_files_do_not_unlock_a_failed_call(tmp_path):
+    _write_call(tmp_path, "call_bad", stage_errors=[StageError("asr", "boom")])
+    (tmp_path / "out" / "results").mkdir(parents=True)
+    (tmp_path / "out" / "results" / "call_bad.json").write_text("{not json", encoding="utf-8")
+    (tmp_path / "out" / "results.json").write_text("[1, 2", encoding="utf-8")
+    assert _load(tmp_path)["call_bad"].locked

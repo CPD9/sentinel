@@ -60,7 +60,7 @@ WEIGHTS = {"greeting": 3, "password_warning": 3, "password_asked": 2, "password_
 def make_call(call_id: str, scenario: str, logprob: float = -0.3, no_speech: float = 0.02, mock: bool = True) -> CallInputs:
     lines, facts = SCENARIOS[scenario]
     segs = [TranscriptSegment(f"s{i:03d}", sp, text, i * 5.0, i * 5.0 + 4.5, logprob, no_speech) for i, (sp, text) in enumerate(lines, 1)]
-    tr = Transcript(call_id=call_id, mode="asr", segments=segs, asr_model="MOCK" if mock else "TEST", duration_s=len(segs) * 5.0 + 1, is_mock=mock)
+    tr = Transcript(call_id=call_id, mode="asr", segments=segs, asr_model="MOCK" if mock else "TEST", duration_s=len(segs) * 5.0 + 5.0, is_mock=mock)
     return CallInputs(tr, [Fact(**{**f.__dict__, "segment_ids": list(f.segment_ids)}) for f in facts])
 
 
