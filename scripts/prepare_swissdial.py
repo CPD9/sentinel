@@ -66,10 +66,8 @@ def build(tar_path: Path, out_dir: Path, manifest: Path, n: int, seed: int) -> d
 
         wanted = [f"{root}/{f}" for f in META_FILES if f"{root}/{f}" in members]
         wanted += [wavs[d][i] for d in sorted(wavs) for i in ids]
-        for name in wanted:
+        for name in wanted:   # always re-extract (~55 MB): a rebuilt tar can change bytes but not sizes
             dst = out_dir / name
-            if dst.is_file() and dst.stat().st_size == members[name].size:
-                continue
             dst.parent.mkdir(parents=True, exist_ok=True)
             tmp = dst.with_suffix(dst.suffix + ".tmp")
             with tar.extractfile(members[name]) as src, tmp.open("wb") as f:

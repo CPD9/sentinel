@@ -185,12 +185,15 @@ def test_decode_cached_reports_timing_only_for_same_config(bench, tmp_path, monk
     entry = json.loads(next(tmp_path.glob("*.json")).read_text())
     assert {k: entry[k] for k in gpu} == gpu                          # config stored with the decode
     assert bench.decode_cached(model, "m@1", audio, gpu)[1:] == (entry["elapsed_s"], True)
-    for other in ({**gpu, "host": "laptop"}, {**gpu, "compute_type": "int8"}, {**gpu, "device": "cpu"}):
-        raw2, elapsed2, cached2 = bench.decode_cached(model, "m@1", audio, other)
-        assert cached2 and elapsed2 is None and raw2 == raw           # hypothesis reused, timing not
+    raw2, elapsed2, cached2 = bench.decode_cached(model, "m@1", audio, {**gpu, "host": "laptop"})
+    assert cached2 and elapsed2 is None and raw2 == raw               # same config, other host: text yes, timing no
     assert len(loads) == 1                                            # a cache hit never loads the model
-    legacy = {k: v for k, v in entry.items() if k not in ("compute_type", "host")}
-    next(tmp_path.glob("*.json")).write_text(json.dumps(legacy))      # pre-fix entry without config
+    for other in ({**gpu, "compute_type": "int8"}, {**gpu, "device": "cpu"}):
+        assert bench.decode_cached(model, "m@1", audio, other)[2] is False   # other config: re-decoded
+    assert len(loads) == 3 and len(list(tmp_path.glob("*.json"))) == 3
+    cp = tmp_path / f"{asr.cache_key(asr._sha256(audio), 'm@1', 'cuda', 'float16')}.json"
+    legacy = {k: v for k, v in json.loads(cp.read_text()).items() if k != "host"}
+    cp.write_text(json.dumps(legacy))                                 # entry without host
     assert bench.decode_cached(model, "m@1", audio, gpu)[1] is None
 
 
@@ -237,5 +240,9 @@ def test_swissdial_sampler(tmp_path):
     assert (tmp_path / "sd" / "data1.1" / "be" / f"ch_be_{u['sentence_id']:04d}.wav").is_file()
     again = prepare_swissdial.build(tar, tmp_path / "sd", tmp_path / "sd.json", n=5, seed=7)
     assert again["sentence_ids"] == out["sentence_ids"]
+    wav = tmp_path / "sd" / "data1.1" / "be" / f"ch_be_{u['sentence_id']:04d}.wav"
+    wav.write_bytes(b"XXXX" + bytes([0]))            # stale bytes, same size as the tar member
+    prepare_swissdial.build(tar, tmp_path / "sd", tmp_path / "sd.json", n=5, seed=7)
+    assert wav.read_bytes() == b"RIFF" + bytes([u["sentence_id"]])   # re-extracted from the tar
     with pytest.raises(ValueError):
         prepare_swissdial.build(tar, tmp_path / "sd2", tmp_path / "x.json", n=50, seed=7)

@@ -31,6 +31,7 @@ from pipeline.schemas import (AsrConfidence, AsrConfidencePoint, Axis, StageErro
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CACHE_DIR = REPO_ROOT / "artifacts" / "cache" / "asr"
+MODEL_REVISIONS_FILE = REPO_ROOT / "artifacts" / "cache" / "model_revisions.json"
 TRANSCRIPTS_DIR = REPO_ROOT / "artifacts" / "transcripts"
 ASR_VERSION = "asr-v1"
 
@@ -73,16 +74,32 @@ def _model_name(spec: str, path: Path) -> str:
     return Path(spec).name if Path(spec).expanduser().is_dir() else spec
 
 
-def _model_revision(path: Path) -> str:
+def _model_revision(path: Path, memo_file: Path | None = None) -> str:
+    """HF snapshot -> its commit. Local dir -> sha256 over every file's name + content (weights included),
+    so a checkpoint replaced in place gets a new revision. Per-file hashes are memoised by
+    (path, size, mtime_ns, inode) because hashing a 3 GB model.bin on every call is slow."""
     if path.parent.name == "snapshots":
         return path.name[:12]
-    h = hashlib.sha256()
+    memo_file = memo_file or MODEL_REVISIONS_FILE
+    try:
+        memo = json.loads(memo_file.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        memo = {}
+    h, changed = hashlib.sha256(), False
     for f in sorted(path.iterdir()):
-        if f.is_file():
-            h.update(f.name.encode())
-            h.update(str(f.stat().st_size).encode())
-            if f.suffix == ".json":
-                h.update(f.read_bytes())
+        if not f.is_file():
+            continue
+        st = f.stat()
+        key = f"{f.resolve()}|{st.st_size}|{st.st_mtime_ns}|{st.st_ino}"
+        if key not in memo:
+            memo[key], changed = _sha256(f), True
+        h.update(f.name.encode())
+        h.update(memo[key].encode())
+    if changed:
+        memo_file.parent.mkdir(parents=True, exist_ok=True)
+        tmp = memo_file.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(memo, indent=1, sort_keys=True) + "\n", encoding="utf-8")
+        tmp.replace(memo_file)
     return "sha-" + h.hexdigest()[:12]
 
 
@@ -150,9 +167,10 @@ def cached_elapsed(entry: dict, timing: dict) -> float | None:
     return entry.get("elapsed_s") if same else None
 
 
-def cache_key(audio_sha: str, asr_model: str, decode: dict = DECODE) -> str:
-    blob = json.dumps({"audio": audio_sha, "model": asr_model, "decode": decode, "v": ASR_VERSION},
-                      sort_keys=True)
+def cache_key(audio_sha: str, asr_model: str, device: str, compute_type: str, decode: dict = DECODE) -> str:
+    """Hypotheses are keyed by inference config too: CPU/int8 and GPU/float16 can decode different text."""
+    blob = json.dumps({"audio": audio_sha, "model": asr_model, "device": device, "compute_type": compute_type,
+                       "decode": decode, "v": ASR_VERSION}, sort_keys=True)
     return hashlib.sha256(blob.encode()).hexdigest()[:32]
 
 
@@ -216,13 +234,12 @@ def transcribe(audio_path: str | Path, call_id: str, model_spec: str | None = No
     duration_s, sample_rate = audio_info(path)
     model_dir, asr_model = resolve_model(model_spec)
     audio_sha = _sha256(path)
-    cp = cache_dir / f"{cache_key(audio_sha, asr_model)}.json"
+    device = device or default_device()[0]
+    compute_type = compute_type or ("float16" if device == "cuda" else "int8")
+    cp = cache_dir / f"{cache_key(audio_sha, asr_model, device, compute_type)}.json"
     if cp.is_file() and not force:
         raw = json.loads(cp.read_text(encoding="utf-8"))["raw"]
     else:
-        if device is None:
-            device = default_device()[0]
-        compute_type = compute_type or ("float16" if device == "cuda" else "int8")
         t0 = time.perf_counter()
         raw = decode(load_model(model_dir, device, compute_type), path)
         write_cache(cp, asr_model, raw, time.perf_counter() - t0, timing_config(device, compute_type))

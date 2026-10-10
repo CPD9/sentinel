@@ -1,6 +1,7 @@
 """Milestone 3: pipeline/asr.py with a MOCK faster-whisper model (no download, no GPU) and the
 analysis-artifact merge helpers in pipeline/audio_analysis.py."""
 import json
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -49,6 +50,7 @@ def env(tmp_path, monkeypatch):
     MockWhisper.calls = 0
     monkeypatch.setattr(asr, "load_model", lambda *a: MockWhisper(segments))
     monkeypatch.setattr(asr, "default_device", lambda: ("cpu", "int8"))
+    monkeypatch.setattr(asr, "MODEL_REVISIONS_FILE", tmp_path / "model_revisions.json")
     dirs = {"cache_dir": tmp_path / "cache", "transcripts_dir": tmp_path / "tr", "analysis_dir": tmp_path / "an"}
     return SimpleNamespace(wav=wav, model=str(model_dir), dirs=dirs, tmp=tmp_path)
 
@@ -80,10 +82,36 @@ def test_cache_hit_and_force(env):
     assert len(cached) == 1 and json.loads(cached[0].read_text())["raw"]["segments"][0]["words"]
 
 
-def test_cache_key_changes_with_model_and_decode():
-    k = asr.cache_key("a" * 64, "m@1")
-    assert k != asr.cache_key("a" * 64, "m@2")
-    assert k != asr.cache_key("a" * 64, "m@1", {**asr.DECODE, "beam_size": 1})
+def test_cache_key_changes_with_model_config_and_decode():
+    k = asr.cache_key("a" * 64, "m@1", "cpu", "int8")
+    assert k != asr.cache_key("a" * 64, "m@2", "cpu", "int8")
+    assert k != asr.cache_key("a" * 64, "m@1", "cpu", "int8", {**asr.DECODE, "beam_size": 1})
+    assert k != asr.cache_key("a" * 64, "m@1", "cuda", "int8")
+    assert k != asr.cache_key("a" * 64, "m@1", "cpu", "float16")
+
+
+def test_cpu_hypothesis_not_reused_for_gpu_config(env):
+    asr.transcribe(env.wav, "call_t01", model_spec=env.model, device="cpu", compute_type="int8", **env.dirs)
+    asr.transcribe(env.wav, "call_t01", model_spec=env.model, device="cuda", compute_type="float16", **env.dirs)
+    assert MockWhisper.calls == 2 and len(list(env.dirs["cache_dir"].glob("*.json"))) == 2
+    asr.transcribe(env.wav, "call_t01", model_spec=env.model, device="cuda", compute_type="float16", **env.dirs)
+    assert MockWhisper.calls == 2                      # same config -> cache hit
+
+
+def test_model_revision_hashes_weights(tmp_path):
+    d = tmp_path / "m-ct2"
+    d.mkdir()
+    (d / "config.json").write_text("{}")
+    (d / "model.bin").write_bytes(b"A" * 1000)
+    memo = tmp_path / "memo.json"
+    r1 = asr._model_revision(d, memo)
+    assert asr._model_revision(d, memo) == r1 and memo.is_file()   # stable, memoised
+    time.sleep(0.01)
+    (d / "model.bin").write_bytes(b"B" * 1000)                    # replaced in place: same size, same JSON
+    assert asr._model_revision(d, memo) != r1
+    snap = tmp_path / "models--org--m" / "snapshots" / "0123456789abcdef"
+    snap.mkdir(parents=True)
+    assert asr._model_revision(snap, memo) == "0123456789ab"      # HF snapshot: trust the commit
 
 
 def test_merge_keeps_cpu_analysis_blocks(env):

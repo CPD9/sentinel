@@ -184,9 +184,11 @@ def warm_up(model) -> int:
 
 def decode_cached(model, asr_model: str, audio: Path, timing: dict,
                   force: bool = False) -> tuple[dict, float | None, bool]:
-    """(raw, elapsed_s, from_cache). Same cache files as pipeline/asr.py. A cached hypothesis is always
-    reused; its elapsed time only if it was measured with this device + compute_type + host, else None."""
-    cp = asr.CACHE_DIR / f"{asr.cache_key(asr._sha256(audio), asr_model)}.json"
+    """(raw, elapsed_s, from_cache). Same cache files as pipeline/asr.py. The cache key includes device +
+    compute_type, so a hypothesis is only reused from the same inference config; its elapsed time only if
+    it was also measured on this host (hardware differs across teammates' machines), else None."""
+    key = asr.cache_key(asr._sha256(audio), asr_model, timing["device"], timing["compute_type"])
+    cp = asr.CACHE_DIR / f"{key}.json"
     if cp.is_file() and not force:
         c = _load(cp)
         return c["raw"], asr.cached_elapsed(c, timing), True
