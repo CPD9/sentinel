@@ -57,7 +57,7 @@ Banks record client phone calls, but people can only listen to a small sample of
 | Evidence check, rules, confidence, decision | The deterministic core | ⬜ |
 | Narrative, audio snippets, trigger | Explanations, playable clips, call to the Outcept API | ⬜ |
 | `run.sh` command line | `./run.sh <folder>` produces `out/results.json` and snippets | ⬜ |
-| Audio analysis | Waveform, spectrogram, quality score for the UI | 📐 |
+| Audio analysis | Waveform, spectrogram, quality score for the UI | 🟡 |
 | API service | FastAPI, job queue, live events | 📐 |
 | Web app | Inbox, call dashboard, settings, quality lab | 📐 |
 
