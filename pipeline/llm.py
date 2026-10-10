@@ -92,7 +92,7 @@ RESERVED_BODY_KEYS = frozenset({
 # A remote provider's extra_body may carry only these vendor options (the gate cannot vet anything else).
 REMOTE_EXTRA_BODY_KEYS = frozenset({"provider", "usage"})
 _LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
-_SPEC_KEYS = {"base_url", "base_url_env", "model_env", "key_env", "self_hosted", "region", "allowed_models",
+_SPEC_KEYS = {"base_url", "base_url_env", "model", "model_env", "key_env", "self_hosted", "region", "allowed_models",
               "extra_body"}
 
 
@@ -102,6 +102,7 @@ class ProviderSpec:
     name: str
     base_url: str | None = None          # may contain {ENV_NAME} placeholders
     base_url_env: str | None = None
+    model: str | None = None             # fixed served model name (e.g. the --served-model-name of our vLLM)
     model_env: str | None = None
     key_env: str | None = None
     self_hosted: bool = True
@@ -140,6 +141,8 @@ def parse_providers(doc: dict) -> tuple[str, dict[str, ProviderSpec]]:
                  if k.endswith("_env") and not (isinstance(p[k], str) and _ENV_NAME.fullmatch(p[k]))]
         if (p.get("base_url") is None) == (p.get("base_url_env") is None):
             errs.append(f"{name}: set exactly one of base_url / base_url_env")
+        if p.get("model") is not None and not (isinstance(p["model"], str) and p["model"].strip()):
+            errs.append(f"{name}.model must be a non-empty string")
         hosted = p.get("self_hosted")
         if not isinstance(hosted, bool):
             errs.append(f"{name}.self_hosted must be true or false")
@@ -167,7 +170,7 @@ def parse_providers(doc: dict) -> tuple[str, dict[str, ProviderSpec]]:
         if not errs:
             specs[name] = ProviderSpec(
                 name=name, base_url=p.get("base_url"), base_url_env=p.get("base_url_env"),
-                model_env=p.get("model_env"), key_env=p.get("key_env"), self_hosted=hosted,
+                model=p.get("model"), model_env=p.get("model_env"), key_env=p.get("key_env"), self_hosted=hosted,
                 region=p.get("region"), allowed_models=tuple(allowed), extra_body=copy.deepcopy(extra))
     default = doc.get("default")
     if default not in raw:
@@ -480,7 +483,7 @@ def get_client(provider: str | None = None, model: str | None = None, *, provide
     """Client for a provider from config/providers.yaml. The policy gate runs here, before anything else.
 
     Provider: argument, else $SENTINEL_LLM_PROVIDER, else `default` in providers.yaml.
-    Model: argument, else the provider's `model_env`, else $SENTINEL_LLM_MODEL. A remote provider needs an explicit allowlisted model
+    Model: argument, else the provider's fixed `model`, else its `model_env`, else $SENTINEL_LLM_MODEL. A remote provider needs an explicit allowlisted model
     (`need_model=False` only for model discovery, which still needs the remote opt-in).
     """
     load_env()
@@ -489,7 +492,8 @@ def get_client(provider: str | None = None, model: str | None = None, *, provide
     if name not in specs:
         raise LLMError(f"unknown provider {name!r}; configured: {sorted(specs)}")
     spec = specs[name]
-    model = model or (os.environ.get(spec.model_env) if spec.model_env else None) or os.environ.get(MODEL_ENV) or None
+    model = (model or spec.model or (os.environ.get(spec.model_env) if spec.model_env else None)
+             or os.environ.get(MODEL_ENV) or None)
     check_permitted(spec, model, need_model=need_model)
     return OpenAICompatClient(spec.resolve_base_url(), model, timeout, spec=spec, now=now)
 

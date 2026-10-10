@@ -103,7 +103,8 @@ def test_refusal_before_any_client_leaves_provenance_unset(env, monkeypatch):
     assert "provider" not in r["versions"]                       # nothing was sent anywhere
 
 
-def test_missing_extract_module_is_review_never_silent(env):
+def test_missing_extract_module_is_review_never_silent(env, monkeypatch):
+    monkeypatch.setitem(sys.modules, "pipeline.extract", None)       # import fails; also keeps the test off any live endpoint
     r = run(env)
     assert r["decision"] == "review" and [e["stage"] for e in r["stage_errors"]] == ["extract"]
     assert validate_call_result(r) == []
