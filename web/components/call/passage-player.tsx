@@ -8,7 +8,7 @@ import { snippetUrl } from "@/lib/data";
 import { fmtTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-export function PassagePlayer({ callId, path, start, end, mock }: { callId: string; path: string | null; start: number; end: number; mock?: boolean }) {
+export function PassagePlayer({ callId, path, start, end, mock, compact }: { callId: string; path: string | null; start: number; end: number; mock?: boolean; compact?: boolean }) {
   const url = snippetUrl(callId, path);
   const audio = useRef<HTMLAudioElement>(null);
   const [failed, setFailed] = useState(false);
@@ -25,6 +25,35 @@ export function PassagePlayer({ callId, path, start, end, mock }: { callId: stri
     if (!a || unavailable) return;
     if (playing) a.pause(); else a.play().catch(() => setFailed(true));
   };
+
+  const noAudio = `No audio for this passage${mock ? " (MOCK data has no recordings)" : ""}`;
+  const audioEl = url && (
+    <audio ref={audio} src={url} preload="metadata" hidden
+      onLoadedMetadata={(e) => isFinite(e.currentTarget.duration) && setDur(e.currentTarget.duration)}
+      onTimeUpdate={(e) => setT(e.currentTarget.currentTime)}
+      onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => { setPlaying(false); setT(0); }}
+      onError={() => { setFailed(true); setPlaying(false); }} />
+  );
+
+  if (compact) {
+    const started = !unavailable && (playing || t > 0);
+    return (
+      <div className="flex shrink-0 flex-col items-center gap-1">
+        <button type="button" onClick={toggle} disabled={unavailable} title={unavailable ? noAudio : undefined}
+          aria-label={unavailable ? noAudio : playing ? "Pause the passage" : "Play the passage with 10 seconds before and after"}
+          className={cn("grid size-8 place-items-center rounded-full transition-colors",
+            unavailable ? "cursor-not-allowed bg-muted text-muted-foreground/70" : "bg-primary text-primary-foreground hover:opacity-90")}>
+          {playing ? <Pause className="size-3.5" aria-hidden /> : <Play className="size-3.5 translate-x-px" aria-hidden />}
+        </button>
+        {started && (
+          <div className="relative h-1 w-8 rounded-full bg-muted" aria-hidden>
+            <div className="player-progress absolute inset-y-0 left-0 rounded-full bg-primary" style={{ width: at(t) }} />
+          </div>
+        )}
+        {audioEl}
+      </div>
+    );
+  }
 
   return (
     <div className="flex items-center gap-3">
@@ -45,13 +74,7 @@ export function PassagePlayer({ callId, path, start, end, mock }: { callId: stri
           <span>{fmtTime(off + total)}</span>
         </div>
       </div>
-      {url && (
-        <audio ref={audio} src={url} preload="metadata" hidden
-          onLoadedMetadata={(e) => isFinite(e.currentTarget.duration) && setDur(e.currentTarget.duration)}
-          onTimeUpdate={(e) => setT(e.currentTarget.currentTime)}
-          onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => { setPlaying(false); setT(0); }}
-          onError={() => { setFailed(true); setPlaying(false); }} />
-      )}
+      {audioEl}
     </div>
   );
 }

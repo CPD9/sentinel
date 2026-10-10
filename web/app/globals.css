@@ -38,6 +38,11 @@
   --c-payment_card_data: #b88a00;
   --c-other: #6b7280;
 
+  --tint: #eeebf6;
+  --gauge-review: #d68f0e;
+  --gauge-alarm: #d33a2c;
+  --shadow-card: 0 1px 2px rgba(26, 21, 48, 0.06), 0 12px 32px -16px rgba(26, 21, 48, 0.22);
+
   --lane-bg: #ffffff;
   --grid: #e6e3ee;
   --axis: #5b5870;
@@ -74,6 +79,11 @@
   --c-control_evasion: #5ee0f0;
   --c-payment_card_data: #e8bb2e;
   --c-other: #9aa1ae;
+
+  --tint: #17151f;
+  --gauge-review: #f5c451;
+  --gauge-alarm: #ff8a80;
+  --shadow-card: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 0 0 1px rgba(255, 255, 255, 0.06), 0 16px 32px -20px rgba(0, 0, 0, 0.8);
 
   --lane-bg: #110f18;
   --grid: #262330;
@@ -132,3 +142,10 @@ body { background: var(--background); color: var(--foreground); font-family: var
 .gauge-fill { animation: gauge-grow 700ms cubic-bezier(0.2, 0.8, 0.2, 1) 120ms both; }
 .player-progress { transition: width 250ms linear; }
 @media (prefers-reduced-motion: reduce) { .hit-card, .gauge-fill { animation: none; } .player-progress { transition: none; } }
+
+/* Surfaces (after Proton Drive): tinted boxes without a border; elevated cards stand off the page by shadow, not outline. */
+.surface-tint { background: var(--tint); }
+.elevated { background: var(--card); box-shadow: var(--shadow-card); }
+.gauge-marker { animation: marker-in 260ms ease-out 650ms both; }
+@keyframes marker-in { from { opacity: 0; transform: translate(-50%, -50%) scale(0.6); } }
+@media (prefers-reduced-motion: reduce) { .gauge-marker { animation: none; } }

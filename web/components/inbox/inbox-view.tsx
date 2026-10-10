@@ -9,7 +9,7 @@ import { CriterionChip, DecisionBadge, StageErrorChip, StatusPill } from "@/comp
 import { EmptyState, ErrorCard } from "@/components/shell/states";
 import { ScoreBar } from "@/components/shell/score";
 import { HitList } from "./hit-cards";
-import { StatCards } from "./stat-cards";
+import { StatCards, type Focus } from "./stat-cards";
 import { UploadButton, useWavUpload } from "./upload";
 import { getCalls, getThresholds, subscribeGlobalEvents } from "@/lib/data";
 import { fmtDateTime, fmtTime } from "@/lib/format";
@@ -46,6 +46,7 @@ export function InboxView() {
   const [sort, setSort] = useState<Sort>("default");
   const [stages, setStages] = useState<Record<string, string>>({});
   const [dragging, setDragging] = useState(false);
+  const [focus, setFocus] = useState<Focus>("");
   const upload = useWavUpload(calls.reload);
 
   useReportMock("inbox", calls.data?.some((c) => c.is_mock) ? { is_mock: true } : null);
@@ -76,10 +77,8 @@ export function InboxView() {
 
   const stale = calls.status === "error" && calls.data;
 
-  const attention = (calls.data ?? []).filter((c) => (c.status === "done" || c.status === "error") && (c.decision === "alarm" || c.decision === "review")).length;
-
   return (
-    <div className="relative space-y-6"
+    <div className="relative space-y-5"
       onDragOver={(e) => { if (e.dataTransfer.types.includes("Files")) { e.preventDefault(); setDragging(true); } }}
       onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false); }}
       onDrop={(e) => { e.preventDefault(); setDragging(false); void upload.send(e.dataTransfer.files); }}>
@@ -89,27 +88,22 @@ export function InboxView() {
         </div>
       )}
 
-      <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Overview</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Every call is checked automatically.{" "}
-            {calls.data ? (attention > 0
-              ? <b className="font-semibold text-foreground">{attention} {attention === 1 ? "needs" : "need"} your attention.</b>
-              : "Nothing needs your attention right now.") : null}
-          </p>
+          <p className="mt-1 text-sm text-muted-foreground">Every call is checked automatically, not sampled.</p>
         </div>
         <UploadButton upload={upload} />
       </div>
 
       {calls.status === "error" && <ErrorCard error={calls.error} title="Could not load the call list" onRetry={calls.reload} />}
       {stale && <p className="text-xs text-review">Showing the last good data. It may be stale.</p>}
-      <StatCards calls={calls.data ?? null} />
+      <StatCards calls={calls.data ?? null} stages={stages} focus={focus} onFocus={setFocus} />
       {calls.data && calls.data.length === 0 && (
         <EmptyState>No calls yet. Drop .wav files on this page or run <code className="font-mono">./run.sh &lt;folder&gt;</code>.</EmptyState>
       )}
 
-      <HitList calls={calls.data ?? null} thresholds={th.data} />
+      <HitList calls={calls.data ?? null} thresholds={th.data} focus={focus} onClearFocus={() => setFocus("")} />
 
       <details className="group rounded-2xl border border-border bg-card/40">
         <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-semibold [&::-webkit-details-marker]:hidden">
