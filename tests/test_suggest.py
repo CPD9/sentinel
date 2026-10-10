@@ -205,3 +205,30 @@ def test_suggestion_search_stays_within_budget():
     suggest(calls, fb, RAW)
     elapsed = time.perf_counter() - t
     assert elapsed < 5.0, elapsed           # design budget is 2 s for 60 calls; the margin keeps slow CI machines green
+
+
+# --------------------------------------------------------------------------- review follow-ups
+
+def test_a_full_fix_that_needs_two_thresholds_together_is_found():
+    # call_a (risk 0.85, alarm) is a false alarm; call_b (risk 1.0, same rule) is correct, so switching the rule off is not allowed.
+    # alarm 0.87 alone only gets call_a to review (credit 0.5). review 0.86 alone is an invalid config, but
+    # alarm 0.87 + review 0.86 together reach no_alert (credit 1.0).
+    calls = [make_call("call_a", "password_asked"), make_call("call_b", "password_to_third_party")]
+    sim = Simulator(calls, RAW)
+    assert sim.baseline["call_a"].decision == "alarm" and sim.baseline["call_b"].decision == "alarm"
+    fb = {"call_a": make_entry("call_a", "false_alarm", "alarm"), "call_b": make_entry("call_b", "correct", "alarm")}
+    top = suggest(calls, fb, RAW)
+    assert top and top[0].fix_credit == 1.0 and top[0].fixed == ["call_a"]
+    th = top[0].patch["thresholds"]
+    assert set(th) == {"alarm", "review"} and th["review"] > 0.85 and th["alarm"] > th["review"] and th["alarm"] <= 1.0
+    assert top[0].effect.feedback_check.violations == []
+    assert independent_decisions(calls, top[0].patch) == {"call_a": "no_alert", "call_b": "alarm"}
+
+
+def test_a_zero_credit_change_can_join_a_combination():
+    # Pairs may include a change with no credit on its own; here every returned suggestion must still be safe and verified.
+    for seed in range(4):
+        calls = make_corpus(24, seed=seed, mock=False)
+        fb = random_feedback(calls, seed, 0.6)
+        for s in suggest(calls, fb, RAW, max_results=8):
+            assert s.effect.feedback_check.violations == [] and s.fix_credit > 0
