@@ -562,7 +562,8 @@ class DecisionTrace(_Artifact):
             errs.append("decision_path review_band but risk_score outside [review, alarm)")
         if path == "no_alert" and d["risk_score"] >= t["review"]:
             errs.append("decision_path no_alert but risk_score at or above the review threshold")
-        if path in ("alarm", "no_alert") and (d["confidence"] is None or d["confidence"] < t["confidence_gate"]):
+        # no_alert may sit below the gate: config gate_scope "risky_only" lets a harmless noisy call stay no_alert.
+        if path == "alarm" and (d["confidence"] is None or d["confidence"] < t["confidence_gate"]):
             errs.append(f"decision_path {path} needs confidence >= confidence_gate")
         cb = d.get("confidence_breakdown")
         if cb is not None:
