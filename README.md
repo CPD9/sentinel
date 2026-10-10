@@ -34,11 +34,11 @@ Banks record client phone calls, but people can only listen to a small sample of
 
 ## Why it can be trusted
 
-- **Evidence for every alert.** An alert without a quote that really appears in the call, at the cited time, is thrown away before anyone sees it.
-- **It says when it is unsure.** If the audio is poor, the transcript is doubtful or the evidence conflicts, the call goes to **review**. SENTINEL never turns doubt into a confident alarm, and a technical failure is never reported as "all clear".
-- **Self-hosted by design.** All models run on our own server in a Swiss data centre. No audio and no transcript is sent to any cloud AI service.
+- **Evidence for every alert.** The design discards any alert whose quote cannot be found in the call at the cited time, before anyone sees it.
+- **It says when it is unsure.** If the audio is poor, the transcript is doubtful or the evidence conflicts, the call goes to **review**. The design never turns doubt into a confident alarm, and a technical failure is recorded as an error, not as "all clear".
+- **Self-hosted by design.** The plan is to run all models on our own server in Switzerland, with no audio or transcript sent to any cloud AI service.
 - **People stay in charge.** The AI reads and writes text. The decision comes from rules and thresholds that a compliance officer can read and change without programming.
-- **Honest numbers.** Quality is measured on calls the system was never tuned on, and every figure comes with its uncertainty.
+- **Measured carefully.** Quality is to be reported on held-out calls, with its uncertainty, because the sample is small. No such results exist yet.
 
 ## Project status
 
@@ -68,7 +68,6 @@ Banks record client phone calls, but people can only listen to a small sample of
 | Peter | AI / ML and full stack |
 | Loyola | Infrastructure and integration |
 | Jules | Infrastructure and integration |
-| Carl | Swiss German and security |
 | Nik | UX and presentation |
 
 ---
@@ -112,13 +111,13 @@ A real baseline run needs `LLM_BASE_URL` (and optionally `LLM_MODEL`) in `.env`,
   <img src="docs/assets/architecture.svg" alt="Deployment: the compliance officer's laptop reaches FastAPI on an Exoscale GPU VM through an SSH tunnel. The VM runs the pipeline, vLLM with Apertus, faster-whisper and the artifact store, all inside a secured environment. No cloud AI APIs." width="100%">
 </p>
 
-**Figure 3. Everything that touches a call stays inside the secured environment.** The laptop reaches it only through an SSH tunnel, and no cloud AI API is called, not even for a quick test.
+**Figure 3. Target deployment: everything that touches a call stays inside the secured environment.** The laptop reaches it only through an SSH tunnel, and no cloud AI API is called, not even for a quick test.
 
 <p align="center">
   <img src="docs/assets/decision.svg" alt="Confidence gate with five components feeding a four-step decision ladder: failed stage, missing evidence or low confidence gives review; validated evidence with risk at or above the alarm threshold gives alarm; risk in the review band gives review; otherwise no alert." width="100%">
 </p>
 
-**Figure 4. Doubt is checked first, so an unsure call can only become `review`.** Thresholds come from `config/thresholds.json`, and the "why not flagged" text is written only after the decision is locked.
+**Figure 4. Doubt is checked first, so an unsure call is meant to end as `review`, not as an alarm.** Thresholds come from `config/thresholds.json`, and the "why not flagged" text is written only after the decision is locked.
 
 The full step-by-step design, output contract and evaluation rules are in [CLAUDE.md](CLAUDE.md).
 
@@ -147,17 +146,39 @@ config/ services/ web/ run.sh      planned, not created yet
 
 No audio, case data, model weights, `.env` files or secrets go into git (see `.gitignore`). The original dataset under `data/` is read-only. The pipeline reads only neutral call IDs from `artifacts/manifests/inference.json`; labels and original file names live in `evaluation.json` and are read only by `pipeline/evaluate.py`, after predictions exist. The test split is never used for tuning.
 
-## Git workflow
+## Branching strategy
 
-Branches are named `ml/*`, `infra/*`, `api/*` and `web/*`. Claude Code writes the code and runs the tests; a human makes every commit. `main` stays runnable.
+Work is split by area, with one long-lived branch (`main`) and short-lived topic branches. Each branch prefix has an owning area, changes reach `main` only through a reviewed pull request, and `main` should stay runnable.
 
 ```mermaid
-flowchart LR
-    A[Create branch] --> B[Claude Code<br/>implements]
-    B --> C[Tests pass]
-    C --> D[Human commits]
-    D --> E[Open PR]
-    E --> F[Codex review]
-    F -->|changes requested| B
-    F -->|approved| G[Merge to main]
+gitGraph
+    commit id: "main"
+    branch ml/asr
+    branch infra/gpu-vm
+    branch api/jobs
+    branch web/inbox
+    checkout ml/asr
+    commit id: "feature"
+    commit id: "tests"
+    checkout infra/gpu-vm
+    commit id: "setup"
+    checkout main
+    merge ml/asr id: "PR review"
+    checkout api/jobs
+    commit id: "endpoints"
+    checkout main
+    merge infra/gpu-vm id: "PR review "
+    checkout web/inbox
+    commit id: "screens"
+    checkout main
+    merge api/jobs id: "PR review  "
+    merge web/inbox id: "PR review   "
 ```
+
+| Prefix | Area |
+|---|---|
+| `ml/*` | Pipeline, models, evaluation |
+| `infra/*` | Servers and deployment |
+| `api/*` | Backend service |
+| `web/*` | Frontend |
+| `docs/*` | Documentation |
