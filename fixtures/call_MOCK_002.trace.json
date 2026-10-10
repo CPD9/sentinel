@@ -1,0 +1,109 @@
+{
+  "call_id": "call_MOCK_002",
+  "decision": "no_alert",
+  "decision_path": "no_alert",
+  "risk_score": 0.12,
+  "confidence": 0.84,
+  "thresholds": {
+    "alarm": 0.7,
+    "review": 0.4,
+    "confidence_gate": 0.5
+  },
+  "facts": [
+    {
+      "fact_id": "F1",
+      "speaker": "customer",
+      "act": "request",
+      "info_type": "credentials",
+      "segment_ids": ["s002"],
+      "quote": "Ich ha mis Passwort fürs E-Banking vergässe",
+      "recipient_third_party": null,
+      "secrecy_cue": null,
+      "counter_evidence": null,
+      "valid": true,
+      "drop_reason": null
+    },
+    {
+      "fact_id": "F2",
+      "speaker": "advisor",
+      "act": "refuse",
+      "info_type": "credentials",
+      "segment_ids": ["s003"],
+      "quote": "Bitte säged Sie mir Ihres Passwort uf kei Fall",
+      "recipient_third_party": null,
+      "secrecy_cue": null,
+      "counter_evidence": "Advisor refuses to receive the password.",
+      "valid": true,
+      "drop_reason": null
+    }
+  ],
+  "keyword_hits": [
+    {
+      "hit_id": "H1",
+      "family": "access",
+      "term": "Passwort",
+      "matched_text": "Passwort",
+      "segment_id": "s002",
+      "score": 1.0
+    },
+    {
+      "hit_id": "H2",
+      "family": "access",
+      "term": "Passwort",
+      "matched_text": "Passwort",
+      "segment_id": "s003",
+      "score": 1.0
+    },
+    {
+      "hit_id": "H3",
+      "family": "access",
+      "term": "Passwort",
+      "matched_text": "Passwort",
+      "segment_id": "s005",
+      "score": 1.0
+    }
+  ],
+  "rules": [
+    {
+      "criterion": "credential_sharing",
+      "risk": 0.12,
+      "fired": false,
+      "reason": "[MOCK] keyword hits but no disclose/request-to-disclose fact; refusal F2",
+      "fact_ids": ["F1", "F2"],
+      "keyword_hit_ids": ["H1", "H2", "H3"]
+    }
+  ],
+  "confidence_breakdown": {
+    "value": 0.84,
+    "gate": 0.5,
+    "components": {
+      "asr": 0.86,
+      "threshold_proximity": 0.9,
+      "conflicts": 1.0,
+      "missing_evidence": 1.0,
+      "audio_quality": 0.336
+    }
+  },
+  "why_not_flagged": "[MOCK] 'Passwort' appears 3x (keyword family access), but the extracted facts are a reset request (F1) and an explicit refusal by the advisor (F2). credential_sharing needs a disclosed or requested active secret.",
+  "what_would_change": "[MOCK] If the customer had read out the old password, or the advisor had asked for it, credential_sharing would exceed the alarm threshold (0.7).",
+  "timings_s": {
+    "asr": 22.1,
+    "diarize": 4.0,
+    "keywords": 0.01,
+    "extract": 7.2,
+    "validate": 0.02,
+    "rules": 0.01,
+    "confidence": 0.01,
+    "decide": 0.0,
+    "narrate": 2.8,
+    "snippets": 0.3
+  },
+  "versions": {
+    "asr": "MOCK",
+    "llm": "MOCK",
+    "prompt": "MOCK",
+    "rules": "MOCK"
+  },
+  "is_mock": true,
+  "schema_version": 1
+}

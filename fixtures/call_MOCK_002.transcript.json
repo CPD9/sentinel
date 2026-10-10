@@ -1,0 +1,92 @@
+{
+  "call_id": "call_MOCK_002",
+  "mode": "asr",
+  "segments": [
+    {
+      "id": "s001",
+      "speaker": "advisor",
+      "text": "Grüezi, Bank Lindenhof, Brunner am Apparat.",
+      "start_s": 0.6,
+      "end_s": 5.9,
+      "avg_logprob": -0.19,
+      "no_speech_prob": 0.02
+    },
+    {
+      "id": "s002",
+      "speaker": "customer",
+      "text": "Grüezi. Ich ha mis Passwort fürs E-Banking vergässe. Chönd Sie mir hälfe?",
+      "start_s": 6.5,
+      "end_s": 15.8,
+      "avg_logprob": -0.28,
+      "no_speech_prob": 0.03
+    },
+    {
+      "id": "s003",
+      "speaker": "advisor",
+      "text": "Sicher. Bitte säged Sie mir Ihres Passwort uf kei Fall, au nöd s alte. Ich schicke Ihne en Link zum Zruggsetze.",
+      "start_s": 16.4,
+      "end_s": 27.9,
+      "avg_logprob": -0.24,
+      "no_speech_prob": 0.02
+    },
+    {
+      "id": "s004",
+      "speaker": "customer",
+      "text": "Ah guet, das isch eifacher.",
+      "start_s": 28.6,
+      "end_s": 33.0,
+      "avg_logprob": -0.35,
+      "no_speech_prob": 0.05
+    },
+    {
+      "id": "s005",
+      "speaker": "advisor",
+      "text": "De Link chunnt per SMS uf Ihri hinterlegti Nummer. Dänn wähled Sie es neus Passwort.",
+      "start_s": 33.7,
+      "end_s": 45.2,
+      "avg_logprob": -0.22,
+      "no_speech_prob": 0.02
+    },
+    {
+      "id": "s006",
+      "speaker": "customer",
+      "text": "Isch scho do. Merci.",
+      "start_s": 46.0,
+      "end_s": 52.4,
+      "avg_logprob": -0.31,
+      "no_speech_prob": 0.04
+    },
+    {
+      "id": "s007",
+      "speaker": "advisor",
+      "text": "Wänn Sie wänd, chan ich Ihne no zeige, wie Sie d Zwei-Faktor-Bestätigung iirichted.",
+      "start_s": 53.1,
+      "end_s": 66.8,
+      "avg_logprob": -0.26,
+      "no_speech_prob": 0.03
+    },
+    {
+      "id": "s008",
+      "speaker": "customer",
+      "text": "Nei danke, das han ich scho. Das isch alles gsi.",
+      "start_s": 67.5,
+      "end_s": 79.0,
+      "avg_logprob": -0.33,
+      "no_speech_prob": 0.05
+    },
+    {
+      "id": "s009",
+      "speaker": "advisor",
+      "text": "Super. Dänn wünsch ich Ihne en schöne Tag. Adieu.",
+      "start_s": 79.8,
+      "end_s": 88.6,
+      "avg_logprob": -0.21,
+      "no_speech_prob": 0.02
+    }
+  ],
+  "asr_model": "MOCK",
+  "duration_s": 96.4,
+  "is_mock": true,
+  "notes": ["MOCK - invented data for frontend/API development, not model output"],
+  "schema_version": 1
+}

@@ -1,0 +1,73 @@
+{
+  "call_id": "call_MOCK_001",
+  "decision": "alarm",
+  "risk_score": 0.91,
+  "confidence": 0.78,
+  "findings": [
+    {
+      "criterion": "credential_sharing",
+      "risk": 0.91,
+      "reason": "[MOCK] The advisor asks for the customer's current e-banking password and the customer reads it out; the advisor then says it stays between them.",
+      "evidence": [
+        {
+          "segment_ids": ["s011"],
+          "speaker": "advisor",
+          "text": "Säged Sie mir eifach Ihres aktuelle Passwort",
+          "start_s": 92.3,
+          "end_s": 97.8,
+          "snippet_path": "out/snippets/call_MOCK_001/f0_e0.wav"
+        },
+        {
+          "segment_ids": ["s012"],
+          "speaker": "customer",
+          "text": "es isch Sunneblueme, grossgschribe, und dänn zwei drü",
+          "start_s": 98.6,
+          "end_s": 104.1,
+          "snippet_path": "out/snippets/call_MOCK_001/f0_e1.wav"
+        },
+        {
+          "segment_ids": ["s013"],
+          "speaker": "advisor",
+          "text": "Das bliibt under üs.",
+          "start_s": 104.8,
+          "end_s": 112.0,
+          "snippet_path": "out/snippets/call_MOCK_001/f0_e2.wav"
+        }
+      ],
+      "counter_evidence": [
+        {
+          "segment_ids": ["s003"],
+          "speaker": "advisor",
+          "text": "Mir fröged normalerwiis nie nach Passwörter",
+          "start_s": 15.2,
+          "end_s": 24.0,
+          "snippet_path": null
+        }
+      ]
+    },
+    {
+      "criterion": "payment_card_data",
+      "risk": 0.08,
+      "reason": "[MOCK] A contract number is read out for identification; it is not card data.",
+      "evidence": [
+        {
+          "segment_ids": ["s006"],
+          "speaker": "customer",
+          "text": "d Vertragsnummer isch drü sibe vier nüün",
+          "start_s": 42.3,
+          "end_s": 51.9,
+          "snippet_path": null
+        }
+      ],
+      "counter_evidence": []
+    }
+  ],
+  "narrative": "[MOCK] Alarm: credential sharing. At 01:32 the advisor asks for the current password (\"Säged Sie mir eifach Ihres aktuelle Passwort\"), at 01:38 the customer discloses it, and at 01:44 the advisor adds \"Das bliibt under üs\". The advisor's earlier remark that the bank never asks for passwords (00:15) was considered as counter-evidence; it makes the request more, not less, irregular.",
+  "stage_errors": [],
+  "versions": {
+    "asr": "MOCK",
+    "llm": "MOCK",
+    "prompt": "MOCK",
+    "rules": "MOCK"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "call_id": "call_MOCK_004",
+  "decision": "review",
+  "risk_score": 0.0,
+  "confidence": null,
+  "findings": [],
+  "narrative": "[MOCK] ASR failed, so the call could not be assessed and was routed to review.",
+  "stage_errors": [
+    {
+      "stage": "asr",
+      "message": "[MOCK] CUDA out of memory while loading the ASR model"
+    }
+  ],
+  "versions": {
+    "asr": "MOCK",
+    "llm": null,
+    "prompt": null,
+    "rules": "MOCK"
+  }
+}
