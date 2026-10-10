@@ -54,6 +54,17 @@ def fake_extract(monkeypatch, facts, boom=None):
     monkeypatch.setattr("pipeline.llm.from_env", lambda: types.SimpleNamespace(probe=lambda: {}))
 
 
+def test_provider_provenance_reaches_result_and_trace(env, monkeypatch):
+    fake_extract(monkeypatch, [])
+    sys.modules["pipeline.extract"].VERSIONS = {"llm": "m@1", "prompt": "p1", "provider": "openrouter",
+                                                "self_hosted": False}
+    r = run(env)
+    assert r["versions"]["provider"] == "openrouter" and r["versions"]["self_hosted"] is False
+    assert validate_call_result(r) == []
+    trace = json.loads((env.art / "traces" / "call_t1.json").read_text())
+    assert trace["versions"]["provider"] == "openrouter" and trace["versions"]["self_hosted"] is False
+
+
 def test_missing_extract_module_is_review_never_silent(env):
     r = run(env)
     assert r["decision"] == "review" and [e["stage"] for e in r["stage_errors"]] == ["extract"]
