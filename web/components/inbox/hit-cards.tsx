@@ -1,19 +1,21 @@
 "use client";
 // "Needs attention": one card per alarm / review call (slide "3 · The brief": list of hits, listen to the passage, with the reason).
-// The list row gives decision, criteria, risk and confidence; each card loads its call's result for the reason and the first quote,
-// and a review card without a stage error also loads the trace to say why the system is unsure.
-import { ArrowRight, RefreshCw } from "lucide-react";
+// Every card uses the same three columns: the verdict | why (reason + passage + player) | risk, confidence and the action.
+// The list row gives decision, criteria, risk and confidence; each card loads its call's result for the reason and the first
+// quote, and a review card without a stage error also loads the trace to say why the system is unsure.
+import { RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { CriterionChip, DecisionBadge, SpeakerChip, StageErrorChip } from "@/components/shell/badges";
-import { RiskConfidence } from "@/components/shell/score";
+import { DecisionBadge, StageErrorChip } from "@/components/shell/badges";
+import { ConfidenceGauge, RiskGauge } from "@/components/shell/gauge";
 import { EmptyState } from "@/components/shell/states";
+import { InfoTip } from "@/components/ui/info-tip";
 import { Skeleton } from "@/components/ui/skeleton";
-import { SnippetPlayer } from "@/components/call/snippet-player";
-import { CRITERION_LABEL, criterionColor } from "@/lib/colors";
+import { PassagePlayer } from "@/components/call/passage-player";
+import { CRITERION_LABEL, SPEAKER_COLOR, criterionColor } from "@/lib/colors";
 import { getCall, getTrace } from "@/lib/data";
-import { fmtRange, fmtTime } from "@/lib/format";
-import type { CallListItem, CallResult, Criterion, DecisionPath, DecisionTrace } from "@/lib/types";
+import { fmtTime } from "@/lib/format";
+import type { CallListItem, CallResult, Criterion, DecisionPath, DecisionTrace, Thresholds } from "@/lib/types";
 import { useAsync } from "@/lib/use-async";
 import { cn } from "@/lib/utils";
 
@@ -24,11 +26,14 @@ const WHY_REVIEW: Partial<Record<DecisionPath, string>> = {
   stage_error: "A processing step failed, so the call was not fully analysed.",
   missing_evidence: "Some cited evidence could not be verified against the transcript.",
   contradictory_evidence: "The evidence points both ways.",
-  low_confidence: "Confidence is below the gate (e.g. unclear audio or transcript).",
+  low_confidence: "Confidence is below the gate, for example because of unclear audio or transcript.",
   review_band: "The risk sits between the review and the alarm threshold.",
 };
 
-export function HitList({ calls, gate }: { calls: CallListItem[] | null; gate?: number }) {
+const duration = (s: number | null) => (s == null ? "–" : `${Math.floor(s / 60)} min ${Math.round(s % 60)} s`);
+const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
+
+export function HitList({ calls, thresholds }: { calls: CallListItem[] | null; thresholds?: Thresholds | null }) {
   const [only, setOnly] = useState<Criterion | "">("");
   const flagged = useMemo(() => (calls ?? [])
     .filter((c) => (c.status === "done" || c.status === "error") && (c.decision === "alarm" || c.decision === "review"))
@@ -37,7 +42,7 @@ export function HitList({ calls, gate }: { calls: CallListItem[] | null; gate?: 
   const shown = only ? flagged.filter((c) => c.criteria.includes(only)) : flagged;
 
   return (
-    <section aria-labelledby="attention" className="space-y-3">
+    <section aria-labelledby="attention" className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 id="attention" className="text-lg font-semibold tracking-tight">Needs attention</h2>
         {criteria.length > 0 && (
@@ -53,13 +58,13 @@ export function HitList({ calls, gate }: { calls: CallListItem[] | null; gate?: 
       </div>
 
       {!calls ? (
-        <div className="space-y-3" aria-busy="true">{[0, 1].map((i) => <Skeleton key={i} className="h-40 rounded-2xl" />)}</div>
+        <div className="space-y-3" aria-busy="true">{[0, 1].map((i) => <Skeleton key={i} className="h-44 rounded-2xl" />)}</div>
       ) : flagged.length === 0 ? (
         <EmptyState>Nothing needs your attention. Every checked call came out as no alert; you find them under “All calls”.</EmptyState>
       ) : shown.length === 0 ? (
         <EmptyState>No flagged call of this kind. Choose “All” to see every hit.</EmptyState>
       ) : (
-        <div className="space-y-3">{shown.map((c) => <HitCard key={c.call_id} item={c} gate={gate} />)}</div>
+        <div className="space-y-3">{shown.map((c, i) => <HitCard key={c.call_id} item={c} thresholds={thresholds} index={i} />)}</div>
       )}
     </section>
   );
@@ -68,14 +73,14 @@ export function HitList({ calls, gate }: { calls: CallListItem[] | null; gate?: 
 function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
     <button type="button" aria-pressed={active} onClick={onClick}
-      className={cn("inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs",
+      className={cn("inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-colors",
         active ? "border-primary bg-primary/15 font-semibold text-link" : "border-border text-muted-foreground hover:bg-muted hover:text-foreground")}>
       {children}
     </button>
   );
 }
 
-function HitCard({ item, gate }: { item: CallListItem; gate?: number }) {
+function HitCard({ item, thresholds, index }: { item: CallListItem; thresholds?: Thresholds | null; index: number }) {
   const id = item.call_id;
   const version = item.updated_at ?? "";                       // a re-run (new updated_at) reloads the card
   const detail = useAsync(() => getCall(id), `hit:${id}:${version}`);
@@ -86,67 +91,77 @@ function HitCard({ item, gate }: { item: CallListItem; gate?: number }) {
   const findings = result ? [...result.findings].sort((a, b) => b.risk - a.risk) : [];
   const top = findings[0] ?? null;
   const ev = top?.evidence[0] ?? null;
+  const passages = findings.reduce((n, f) => n + f.evidence.length, 0);
   const alarm = item.decision === "alarm";
+  const criterion = top?.criterion ?? item.criteria[0] ?? null;
+
+  const whyReview = result && result.stage_errors.length > 0
+    ? `${WHY_REVIEW.stage_error} ${result.stage_errors.map((e) => `${e.stage}: ${e.message}`).join("; ")}`
+    : trace.data ? `${WHY_REVIEW[trace.data.decision_path] ?? "The system is not sure enough to decide alone."}${trace.data.what_would_change ? ` ${trace.data.what_would_change}` : ""}`
+    : trace.status === "loading" ? null : "The system is not sure enough to decide alone.";
 
   return (
-    <article className="relative overflow-hidden rounded-2xl border border-border bg-card">
+    <article className="hit-card relative overflow-hidden rounded-2xl border border-border bg-card" style={{ animationDelay: `${index * 70}ms` }}>
       <span aria-hidden className={cn("absolute inset-y-0 left-0 w-1", alarm ? "bg-alarm" : "bg-review")} />
-      <div className="space-y-3 py-4 pl-6 pr-5">
-        <header className="flex flex-wrap items-center gap-2">
-          <DecisionBadge decision={item.decision} size="sm" />
-          {top ? <CriterionChip criterion={top.criterion} /> : item.criteria[0] ? <CriterionChip criterion={item.criteria[0]} /> : null}
+      <div className="grid gap-5 py-5 pl-6 pr-5 md:grid-cols-[10.5rem_minmax(0,1fr)_13rem]">
+
+        {/* 1 · the verdict */}
+        <div className="flex flex-wrap items-start gap-x-3 gap-y-2 md:flex-col">
+          <span className="flex items-center gap-1"><DecisionBadge decision={item.decision} /><InfoTip term={alarm ? "alarm" : "review"} /></span>
+          {criterion && (
+            <span className="flex items-center gap-2 text-sm font-medium">
+              <span aria-hidden className="inline-block size-2 shrink-0 rounded-full" style={{ background: criterionColor(criterion) }} />
+              {CRITERION_LABEL[criterion as Criterion] ?? criterion}
+            </span>
+          )}
           <StageErrorChip count={item.n_stage_errors} />
-          <span className="ml-auto font-mono text-xs text-muted-foreground">{id} · {fmtTime(item.duration_s)}</span>
-        </header>
+          <p className="text-xs leading-relaxed text-muted-foreground md:mt-auto">{id}<br />{duration(item.duration_s)}</p>
+        </div>
 
-        {detail.status === "loading" && !detail.data ? (
-          <div className="space-y-2" aria-busy="true"><Skeleton className="h-5 w-3/4" /><Skeleton className="h-4 w-1/2" /></div>
-        ) : detail.status === "error" && !detail.data ? (
-          <p className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-            Details could not be loaded ({detail.error.message}).
-            <button type="button" onClick={detail.reload} className="inline-flex items-center gap-1 text-link underline-offset-2 hover:underline"><RefreshCw className="size-3" />Retry</button>
-          </p>
-        ) : (
-          <>
-            {result && result.stage_errors.length > 0 ? (
-              <>
-                <p className="text-base font-medium leading-snug">Not fully analysed, so a person has to check this call.</p>
-                <p className="text-sm text-muted-foreground"><span className="font-medium text-foreground">Why review: </span>
-                  {result.stage_errors.map((e) => `${e.stage} failed (${e.message})`).join("; ")}</p>
-              </>
-            ) : (
-              <>
-                {top && <p className="text-base font-medium leading-snug">{top.reason}</p>}
-                {!alarm && (
-                  <p className="text-sm text-muted-foreground"><span className="font-medium text-foreground">Why review: </span>
-                    {trace.data ? (WHY_REVIEW[trace.data.decision_path] ?? "The system is not sure enough to decide alone.") : trace.status === "loading" ? "…" : "The system is not sure enough to decide alone."}
-                    {trace.data?.what_would_change && <> {trace.data.what_would_change}</>}
-                  </p>
-                )}
-              </>
-            )}
-
-            {ev && (
-              <div className="space-y-2 rounded-xl bg-muted/50 p-3">
-                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                  <SpeakerChip speaker={ev.speaker} />
-                  <span className="tabular">{ev.start_s != null ? fmtRange(ev.start_s, ev.end_s) : "no timestamp (reference transcript)"}</span>
-                  {top && top.evidence.length > 1 && <span>· +{top.evidence.length - 1} more passage{top.evidence.length > 2 ? "s" : ""}</span>}
+        {/* 2 · why */}
+        <div className="min-w-0 space-y-3">
+          {detail.status === "loading" && !detail.data ? (
+            <div className="space-y-2" aria-busy="true"><Skeleton className="h-5 w-3/4" /><Skeleton className="h-16 w-full rounded-xl" /></div>
+          ) : detail.status === "error" && !detail.data ? (
+            <p className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+              The details of this call could not be loaded ({detail.error.message}).
+              <button type="button" onClick={detail.reload} className="inline-flex items-center gap-1 text-link underline-offset-2 hover:underline"><RefreshCw className="size-3" aria-hidden />Retry</button>
+            </p>
+          ) : (
+            <>
+              {top && !(result && result.stage_errors.length > 0) && <p className="text-[15px] font-medium leading-snug">{top.reason}</p>}
+              {!alarm && (
+                <div className="rounded-xl border border-review/40 bg-review-bg/60 px-3.5 py-2.5 text-sm">
+                  <p className="font-medium text-review">Why a person must look</p>
+                  <p className="mt-0.5 leading-relaxed">{whyReview ?? "…"}</p>
                 </div>
-                <blockquote lang="gsw" className="text-sm leading-relaxed">“{ev.text}”</blockquote>
-                {ev.start_s != null && ev.end_s != null && <SnippetPlayer callId={id} path={ev.snippet_path} start={ev.start_s} end={ev.end_s} waveform={null} />}
-              </div>
-            )}
-          </>
-        )}
+              )}
+              {ev && (
+                <div className="space-y-2.5 rounded-xl bg-muted/50 p-3.5">
+                  <p className="text-xs text-muted-foreground">
+                    <span className="font-medium" style={{ color: SPEAKER_COLOR[ev.speaker] }}>{ev.speaker === "unknown" ? "Unknown speaker" : ev.speaker === "advisor" ? "Advisor" : "Customer"}</span>
+                    {ev.start_s != null ? `, ${fmtTime(ev.start_s)}` : ", no timestamp (reference transcript)"}
+                  </p>
+                  <blockquote lang="gsw" className="text-sm leading-relaxed">“{ev.text}”</blockquote>
+                  {ev.start_s != null && ev.end_s != null && <PassagePlayer callId={id} path={ev.snippet_path} start={ev.start_s} end={ev.end_s} mock={item.is_mock} />}
+                </div>
+              )}
+              {findings.length > 0 && (
+                <p className="text-xs text-muted-foreground">{plural(findings.length, "finding")}, {plural(passages, "evidence passage")}</p>
+              )}
+            </>
+          )}
+        </div>
 
-        <footer className="flex flex-wrap items-center gap-3">
-          <RiskConfidence risk={item.risk_score} confidence={item.confidence} gate={gate} compact />
-          {findings.length > 1 && <span className="text-xs text-muted-foreground">+{findings.length - 1} more finding{findings.length > 2 ? "s" : ""}</span>}
-          <Link href={`/calls/${id}`} className="ml-auto inline-flex items-center gap-1 text-sm font-medium text-link underline-offset-2 hover:underline">
-            Open call <ArrowRight className="size-3.5" />
+        {/* 3 · the numbers and the action */}
+        <div className="flex flex-col gap-4 md:border-l md:border-border md:pl-5">
+          <RiskGauge value={item.risk_score} review={thresholds?.review} alarm={thresholds?.alarm} />
+          <ConfidenceGauge value={item.confidence} gate={thresholds?.confidence_gate} />
+          <Link href={`/calls/${id}`}
+            className="mt-auto inline-flex h-10 items-center justify-center rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90">
+            Review call
           </Link>
-        </footer>
+        </div>
       </div>
     </article>
   );

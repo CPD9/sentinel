@@ -2,6 +2,7 @@
 import { InfoTip } from "@/components/ui/info-tip";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Term } from "@/lib/glossary";
+import { useEffect, useRef } from "react";
 import type { CallListItem } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -28,11 +29,36 @@ export function StatCards({ calls }: { calls: CallListItem[] | null }) {
     <dl className="grid grid-cols-2 gap-3 lg:grid-cols-4">
       {items.map((it) => (
         <div key={it.label} className="rounded-2xl border border-border bg-card px-5 py-4">
-          <dt className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{it.label}<InfoTip term={it.term} /></dt>
-          <dd className={cn("tabular mt-1 text-4xl font-semibold tracking-tight", it.tone)}>{it.value}</dd>
+          <dt className="flex items-center gap-1 text-sm font-medium text-muted-foreground">{it.label}<InfoTip term={it.term} /></dt>
+          <dd className={cn("tabular mt-1 text-4xl font-semibold tracking-tight", it.tone)}><CountUp value={it.value} /></dd>
           <dd className="mt-1 text-xs text-muted-foreground">{it.hint}</dd>
         </div>
       ))}
     </dl>
   );
+}
+
+/** Counts up from 0 once, on first load (the page's one load moment). Later updates and reduced motion show the value at once.
+ *  Written to the DOM directly with a timer: no re-render per step, and no dependency on animation frames. */
+function CountUp({ value }: { value: number }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const played = useRef(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (played.current || value === 0 || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      el.textContent = String(value); played.current = true; return;
+    }
+    played.current = true;
+    const t0 = performance.now(), D = 700;
+    let finished = false;
+    el.textContent = "0";
+    const timer = setInterval(() => {
+      const k = Math.min(1, (performance.now() - t0) / D);
+      el.textContent = String(Math.round(value * (1 - Math.pow(1 - k, 3))));
+      if (k >= 1) { finished = true; clearInterval(timer); }
+    }, 16);
+    return () => { clearInterval(timer); el.textContent = String(value); if (!finished) played.current = false; };
+  }, [value]);
+  return <span ref={ref} aria-label={String(value)} />;
 }

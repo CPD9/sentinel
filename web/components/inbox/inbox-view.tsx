@@ -36,7 +36,8 @@ function sortRows(rows: CallListItem[], sort: Sort): CallListItem[] {
 
 export function InboxView() {
   const calls = useAsync(getCalls, "calls");
-  const gate = useAsync(() => getThresholds().then((t) => t.confidence_gate), "gate");
+  const th = useAsync(getThresholds, "thresholds");
+  const gate = th.data?.confidence_gate ?? null;
   const [decision, setDecision] = useState("");
   const [status, setStatus] = useState("");
   const [criterion, setCriterion] = useState("");
@@ -108,7 +109,7 @@ export function InboxView() {
         <EmptyState>No calls yet. Drop .wav files on this page or run <code className="font-mono">./run.sh &lt;folder&gt;</code>.</EmptyState>
       )}
 
-      <HitList calls={calls.data ?? null} gate={gate.data ?? undefined} />
+      <HitList calls={calls.data ?? null} thresholds={th.data} />
 
       <details className="group rounded-2xl border border-border bg-card/40">
         <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-semibold [&::-webkit-details-marker]:hidden">
@@ -141,10 +142,10 @@ export function InboxView() {
         </Select></div>
       </div>
 
-      {gate.status === "error" && !gate.data && (
+      {th.status === "error" && !th.data && (
         <div role="alert" className="flex items-center justify-between gap-3 rounded-md border border-review bg-review-bg px-3 py-2 text-sm text-review">
-          <span>The confidence gate could not be loaded ({gate.error.message}), so low-confidence calls are not flagged with ▼ below.</span>
-          <button type="button" className="rounded border border-review px-2 py-0.5 text-xs" onClick={gate.reload}>Retry</button>
+          <span>The confidence gate could not be loaded ({th.error.message}), so low-confidence calls are not flagged with ▼ below.</span>
+          <button type="button" className="rounded border border-review px-2 py-0.5 text-xs" onClick={th.reload}>Retry</button>
         </div>
       )}
 
@@ -165,7 +166,7 @@ export function InboxView() {
             <tbody className="divide-y divide-border">
               {rows.map((r) => {
                 const href = r.status === "processing" || r.status === "queued" ? `/calls/${r.call_id}/processing` : `/calls/${r.call_id}`;
-                const dim = r.confidence != null && gate.data != null && r.confidence < gate.data;
+                const dim = r.confidence != null && gate != null && r.confidence < gate;
                 return (
                   <tr key={r.call_id} className="hover:bg-muted/60">
                     <td className="px-3 py-2.5"><Link href={href} className="font-mono font-medium underline-offset-2 hover:underline">{r.call_id}</Link></td>
