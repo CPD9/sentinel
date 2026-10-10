@@ -85,7 +85,11 @@ _PLACEHOLDER = re.compile(r"\{([A-Z][A-Z0-9_]*)\}")
 # cannot swap the gated model or the constrained-output schema.
 RESERVED_BODY_KEYS = frozenset({
     "model", "messages", "temperature", "max_tokens", "max_completion_tokens", "response_format", "stream",
-    "stream_options", "n", "tools", "tool_choice", "functions", "function_call"})
+    "stream_options", "n", "tools", "tool_choice", "functions", "function_call",
+    # OpenRouter fallback / routing fields that can select a different model than the one the gate checked
+    "models", "route", "preset"})
+# A remote provider's extra_body may carry only these vendor options (the gate cannot vet anything else).
+REMOTE_EXTRA_BODY_KEYS = frozenset({"provider", "usage"})
 _LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 _SPEC_KEYS = {"base_url", "base_url_env", "model_env", "key_env", "self_hosted", "region", "allowed_models",
               "extra_body"}
@@ -148,6 +152,10 @@ def parse_providers(doc: dict) -> tuple[str, dict[str, ProviderSpec]]:
             extra = {}
         errs += [f"{name}.extra_body may not set {k!r} (reserved request field)" for k in extra
                  if k in RESERVED_BODY_KEYS]
+        if hosted is False:
+            errs += [f"{name}.extra_body key {k!r} is not allowed for a remote provider "
+                     f"(allowed: {sorted(REMOTE_EXTRA_BODY_KEYS)})" for k in extra
+                     if k not in RESERVED_BODY_KEYS and k not in REMOTE_EXTRA_BODY_KEYS]
         if hosted is False:
             if not p.get("key_env"):
                 errs.append(f"{name}: a remote provider needs key_env")
@@ -234,6 +242,15 @@ def build_metrics(spec: ProviderSpec, model: str | None, usage: dict | None, ttf
 
 # --------------------------------------------------------------------------- client
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Never follow a redirect: urllib would forward the Authorization header to the new host, and a loopback-only
+    client could be bounced to a remote one. A 3xx surfaces as an HTTP error instead."""
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_OPENER = urllib.request.build_opener(_NoRedirect)
+
 @dataclass
 class _Reply:
     text: str
@@ -290,9 +307,9 @@ class OpenAICompatClient:
         req = urllib.request.Request(url, data=data, headers=self._headers(),
                                      method="GET" if payload is None else "POST")
         try:
-            return urllib.request.urlopen(req, timeout=timeout)
+            return _OPENER.open(req, timeout=timeout)
         except urllib.error.HTTPError as e:
-            body = self._scrub(e.read().decode(errors="replace")[:500])
+            body = self._scrub(e.read(65536).decode(errors="replace"))[:500]
             raise HTTPStatusError(e.code, f"HTTP {e.code} from {url}: {body}") from None
         except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
             raise _Unreachable(self._scrub(f"cannot reach {url}: {e}")) from None
@@ -349,15 +366,16 @@ class OpenAICompatClient:
                 payload["response_format"] = {"type": "json_schema",
                                               "json_schema": {"name": "answer", "schema": json_schema}}
             for k, v in self.spec.extra_body.items():
-                if k not in RESERVED_BODY_KEYS:
-                    payload[k] = copy.deepcopy(v)
+                if k in RESERVED_BODY_KEYS or (not self.spec.self_hosted and k not in REMOTE_EXTRA_BODY_KEYS):
+                    continue
+                payload[k] = copy.deepcopy(v)
             t0 = self._now()
             try:
                 reply = self._stream(payload, t0) if streamed else self._plain(payload)
             except LLMError as e:
                 last = i == len(steps) - 1
                 no_retry = isinstance(e, (_Unreachable, ProviderNotPermitted)) or (
-                    isinstance(e, HTTPStatusError) and e.status in (401, 403, 429))
+                    isinstance(e, HTTPStatusError) and e.status in (301, 302, 303, 307, 308, 401, 403, 429))
                 if last or no_retry or (not streamed and not (isinstance(e, HTTPStatusError) and e.status == 400)):
                     raise
                 continue
@@ -378,7 +396,7 @@ class OpenAICompatClient:
         try:
             text = out["choices"][0]["message"]["content"] or ""
         except (KeyError, IndexError, TypeError, AttributeError):
-            raise LLMError(self._scrub(f"unexpected response shape: {str(out)[:300]}")) from None
+            raise LLMError(f"unexpected response shape: {self._scrub(str(out))[:300]}") from None
         return _Reply(text, out.get("usage"), out.get("model"), None)
 
     def _stream(self, payload: dict, t0: float) -> _Reply:
@@ -416,7 +434,7 @@ class OpenAICompatClient:
                     if not isinstance(chunk, dict):
                         raise _StreamFailed("malformed stream chunk")
                     if chunk.get("error"):
-                        raise _StreamFailed(self._scrub(f"error inside stream: {str(chunk['error'])[:300]}"))
+                        raise _StreamFailed(f"error inside stream: {self._scrub(str(chunk['error']))[:300]}")
                     served = chunk.get("model") or served
                     usage = chunk.get("usage") or usage
                     choices = chunk.get("choices") or []

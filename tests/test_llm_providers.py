@@ -97,7 +97,7 @@ def _env(monkeypatch):
 
 def net(monkeypatch, *script) -> Net:
     n = Net(*script)
-    monkeypatch.setattr(urllib.request, "urlopen", n)
+    monkeypatch.setattr(llm._OPENER, "open", n)
     return n
 
 
@@ -415,11 +415,13 @@ def test_extra_body_cannot_set_reserved_fields(monkeypatch):
     allow(monkeypatch)
     spec = ProviderSpec(name="r", base_url="https://r.example/v1", key_env="OPENROUTER_API_KEY", self_hosted=False,
                         allowed_models=(OK_MODEL,),
-                        extra_body={"model": "openai/gpt-4o", "response_format": {"type": "text"}, "x": 1})
+                        extra_body={"model": "openai/gpt-4o", "response_format": {"type": "text"},
+                                    "provider": {"data_collection": "deny"}})
     n = net(monkeypatch, plain("ok"))
     llm.OpenAICompatClient(spec.base_url, OK_MODEL, spec=spec).chat(MSG, stream=False)
     assert n.calls[0]["body"]["model"] == OK_MODEL
-    assert "response_format" not in n.calls[0]["body"] and n.calls[0]["body"]["x"] == 1
+    assert "response_format" not in n.calls[0]["body"]
+    assert n.calls[0]["body"]["provider"] == {"data_collection": "deny"}
 
 
 def test_stream_that_ends_without_terminal_event_falls_back(monkeypatch):
@@ -442,3 +444,70 @@ def test_malformed_plain_response_is_scrubbed(monkeypatch):
     with pytest.raises(LLMError) as ei:
         get_client("openrouter", OK_MODEL).chat(MSG, stream=False)
     assert KEY not in str(ei.value) and "unexpected response shape" in str(ei.value)
+
+
+# --------------------------------------------------------------------------- Codex review round 2 of PR #16
+
+def _doc(host_remote: bool, extra: dict) -> dict:
+    p = {"base_url": "https://r.example/v1" if host_remote else "http://127.0.0.1:8000/v1",
+         "self_hosted": not host_remote, "extra_body": extra}
+    if host_remote:
+        p.update(key_env="OPENROUTER_API_KEY", allowed_models=[OK_MODEL])
+    return {"default": "r", "providers": {"r": p}}
+
+
+@pytest.mark.parametrize("key", ["models", "route", "preset"])
+def test_model_fallback_fields_are_reserved(monkeypatch, key):
+    for remote in (True, False):
+        with pytest.raises(LLMError, match="reserved"):
+            parse_providers(_doc(remote, {key: ["openai/gpt-4o"]}))
+    # and ignored at request time even for a hand-built spec
+    allow(monkeypatch)
+    spec = ProviderSpec(name="r", base_url="https://r.example/v1", key_env="OPENROUTER_API_KEY", self_hosted=False,
+                        allowed_models=(OK_MODEL,), extra_body={key: ["openai/gpt-4o"]})
+    n = net(monkeypatch, plain("ok"))
+    llm.OpenAICompatClient(spec.base_url, OK_MODEL, spec=spec).chat(MSG, stream=False)
+    assert key not in n.calls[0]["body"]
+
+
+def test_remote_extra_body_is_allowlisted_but_self_hosted_may_pass_vendor_options():
+    with pytest.raises(LLMError, match="not allowed for a remote provider"):
+        parse_providers(_doc(True, {"top_k": 5}))
+    _, specs = parse_providers(_doc(True, {"provider": {"data_collection": "deny"}, "usage": {"include": True}}))
+    assert set(specs["r"].extra_body) == {"provider", "usage"}
+    _, specs = parse_providers(_doc(False, {"chat_template_kwargs": {"enable_thinking": False}}))
+    assert "chat_template_kwargs" in specs["r"].extra_body                 # vLLM options stay possible
+
+
+def test_redirects_are_never_followed(monkeypatch):
+    h = llm._NoRedirect()
+    req = urllib.request.Request("https://openrouter.ai/api/v1/chat/completions", data=b"{}",
+                                 headers={"Authorization": f"Bearer {KEY}"})
+    for code in (301, 302, 303, 307, 308):
+        assert h.redirect_request(req, None, code, "Found", {}, "https://evil.example/steal") is None
+    assert llm._OPENER.handlers and any(isinstance(x, llm._NoRedirect) for x in llm._OPENER.handlers)
+    allow(monkeypatch)
+    n = net(monkeypatch, http_error(302, "moved"))
+    with pytest.raises(LLMError, match="HTTP 302") as ei:
+        get_client("openrouter", OK_MODEL).chat(MSG)
+    assert len(n.calls) == 1 and KEY not in str(ei.value)                   # no retry, nothing forwarded
+
+
+def test_key_straddling_the_truncation_boundary_is_still_scrubbed(monkeypatch):
+    allow(monkeypatch)
+    c = get_client("openrouter", OK_MODEL)
+    # malformed 200 (plain), key placed so that a truncate-then-scrub would cut it in half
+    pad = "x" * (300 - 8)
+    net(monkeypatch, FakeResp(json.dumps({"error": pad + KEY}).encode()))
+    with pytest.raises(LLMError) as e1:
+        c.chat(MSG, stream=False)
+    # HTTP error body, same trick at the 500 boundary
+    net(monkeypatch, http_error(500, "y" * (500 - 8) + KEY))
+    with pytest.raises(LLMError) as e2:
+        c.chat(MSG, stream=False)
+    # error object inside a stream (call the stream step directly, chat() would swallow it into the fallback)
+    net(monkeypatch, sse({"error": {"message": "z" * (300 - 30) + KEY}}))
+    with pytest.raises(llm._StreamFailed) as e3:
+        c._stream({"model": OK_MODEL, "messages": MSG}, 0.0)
+    for e in (e1, e2, e3):
+        assert KEY[:8] not in str(e.value), str(e.value)
