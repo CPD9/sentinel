@@ -8,6 +8,7 @@ import { Select } from "@/components/ui/select";
 import { CriterionChip, DecisionBadge, StageErrorChip, StatusPill } from "@/components/shell/badges";
 import { EmptyState, ErrorCard } from "@/components/shell/states";
 import { ScoreBar } from "@/components/shell/score";
+import { HitList } from "./hit-cards";
 import { StatCards } from "./stat-cards";
 import { UploadButton, useWavUpload } from "./upload";
 import { getCalls, getThresholds, subscribeGlobalEvents } from "@/lib/data";
@@ -106,6 +107,8 @@ export function InboxView() {
       {calls.data && calls.data.length === 0 && (
         <EmptyState>No calls yet. Drop .wav files on this page or run <code className="font-mono">./run.sh &lt;folder&gt;</code>.</EmptyState>
       )}
+
+      <HitList calls={calls.data ?? null} gate={gate.data ?? undefined} />
 
       <details className="group rounded-2xl border border-border bg-card/40">
         <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-semibold [&::-webkit-details-marker]:hidden">
