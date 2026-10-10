@@ -55,7 +55,7 @@ export function CallDashboard({ id, tab, sel }: { id: string; tab: TabValue; sel
 }
 
 function BackLink() {
-  return <Link href="/" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="size-3.5" />Inbox</Link>;
+  return <Link href="/" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="size-3.5" />Overview</Link>;
 }
 
 function Loaded({ result, tab, sel }: { result: CallResult; tab: TabValue; sel: { win?: string; seg?: string } }) {

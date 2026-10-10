@@ -74,7 +74,7 @@ export function InboxView() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">Inbox</h1>
+          <h1 className="text-xl font-semibold tracking-tight">Overview</h1>
           <p className="text-sm text-muted-foreground">Every call, most urgent first. Review means a person should look; it is not an alarm.</p>
         </div>
       </div>

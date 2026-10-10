@@ -25,7 +25,7 @@ export function QualityView() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">Quality lab</h1>
+          <h1 className="text-xl font-semibold tracking-tight">Detection quality</h1>
           <p className="text-sm text-muted-foreground">Three metric conventions are always shown together, each with a bootstrap confidence interval.</p>
         </div>
         {list.data && list.data.length > 0 && (

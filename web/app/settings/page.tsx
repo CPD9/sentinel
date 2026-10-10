@@ -1,5 +1,6 @@
-import { SettingsView } from "@/components/settings/settings-view";
+import { redirect } from "next/navigation";
 
+// "Settings" was split into Sensitivity and Keywords & checks; old links land on Sensitivity.
 export default function Page() {
-  return <SettingsView />;
+  redirect("/sensitivity");
 }
