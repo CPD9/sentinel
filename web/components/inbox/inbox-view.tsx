@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { ChevronRight } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -7,7 +8,8 @@ import { Select } from "@/components/ui/select";
 import { CriterionChip, DecisionBadge, StageErrorChip, StatusPill } from "@/components/shell/badges";
 import { EmptyState, ErrorCard } from "@/components/shell/states";
 import { ScoreBar } from "@/components/shell/score";
-import { UploadZone } from "./upload";
+import { StatCards } from "./stat-cards";
+import { UploadButton, useWavUpload } from "./upload";
 import { getCalls, getThresholds, subscribeGlobalEvents } from "@/lib/data";
 import { fmtDateTime, fmtTime } from "@/lib/format";
 import { useReportMock } from "@/lib/mock-store";
@@ -41,6 +43,8 @@ export function InboxView() {
   const [onlyErrors, setOnlyErrors] = useState(false);
   const [sort, setSort] = useState<Sort>("default");
   const [stages, setStages] = useState<Record<string, string>>({});
+  const [dragging, setDragging] = useState(false);
+  const upload = useWavUpload(calls.reload);
 
   useReportMock("inbox", calls.data?.some((c) => c.is_mock) ? { is_mock: true } : null);
 
@@ -70,16 +74,46 @@ export function InboxView() {
 
   const stale = calls.status === "error" && calls.data;
 
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">Overview</h1>
-          <p className="text-sm text-muted-foreground">Every call, most urgent first. Review means a person should look; it is not an alarm.</p>
-        </div>
-      </div>
-      <UploadZone onUploaded={calls.reload} />
+  const attention = (calls.data ?? []).filter((c) => (c.status === "done" || c.status === "error") && (c.decision === "alarm" || c.decision === "review")).length;
 
+  return (
+    <div className="relative space-y-6"
+      onDragOver={(e) => { if (e.dataTransfer.types.includes("Files")) { e.preventDefault(); setDragging(true); } }}
+      onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false); }}
+      onDrop={(e) => { e.preventDefault(); setDragging(false); void upload.send(e.dataTransfer.files); }}>
+      {dragging && (
+        <div className="pointer-events-none fixed inset-3 z-40 flex items-center justify-center rounded-2xl border-2 border-dashed border-primary bg-background/80 text-lg font-semibold text-link">
+          Drop .wav files to analyse them
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Overview</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Every call is checked automatically.{" "}
+            {calls.data ? (attention > 0
+              ? <b className="font-semibold text-foreground">{attention} {attention === 1 ? "needs" : "need"} your attention.</b>
+              : "Nothing needs your attention right now.") : null}
+          </p>
+        </div>
+        <UploadButton upload={upload} />
+      </div>
+
+      {calls.status === "error" && <ErrorCard error={calls.error} title="Could not load the call list" onRetry={calls.reload} />}
+      {stale && <p className="text-xs text-review">Showing the last good data. It may be stale.</p>}
+      <StatCards calls={calls.data ?? null} />
+      {calls.data && calls.data.length === 0 && (
+        <EmptyState>No calls yet. Drop .wav files on this page or run <code className="font-mono">./run.sh &lt;folder&gt;</code>.</EmptyState>
+      )}
+
+      <details className="group rounded-2xl border border-border bg-card/40">
+        <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-semibold [&::-webkit-details-marker]:hidden">
+          <ChevronRight className="size-4 transition-transform group-open:rotate-90 motion-reduce:transition-none" aria-hidden />
+          All calls{calls.data ? ` (${calls.data.length})` : ""}
+          <span className="font-normal text-muted-foreground">· including no-alert calls, processing and errors</span>
+        </summary>
+        <div className="space-y-4 border-t border-border p-4">
       <div className="flex flex-wrap items-center gap-3">
         <Select label="Decision" value={decision} onChange={(e) => setDecision(e.target.value)}>
           <option value="">all</option>
@@ -104,8 +138,6 @@ export function InboxView() {
         </Select></div>
       </div>
 
-      {calls.status === "error" && <ErrorCard error={calls.error} title="Could not load the call list" onRetry={calls.reload} />}
-      {stale && <p className="text-xs text-review">Showing the last good data. It may be stale.</p>}
       {gate.status === "error" && !gate.data && (
         <div role="alert" className="flex items-center justify-between gap-3 rounded-md border border-review bg-review-bg px-3 py-2 text-sm text-review">
           <span>The confidence gate could not be loaded ({gate.error.message}), so low-confidence calls are not flagged with ▼ below.</span>
@@ -157,6 +189,8 @@ export function InboxView() {
         </Card>
       )}
       {calls.data && <p className="text-xs text-muted-foreground">{rows.length} of {calls.data.length} calls. <RiskConfidenceHint /></p>}
+        </div>
+      </details>
     </div>
   );
 }

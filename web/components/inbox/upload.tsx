@@ -1,25 +1,22 @@
 "use client";
-import { Upload } from "lucide-react";
-import { useRef, useState } from "react";
+import { Plus } from "lucide-react";
+import { useCallback, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { ApiError, uploadCall } from "@/lib/data";
 
-/** Drag-and-drop of .wav files → POST /api/calls (one request per file). Adapted in spirit from Leadership-Demo's upload dropzone. */
-export function UploadZone({ onUploaded }: { onUploaded: () => void }) {
-  const input = useRef<HTMLInputElement>(null);
+/** Upload of .wav files → POST /api/calls (one request per file). One file opens its live processing view. */
+export function useWavUpload(onUploaded: () => void) {
   const router = useRouter();
-  const [drag, setDrag] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
-  async function send(files: FileList | File[]) {
+  const send = useCallback(async (files: FileList | File[]) => {
     const list = Array.from(files);
     const wavs = list.filter((f) => f.name.toLowerCase().endsWith(".wav"));
-    if (wavs.length !== list.length) setMsg("Only .wav files are accepted.");
+    setMsg(wavs.length !== list.length ? "Only .wav files are accepted." : null);
     if (!wavs.length) return;
     setBusy(true);
-    setMsg(null);
     try {
       let last: string | null = null;
       for (const f of wavs) last = (await uploadCall(f)).call_id;
@@ -30,20 +27,21 @@ export function UploadZone({ onUploaded }: { onUploaded: () => void }) {
     } finally {
       setBusy(false);
     }
-  }
+  }, [onUploaded, router]);
 
+  return { send, busy, msg };
+}
+
+/** "Analyse a call" button. In production calls arrive automatically; this is the manual path for the demo. */
+export function UploadButton({ upload }: { upload: ReturnType<typeof useWavUpload> }) {
+  const input = useRef<HTMLInputElement>(null);
   return (
-    <div
-      onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
-      onDragLeave={() => setDrag(false)}
-      onDrop={(e) => { e.preventDefault(); setDrag(false); void send(e.dataTransfer.files); }}
-      className={`flex flex-wrap items-center gap-3 rounded-lg border border-dashed px-4 py-3 text-sm ${drag ? "border-ring bg-info-bg" : "border-border"}`}
-    >
-      <Upload className="size-4" aria-hidden />
-      <span className="text-muted-foreground">Drop .wav files here</span>
-      <input ref={input} type="file" accept=".wav,audio/wav" multiple hidden onChange={(e) => e.target.files && void send(e.target.files)} />
-      <Button variant="outline" size="sm" disabled={busy} onClick={() => input.current?.click()}>{busy ? "Uploading…" : "Choose files"}</Button>
-      {msg && <span role="alert" className="text-xs text-alarm">{msg}</span>}
+    <div className="flex flex-col items-start gap-1 sm:items-end">
+      <input ref={input} type="file" accept=".wav,audio/wav" multiple hidden
+        onChange={(e) => { if (e.target.files) void upload.send(e.target.files); e.target.value = ""; }} />
+      <Button disabled={upload.busy} onClick={() => input.current?.click()}><Plus className="size-4" />{upload.busy ? "Uploading…" : "Analyse a call"}</Button>
+      <span className="text-[11px] text-muted-foreground">.wav, or drop files anywhere on this page</span>
+      {upload.msg && <span role="alert" className="max-w-xs text-xs text-alarm sm:text-right">{upload.msg}</span>}
     </div>
   );
 }
