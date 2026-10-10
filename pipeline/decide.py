@@ -52,7 +52,7 @@ def config_from_dicts(keywords: dict, rules: dict, thresholds: dict) -> Config:
         errs.append("thresholds: need review < alarm")
     if errs:
         raise ConfigError(errs)
-    digest = hashlib.sha256(json.dumps([rules, keywords], sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:8]
+    digest = hashlib.sha256(json.dumps([rules, keywords, thresholds], sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:8]
     rc = rl.parse_rules(rules)
     return Config(kw.parse_keywords(keywords), rc, Thresholds(float(t["alarm"]), float(t["review"]), float(t["confidence_gate"])),
                   conf.parse_confidence(thresholds.get("confidence") or {}), f"{rc.version}+{digest}")

@@ -65,6 +65,10 @@ def parse_keywords(d: dict) -> KeywordConfig:
                                                  for k, v in variants.items()):
             errs.append(f"families.{name}.variants must map configured terms to lists of strings")
             continue
+        bad = [(k, x) for k, v in variants.items() for x in v if not _tokens(x)]
+        if bad:
+            errs += [f"families.{name}.variants.{k}: {x!r} is empty or has no word characters" for k, x in bad]
+            continue
         fams[name] = Family(name, CRITERION_BY_FAMILY[name], list(terms), {k: list(v) for k, v in variants.items()},
                             f.get("label", ""))
     if errs:

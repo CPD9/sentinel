@@ -62,3 +62,11 @@ def test_bad_config_rejected():
     with pytest.raises(ConfigError) as e:
         parse_keywords(bad)
     assert len(e.value.errors) == 3
+
+
+@pytest.mark.parametrize("bad", ["", "!!", "  "])
+def test_empty_or_punctuation_only_variant_rejected(bad):
+    d = json.loads((Path(__file__).parents[1] / "config" / "keywords.json").read_text(encoding="utf-8"))
+    d["families"]["access"]["variants"]["Passwort"].append(bad)
+    with pytest.raises(ConfigError, match=r"families\.access\.variants\.Passwort"):
+        parse_keywords(d)

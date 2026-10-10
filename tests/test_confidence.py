@@ -38,6 +38,16 @@ def test_reference_transcript_has_no_asr_concern():
     assert run(tr(reference=True)).components["asr"] == 1.0
 
 
+def test_missing_stats_neutral_only_in_reference_mode():
+    asr_missing = Transcript("c", "asr", [TranscriptSegment("s1", "advisor", "x", 0.0, 1.0)])
+    assert run(asr_missing).components["asr"] == 0.5
+    tuned = copy.deepcopy(RAW)
+    tuned["params"]["asr_missing_stats"] = 0.2
+    assert run(asr_missing, cp=parse_confidence(tuned)).components["asr"] == 0.2
+    ref = Transcript("c", "reference", [TranscriptSegment("s1", "advisor", "x")])
+    assert run(ref).components["asr"] == 1.0
+
+
 def test_low_logprob_and_no_speech_lower_asr():
     assert run(tr(lp=-1.4, nsp=0.5)).components["asr"] < run(tr(lp=-0.6)).components["asr"] < 1.0
 

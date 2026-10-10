@@ -12,7 +12,8 @@
       "proximity_margin": 0.15,
       "conflict_penalty": 0.5,
       "missing_evidence_penalty": 0.25,
-      "audio_quality_neutral": 1.0
+      "audio_quality_neutral": 1.0,
+      "asr_missing_stats": 0.5
     }
   }
 }

@@ -305,3 +305,17 @@ def test_mock_fixture_facts_reproduce_the_mock_decision(n, expected):
     an = AnalysisArtifact.from_dict(json.loads((FIX / f"call_MOCK_{n}.analysis.json").read_text()))
     facts = [Fact(**f) for f in json.loads((FIX / f"call_MOCK_{n}.trace.json").read_text())["facts"]]
     assert decide_call(tr, facts, an, CFG).decision == expected
+
+
+def test_rules_version_changes_with_any_threshold_or_confidence_edit():
+    kws, rules, th = raw()
+    base = config_from_dicts(kws, rules, th).rules_version
+    for edit in (lambda t: t["confidence"].update(formula="weighted_geometric"),
+                 lambda t: t["confidence"].update(gate_scope="any"),
+                 lambda t: t["confidence"]["weights"].update(asr=0.9),
+                 lambda t: t["confidence"]["params"].update(proximity_margin=0.3),
+                 lambda t: t.update(alarm=0.8)):
+        th2 = copy.deepcopy(th)
+        edit(th2)
+        assert config_from_dicts(kws, rules, th2).rules_version != base
+    assert config_from_dicts(kws, rules, copy.deepcopy(th)).rules_version == base

@@ -5,7 +5,8 @@
 #
 #   asr                  mean over the evidence segments (segments cited by valid facts; all segments if none) of
 #                          clip((avg_logprob - floor) / (ceiling - floor), 0, 1) * (1 - no_speech_prob)
-#                        1.0 for segments without ASR numbers (reference transcripts).
+#                        Segments without avg_logprob: 1.0 only in reference mode (scripts have no ASR numbers);
+#                        in ASR mode missing stats are uncertainty and count as `asr_missing_stats` (default 0.5).
 #   threshold_proximity  clip(min(|risk - alarm|, |risk - review|) / proximity_margin, 0, 1)
 #                        risk is the call's max rule risk: a risk sitting on a threshold is a fragile decision.
 #   conflicts            clip(1 - n_conflicts * conflict_penalty, 0, 1)
@@ -32,7 +33,7 @@ from pipeline.schemas import CONFIDENCE_COMPONENTS, AnalysisArtifact, Confidence
 FORMULAS = ("weighted_mean", "weighted_geometric")
 GATE_SCOPES = ("any", "risky_only")
 _PARAMS = ("asr_logprob_floor", "asr_logprob_ceiling", "proximity_margin", "conflict_penalty",
-           "missing_evidence_penalty", "audio_quality_neutral")
+           "missing_evidence_penalty", "audio_quality_neutral", "asr_missing_stats")
 
 
 @dataclass
@@ -79,7 +80,7 @@ def compute(transcript: Transcript, facts: list[Fact], analysis: AnalysisArtifac
     vals = []
     for s in segs:
         if s.avg_logprob is None:
-            vals.append(1.0)
+            vals.append(1.0 if transcript.mode == "reference" else _clip(p["asr_missing_stats"]))
         else:
             lp = _clip((s.avg_logprob - p["asr_logprob_floor"]) / (p["asr_logprob_ceiling"] - p["asr_logprob_floor"]))
             vals.append(lp * (1.0 - (s.no_speech_prob or 0.0)))
