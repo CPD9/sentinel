@@ -1,10 +1,10 @@
 "use client";
 import { Plus, Save, X } from "lucide-react";
 import { Fragment, useState } from "react";
-import { CriterionChip } from "@/components/shell/badges";
 import { ErrorCard, SkeletonBlock } from "@/components/shell/states";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { CRITERION_LABEL, criterionColor } from "@/lib/colors";
 import { ApiError, getKeywords, getRules, putKeywords, putRules } from "@/lib/data";
 import type { KeywordsConfig, RulesConfig } from "@/lib/types";
 import { useAsync } from "@/lib/use-async";
@@ -39,8 +39,8 @@ function Keywords() {
   return (
     <section aria-labelledby="kw" className="space-y-3">
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <div><h2 id="kw" className="text-lg font-semibold">Keyword families</h2>
-          <p className="text-sm text-muted-foreground">Terms and Swiss German variants. Counts are matching transcript segments across all processed calls, updated live. Keywords never reach the LLM.</p></div>
+        <div><h2 id="kw" className="text-lg font-semibold">Keywords</h2>
+          <p className="max-w-prose text-sm text-muted-foreground">The words SENTINEL listens for, grouped by kind of fraud, each with its Swiss German variants. The number next to a word is how many transcript passages match it across all processed calls, live while you edit. Keywords only point to passages; they are never shown to the language model.</p></div>
         <div className="flex gap-2">
           <Button size="sm" disabled={!dirty} onClick={async () => { try { const r = await putKeywords(draft); setMsg({ ok: true, text: `Saved. Re-running keywords, rules, confidence, decide for ${r.rerun.n_calls} calls.` }); setDraft(null); saved.reload(); } catch (e) { setMsg(fail(e)); } }}><Save className="size-4" />Save keywords</Button>
           <Button size="sm" variant="outline" disabled={!dirty} onClick={() => setDraft(null)}>Reset</Button>
@@ -48,14 +48,20 @@ function Keywords() {
       </div>
       <MsgBox m={msg} />
       {preview.error && <p className="text-xs text-muted-foreground">Live counts unavailable — {preview.error}</p>}
-      <label className="flex items-center gap-3 text-sm">Fuzzy match threshold
-        <input type="range" min={0.5} max={1} step={0.01} value={draft.fuzzy_threshold} onChange={(e) => mutate((d) => { d.fuzzy_threshold = +e.target.value; })} />
-        <span className="tabular font-semibold">{draft.fuzzy_threshold.toFixed(2)}</span>
-      </label>
+      <div className="space-y-1">
+        <label className="flex flex-wrap items-center gap-3 text-sm font-medium">Match strictness
+          <input type="range" min={0.5} max={1} step={0.01} value={draft.fuzzy_threshold} onChange={(e) => mutate((d) => { d.fuzzy_threshold = +e.target.value; })} />
+          <span className="tabular font-semibold">{draft.fuzzy_threshold.toFixed(2)}</span>
+        </label>
+        <p className="text-xs text-muted-foreground">How exactly a transcribed word must match a keyword to count. 1.00 = exact spelling only; lower values also catch dialect spellings and small transcription errors.</p>
+      </div>
       <div className="grid gap-3 lg:grid-cols-2">
         {Object.entries(draft.families).map(([name, f]) => (
           <Card key={name}>
-            <CardHeader><div><CardTitle className="font-mono">{name}</CardTitle></div><CriterionChip criterion={f.criterion} /></CardHeader>
+            <CardHeader><div>
+              <CardTitle className="flex items-center gap-2 text-base"><span aria-hidden className="inline-block size-2.5 rounded-full" style={{ background: criterionColor(f.criterion) }} />{CRITERION_LABEL[f.criterion] ?? f.criterion}</CardTitle>
+              <CardDescription>family <span className="font-mono">{name}</span> · words and their Swiss German variants</CardDescription>
+            </div></CardHeader>
             <CardContent className="space-y-3">
               <ul className="space-y-2">
                 {f.terms.map((term) => (
@@ -76,7 +82,7 @@ function Keywords() {
                   </li>
                 ))}
               </ul>
-              <AddInput label={`Add term to ${name}`} placeholder="+ term" onAdd={(v) => mutate((d) => { if (!d.families[name].terms.includes(v)) d.families[name].terms.push(v); })} />
+              <AddInput label={`Add term to ${name}`} placeholder="+ word" onAdd={(v) => mutate((d) => { if (!d.families[name].terms.includes(v)) d.families[name].terms.push(v); })} />
             </CardContent>
           </Card>
         ))}
@@ -111,10 +117,10 @@ function Rules() {
   return (
     <section aria-labelledby="rl" className="space-y-3">
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <div><h2 id="rl" className="text-lg font-semibold">Rules <span className="text-sm font-normal text-muted-foreground">version {draft.version}</span></h2>
-          <p className="text-sm text-muted-foreground">One rule per criterion. The count is how many processed calls would fire it. Saving re-runs rules, confidence and decision only; the LLM is never re-run.</p></div>
+        <div><h2 id="rl" className="text-lg font-semibold">Checks <span className="text-sm font-normal text-muted-foreground">one per kind of fraud · rules version {draft.version}</span></h2>
+          <p className="max-w-prose text-sm text-muted-foreground">Each check decides one kind of fraud from the facts found in the call. The count shows on how many processed calls it would fire with your edits. Saving re-runs only the checks, the confidence and the decision; nothing is re-transcribed and the language model is not re-run.</p></div>
         <div className="flex gap-2">
-          <Button size="sm" disabled={!dirty} onClick={async () => { try { const r = await putRules(draft); setMsg({ ok: true, text: `Saved. Re-running for ${r.rerun.n_calls} calls.` }); setDraft(null); saved.reload(); } catch (e) { setMsg(fail(e)); } }}><Save className="size-4" />Save rules</Button>
+          <Button size="sm" disabled={!dirty} onClick={async () => { try { const r = await putRules(draft); setMsg({ ok: true, text: `Saved. Re-running for ${r.rerun.n_calls} calls.` }); setDraft(null); saved.reload(); } catch (e) { setMsg(fail(e)); } }}><Save className="size-4" />Save checks</Button>
           <Button size="sm" variant="outline" disabled={!dirty} onClick={() => setDraft(null)}>Reset</Button>
         </div>
       </div>
@@ -124,12 +130,14 @@ function Rules() {
           const params = Object.entries(r).filter(([k]) => k !== "criterion" && k !== "enabled");
           return (
             <Card key={r.criterion}>
-              <CardHeader><CriterionChip criterion={r.criterion} />
-                <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={r.enabled} onChange={(e) => { setMsg(null); setDraft((prev) => { const n = structuredClone(prev ?? saved.data!); n.rules[i].enabled = e.target.checked; return n; }); }} />enabled</label></CardHeader>
+              <CardHeader><CardTitle className="flex items-center gap-2 text-base"><span aria-hidden className="inline-block size-2.5 rounded-full" style={{ background: criterionColor(r.criterion) }} />{CRITERION_LABEL[r.criterion] ?? r.criterion}</CardTitle>
+                <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={r.enabled} onChange={(e) => { setMsg(null); setDraft((prev) => { const n = structuredClone(prev ?? saved.data!); n.rules[i].enabled = e.target.checked; return n; }); }} />On</label></CardHeader>
               <CardContent className="space-y-2">
                 <p className="tabular text-sm">{preview.data ? <>would fire on <b>{preview.data.rule_fire_counts[r.criterion] ?? 0}</b> call(s)</> : <span className="text-muted-foreground">counting…</span>}</p>
                 {params.length === 0 ? <CardDescription>Parameters come from rules.yaml (not defined in the mock).</CardDescription> : (
-                  <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">{params.map(([k, v]) => <Fragment key={k}><dt className="text-muted-foreground">{k}</dt><dd className="font-mono text-xs">{String(v)}</dd></Fragment>)}</dl>
+                  <details className="text-sm"><summary className="cursor-pointer text-xs text-muted-foreground">Parameters ({params.length})</summary>
+                    <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">{params.map(([k, v]) => <Fragment key={k}><dt className="text-muted-foreground">{k}</dt><dd className="font-mono text-xs">{String(v)}</dd></Fragment>)}</dl>
+                  </details>
                 )}
               </CardContent>
             </Card>

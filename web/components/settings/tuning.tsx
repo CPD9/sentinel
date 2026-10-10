@@ -1,11 +1,10 @@
 "use client";
 import { ChevronRight, Save } from "lucide-react";
 import { useState } from "react";
-import { CriterionChip } from "@/components/shell/badges";
 import { ErrorCard, SkeletonBlock } from "@/components/shell/states";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { ApiError, getKeywords, getQualityReport, getQualityReports, getRules, getThresholds, saveDraft } from "@/lib/data";
+import { ApiError, getQualityReport, getQualityReports, getThresholds, saveDraft } from "@/lib/data";
 import { pct } from "@/lib/format";
 import { useSettingsDraft } from "@/lib/settings-draft";
 import type { Thresholds } from "@/lib/types";
@@ -30,10 +29,8 @@ const HELP: Record<keyof Thresholds, string> = {
 
 export function Tuning() {
   const saved = useAsync(getThresholds, "thresholds");
-  const keywords = useAsync(getKeywords, "switch-keywords");
-  const rules = useAsync(getRules, "switch-rules");
   const report = useAsync(async () => { const r = await getQualityReports(); return r.length ? getQualityReport(r[0].report_id) : null; }, "tuning-report");
-  const { draft: d, setThreshold, toggleFamily, toggleRule, loadPatch, reset, toPatch } = useSettingsDraft();
+  const { draft: d, setThreshold, loadPatch, reset, toPatch } = useSettingsDraft();
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [applied, setApplied] = useState<string | null>(null);   // lives here, not in the keyed card, so a remount cannot clear it
   const [epoch, setEpoch] = useState(0);              // bumps after a save/apply so suggestions and the audit log reload
@@ -73,7 +70,7 @@ export function Tuning() {
     try {
       const r = await saveDraft(patch);
       setMsg({ ok: true, text: `Saved. Re-running ${r.rerun.stages.join(" → ")} for ${r.rerun.n_calls} calls from cache.` });
-      reset(); saved.reload(); keywords.reload(); rules.reload(); setEpoch((e) => e + 1);
+      reset(); saved.reload(); setEpoch((e) => e + 1);
     } catch (e) {
       setMsg({ ok: false, text: e instanceof ApiError ? (Array.isArray(e.detail) ? e.detail.join("; ") : `${e.code}: ${e.detail}`) : String(e) });
     }
@@ -97,30 +94,8 @@ export function Tuning() {
             </div>
           </details>
 
-          <Card>
-            <CardHeader><div><CardTitle>Detection switches (what-if)</CardTitle>
-              <CardDescription>Switch a keyword family or a whole rule off to see the effect on the right. A switch stays a draft until you save.</CardDescription></div></CardHeader>
-            <CardContent className="space-y-4">
-              {keywords.data && (
-                <fieldset><legend className="mb-1 text-xs font-medium text-muted-foreground">Keyword families</legend>
-                  <ul className="grid gap-1.5 sm:grid-cols-2">{Object.entries(keywords.data.families).map(([name, f]) => (
-                    <li key={name}><label className="flex flex-wrap items-center gap-2 text-sm"><input type="checkbox" checked={d.families.includes(name)} onChange={() => { setMsg(null); toggleFamily(name); }} />
-                      <span className="font-mono text-xs">{name}</span> <CriterionChip criterion={f.criterion} />off</label></li>
-                  ))}</ul></fieldset>
-              )}
-              {rules.data && (
-                <fieldset><legend className="mb-1 text-xs font-medium text-muted-foreground">Rules</legend>
-                  <ul className="grid gap-1.5 sm:grid-cols-2">{rules.data.rules.map((r) => (
-                    <li key={r.criterion}>{r.enabled
-                      ? <label className="flex flex-wrap items-center gap-2 text-sm"><input type="checkbox" checked={d.rules.includes(r.criterion)} onChange={() => { setMsg(null); toggleRule(r.criterion); }} /><CriterionChip criterion={r.criterion} />off</label>
-                      : <span className="flex items-center gap-2 text-sm text-muted-foreground"><CriterionChip criterion={r.criterion} />already disabled</span>}</li>
-                  ))}</ul></fieldset>
-              )}
-              {!keywords.data && !rules.data && <SkeletonBlock rows={2} />}
-            </CardContent>
-          </Card>
           <SuggestionsCard key={epoch} activePatch={patch} onPreview={(p) => { setMsg(null); setApplied(null); loadPatch(saved.data!, p); }}
-            onApplied={(message) => { setApplied(message); reset(); saved.reload(); keywords.reload(); rules.reload(); setEpoch((e) => e + 1); }} />
+            onApplied={(message) => { setApplied(message); reset(); saved.reload(); setEpoch((e) => e + 1); }} />
         </div>
 
         <aside className="min-w-0 space-y-4 xl:sticky xl:top-16 xl:self-start">

@@ -21,7 +21,7 @@ export function ImpactPanel({ patch, sim }: { patch: Patch | null; sim: ReturnTy
     <Card>
       <CardHeader><CardTitle>Impact of your draft (nothing saved)</CardTitle></CardHeader>
       <CardContent className="space-y-4">
-        {!patch ? <p className="text-sm text-muted-foreground">Drag a slider or switch a keyword family or rule off to see which calls would change.</p>
+        {!patch ? <p className="text-sm text-muted-foreground">Drag a slider, or press Preview on a suggested change, to see which calls would change.</p>
           : sim.error && !data ? <p role="alert" className="text-sm text-alarm">Impact unavailable: {sim.error}</p>
           : !data ? <SkeletonBlock rows={4} />
           : <Body data={data} loading={sim.loading} error={sim.error} />}
