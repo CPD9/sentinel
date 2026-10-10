@@ -46,3 +46,33 @@ def test_http_error_is_stage_error_not_exception(tmp_path, monkeypatch):
     monkeypatch.setenv("TRIGGER_URL", "http://localhost:1")
     recs, errs = tg.send_triggers("c", "alarm", alarm_findings(), tmp_path)
     assert [e.stage for e in errs] == ["trigger"] and "error" in recs[0]
+
+
+def test_rerun_does_not_repost_accepted_trigger(tmp_path, monkeypatch):
+    posts = []
+    monkeypatch.setattr(tg, "_post", lambda base, payload, timeout=10.0: (posts.append(payload), {"status": 201, "body": {"id": 7}})[1])
+    monkeypatch.setenv("TRIGGER_URL", "http://localhost:8080")
+    for _ in range(3):
+        recs, errs = tg.send_triggers("c", "alarm", alarm_findings(), tmp_path, ui_base="https://ui.example")
+        assert errs == [] and recs[0]["response"]["body"] == {"id": 7}
+    assert len(posts) == 1
+
+
+def test_changed_payload_or_earlier_failure_posts_again(tmp_path, monkeypatch):
+    posts, fail = [], [True]
+
+    def post(base, payload, timeout=10.0):
+        posts.append(payload)
+        if fail[0]:
+            raise urllib.error.URLError("down")
+        return {"status": 201, "body": {}}
+    monkeypatch.setattr(tg, "_post", post)
+    monkeypatch.setenv("TRIGGER_URL", "http://localhost:8080")
+    tg.send_triggers("c", "alarm", alarm_findings(), tmp_path)
+    fail[0] = False
+    tg.send_triggers("c", "alarm", alarm_findings(), tmp_path)           # earlier attempt failed -> retry
+    tg.send_triggers("c", "alarm", alarm_findings(), tmp_path)           # accepted -> reused
+    other = alarm_findings()
+    other[0].reason = "a different reason"
+    tg.send_triggers("c", "alarm", other, tmp_path)                      # content changed -> new trigger
+    assert len(posts) == 3

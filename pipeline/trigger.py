@@ -7,7 +7,7 @@ suspicious passage; our deep link is `<UI base>/calls/<call_id>?t=<seconds>` (th
 
 DRY-RUN BY DEFAULT: payloads are written to out/triggers/<call_id>_<n>.json and nothing is sent. A real POST
 happens only if TRIGGER_URL is set (the trigger API base, e.g. http://localhost:8080). The UI base for deep
-links is SENTINEL_UI_BASE_URL (default http://127.0.0.1:3000). Alarms only. A trigger failure is a StageError
+links is SENTINEL_UI_BASE_URL (default http://127.0.0.1:3000). Alarms only. A re-run does not repost an identical accepted payload (the stored record is reused). A trigger failure is a StageError
 and never changes the decision.
 """
 from __future__ import annotations
@@ -51,6 +51,17 @@ def _post(base: str, payload: dict, timeout: float = 10.0) -> dict:
         return {"status": r.status, "body": json.loads(r.read().decode() or "{}")}
 
 
+def _already_sent(path: Path, payload: dict) -> dict | None:
+    """The stored record if this exact payload was already accepted by the trigger API, else None."""
+    try:
+        prev = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    ok = (isinstance(prev, dict) and prev.get("mode") == "send" and "error" not in prev
+          and isinstance(prev.get("response"), dict) and 200 <= prev["response"].get("status", 0) < 300)
+    return prev if ok and prev.get("payload") == payload else None
+
+
 def send_triggers(call_id: str, decision: str, findings: list[Finding], out_dir: Path,
                   ui_base: str | None = None) -> tuple[list[dict], list[StageError]]:
     """Only for alarms. Returns (records, errors); each record holds the payload and what happened to it."""
@@ -60,6 +71,10 @@ def send_triggers(call_id: str, decision: str, findings: list[Finding], out_dir:
     records, errors = [], []
     for n, payload in enumerate(build_payloads(call_id, decision, [f for f in findings if f.risk > 0], ui_base)):
         rec: dict = {"mode": "send" if target else "dry-run", "payload": payload}
+        path = Path(out_dir) / f"{call_id}_{n}.json"
+        if target and (prev := _already_sent(path, payload)) is not None:
+            records.append(prev)       # idempotent: a re-run or retry never reposts an identical, accepted trigger
+            continue
         if target:
             try:
                 rec["response"] = _post(target, payload)
@@ -70,7 +85,7 @@ def send_triggers(call_id: str, decision: str, findings: list[Finding], out_dir:
             if "error" in rec:
                 errors.append(StageError("trigger", f"{call_id} trigger {n}: {rec['error']}"))
         try:
-            write_json_atomic(Path(out_dir) / f"{call_id}_{n}.json", rec)
+            write_json_atomic(path, rec)
         except Exception as e:
             errors.append(StageError("trigger", f"{call_id}: cannot write payload file: {e}"))
         records.append(rec)

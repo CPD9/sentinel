@@ -252,6 +252,12 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 _OPENER = urllib.request.build_opener(_NoRedirect)
 
+
+def _origin(url: str) -> tuple:
+    u = urllib.parse.urlparse(url)
+    port = u.port or {"http": 80, "https": 443}.get(u.scheme)
+    return (u.scheme, (u.hostname or "").lower(), port)
+
 @dataclass
 class _Reply:
     text: str
@@ -276,6 +282,14 @@ class OpenAICompatClient:
                     "a client built without a ProviderSpec may only talk to a loopback URL "
                     "(127.0.0.1 / localhost); use get_client() with a provider from config/providers.yaml")
             spec = ProviderSpec(name="custom", base_url=base_url, self_hosted=True)
+        else:
+            # The spec's key and gate verdict belong to ITS endpoint: a different origin would receive both the
+            # credentials and the prompt data although the gate said yes.
+            expected = _origin(spec.resolve_base_url())
+            if _origin(base_url) != expected:
+                raise ProviderNotPermitted(
+                    f"base_url does not match the configured origin of provider {spec.name!r}; "
+                    f"build the client with get_client()")
         self.spec = spec
         self._now = now
         self.metrics: list[CallMetrics] = []
