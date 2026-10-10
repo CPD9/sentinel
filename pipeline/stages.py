@@ -111,7 +111,8 @@ def run_extraction(transcript: Transcript, call_id: str) -> tuple[list[Fact] | N
         if isinstance(exc, (KeyboardInterrupt, SystemExit)):
             raise
         partial = {k: v for k, v in dict(getattr(mod, "VERSIONS", None) or {}).items() if v is not None}
-        return None, _err("extract", exc), {**vinfo, **partial}
+        # the module-level VERSIONS may be stale (set by an earlier call): the client chosen for THIS call wins
+        return None, _err("extract", exc), {**partial, **vinfo}
 
 
 def _provenance(client) -> dict:

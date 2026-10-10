@@ -79,6 +79,18 @@ def test_provider_provenance_survives_a_failed_remote_extraction(env, monkeypatc
     assert trace["versions"]["provider"] == "openrouter" and trace["versions"]["self_hosted"] is False
 
 
+def test_stale_extractor_versions_do_not_override_the_selected_client(env, monkeypatch):
+    from pipeline.llm import ProviderSpec
+    spec = ProviderSpec(name="openrouter", base_url="https://openrouter.ai/api/v1", key_env="K", self_hosted=False,
+                        allowed_models=("a/b",))
+    fake_extract(monkeypatch, [], boom=TimeoutError("read timed out"))
+    sys.modules["pipeline.extract"].VERSIONS = {"llm": "old@1", "prompt": "p1", "provider": "apertus_aws",
+                                                "self_hosted": True}          # left over from an earlier call
+    monkeypatch.setattr("pipeline.llm.from_env", lambda: types.SimpleNamespace(probe=lambda: {}, spec=spec))
+    r = run(env)
+    assert r["versions"]["provider"] == "openrouter" and r["versions"]["self_hosted"] is False
+
+
 def test_refusal_before_any_client_leaves_provenance_unset(env, monkeypatch):
     from pipeline.llm import ProviderNotPermitted
     fake_extract(monkeypatch, [])

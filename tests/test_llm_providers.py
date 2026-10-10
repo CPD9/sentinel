@@ -544,3 +544,27 @@ def test_effective_extra_body_reflects_what_is_really_sent():
         {"provider": {"data_collection": "deny"}}
     assert llm.OpenAICompatClient("http://127.0.0.1:1/v1", "m", spec=local).effective_extra_body() == \
         {"chat_template_kwargs": {"enable_thinking": False}}
+
+
+# --------------------------------------------------------------------------- Codex review round 5 of PR #16
+
+@pytest.mark.parametrize("url", ["https://evil.example/api/v1", "http://openrouter.ai/api/v1",
+                                 "https://openrouter.ai.evil.example/api/v1", "https://openrouter.ai:8443/api/v1"])
+def test_spec_credentials_cannot_be_sent_to_another_origin(monkeypatch, url):
+    allow(monkeypatch)
+    n = net(monkeypatch)
+    spec = load_providers()[1]["openrouter"]
+    with pytest.raises(ProviderNotPermitted, match="does not match"):
+        llm.OpenAICompatClient(url, OK_MODEL, spec=spec)
+    assert n.calls == []
+
+
+def test_matching_origin_is_accepted_whatever_the_path_or_case(monkeypatch):
+    spec = load_providers()[1]["openrouter"]
+    for url in ("https://openrouter.ai/api/v1", "https://OpenRouter.ai/other/path/", "https://openrouter.ai:443/x"):
+        assert llm.OpenAICompatClient(url, OK_MODEL, spec=spec).spec is spec
+    monkeypatch.setenv("INFOMANIAK_PRODUCT_ID", "42")
+    inf = load_providers()[1]["infomaniak"]
+    assert llm.OpenAICompatClient(inf.resolve_base_url(), "llama3", spec=inf)
+    with pytest.raises(ProviderNotPermitted):
+        llm.OpenAICompatClient("https://api.infomaniak.com.evil.io/2/ai/42/openai/v1", "llama3", spec=inf)
