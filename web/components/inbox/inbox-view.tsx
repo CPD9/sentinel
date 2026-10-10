@@ -106,6 +106,12 @@ export function InboxView() {
 
       {calls.status === "error" && <ErrorCard error={calls.error} title="Could not load the call list" onRetry={calls.reload} />}
       {stale && <p className="text-xs text-review">Showing the last good data. It may be stale.</p>}
+      {gate.status === "error" && !gate.data && (
+        <div role="alert" className="flex items-center justify-between gap-3 rounded-md border border-review bg-review-bg px-3 py-2 text-sm text-review">
+          <span>The confidence gate could not be loaded ({gate.error.message}), so low-confidence calls are not flagged with ▼ below.</span>
+          <button type="button" className="rounded border border-review px-2 py-0.5 text-xs" onClick={gate.reload}>Retry</button>
+        </div>
+      )}
 
       {calls.status === "loading" && !calls.data ? (
         <Card className="divide-y divide-border" aria-busy="true">

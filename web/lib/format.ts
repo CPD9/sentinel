@@ -1,9 +1,10 @@
 /** mm:ss, or one decimal for windows shorter than 10 s (PRODUCT.md conventions). */
 export function fmtTime(s: number | null | undefined, decimals = false): string {
   if (s == null || !isFinite(s)) return "–";
-  const m = Math.floor(s / 60);
-  const sec = s - m * 60;
-  const secStr = decimals ? sec.toFixed(1).padStart(4, "0") : Math.floor(sec).toString().padStart(2, "0");
+  const total = decimals ? Math.round(s * 10) / 10 : Math.floor(s); // round first so 59.96 → 01:00.0, not 00:60.0
+  const m = Math.floor(total / 60);
+  const sec = total - m * 60;
+  const secStr = decimals ? sec.toFixed(1).padStart(4, "0") : sec.toString().padStart(2, "0");
   return `${m.toString().padStart(2, "0")}:${secStr}`;
 }
 
