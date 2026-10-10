@@ -8,6 +8,7 @@ Writes under artifacts/:
   audio/call_XXX.wav               neutral copies (APFS clones on macOS) of every recording
   manifests/inference.json         call_id, audio path, variant, duration. No labels, no names.
   manifests/evaluation.json        call_id -> original file, dialogue, Stufe, label, reasoning, passages
+  manifests/reference_transcripts.json  call_id -> script turns [{segment_id, speaker, text}] only
   manifests/data_report.json       inspection findings, README cross-check, split stratification
   splits/dialogue_splits.json      dev / holdout / test as call_id groups (label-free)
 
@@ -420,6 +421,19 @@ def build(data_dir: Path, out_dir: Path, seed: int = DEFAULT_SEED, frac: float =
     for r in recordings:
         clone_file(r["path"], audio_dir / f"{r['call_id']}.wav")
 
+    # label-free organizer scripts for reference-transcript mode: neutral call ids and turns only
+    reference = {
+        "schema_version": 1,
+        "calls": {
+            r["call_id"]: [
+                {"segment_id": t["turn_id"], "speaker": t["speaker"], "text": t["text"]}
+                for t in parse_turns(split_header_body(
+                    (REPO_ROOT / dialogues[r["dialogue_id"]]["transcript_path"]).read_text(encoding="utf-8"))[1])
+            ]
+            for r in sorted(recordings, key=lambda r: r["call_id"])
+        },
+    }
+
     inference = {
         "schema_version": 1,
         "calls": [
@@ -510,6 +524,7 @@ def build(data_dir: Path, out_dir: Path, seed: int = DEFAULT_SEED, frac: float =
 
     dump(inference, man_dir / "inference.json")
     dump(evaluation, man_dir / "evaluation.json")
+    dump(reference, man_dir / "reference_transcripts.json")
     dump(splits, split_dir / "dialogue_splits.json")
     dump(report, man_dir / "data_report.json")
     return report

@@ -7,9 +7,10 @@ from pathlib import Path
 import pytest
 
 from pipeline import evaluate as ev
+from pipeline import reference as ref
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-HAVE_MANIFESTS = ev.EVAL_MANIFEST.is_file() and ev.INFERENCE_MANIFEST.is_file() and ev.SPLITS_FILE.is_file()
+HAVE_MANIFESTS = ev.EVAL_MANIFEST.is_file() and ref.REFERENCE_FILE.is_file() and ev.INFERENCE_MANIFEST.is_file() and ev.SPLITS_FILE.is_file()
 needs_data = pytest.mark.skipif(not HAVE_MANIFESTS, reason="run scripts/prepare_data.py first")
 
 
@@ -71,7 +72,7 @@ def test_only_evaluate_reads_labels():
 
 
 @needs_data
-def test_parser_matches_prepare_data():
+def test_reference_file_matches_scripts():
     sys.path.insert(0, str(REPO_ROOT / "scripts"))
     import prepare_data
     man = json.loads(ev.EVAL_MANIFEST.read_text(encoding="utf-8"))
@@ -79,16 +80,16 @@ def test_parser_matches_prepare_data():
         dlg = man["dialogues"][man["calls"][cid]["dialogue_id"]]
         text = (REPO_ROOT / dlg["transcript_path"]).read_text(encoding="utf-8")
         theirs = prepare_data.parse_turns(prepare_data.split_header_body(text)[1])
-        ours = ev.reference_transcript(cid)
+        ours = ref.reference_transcript(cid)
         assert [(t["segment_id"], t["speaker"], t["text"]) for t in ours] == \
                [(t["turn_id"], t["speaker"], t["text"]) for t in theirs], cid
 
 
 @needs_data
-def test_reference_transcript_is_label_free():
+def test_reference_file_is_label_free():
     man = json.loads(ev.EVAL_MANIFEST.read_text(encoding="utf-8"))
     for cid, c in man["calls"].items():
-        turns = ev.reference_transcript(cid)
+        turns = ref.reference_transcript(cid)
         assert all(set(t) == {"segment_id", "speaker", "text"} for t in turns)
         blob = json.dumps(turns, ensure_ascii=False)
         d = man["dialogues"][c["dialogue_id"]]
@@ -105,7 +106,7 @@ def test_perfect_predictions_score_perfectly(tmp_path):
     for cid in dev:
         label = man["calls"][cid]["label"]
         d = man["dialogues"][man["calls"][cid]["dialogue_id"]]
-        turns = {t["segment_id"]: t for t in ev.reference_transcript(cid)}
+        turns = {t["segment_id"]: t for t in ref.reference_transcript(cid)}
         evidence = [{"segment_ids": [tid], "speaker": turns[tid]["speaker"], "text": turns[tid]["text"],
                      "start_s": None, "end_s": None, "snippet_path": None} for tid in d["evidence_turn_ids"]]
         findings = [] if label == "no_alert" else [{"criterion": "other", "risk": 1.0, "reason": "",

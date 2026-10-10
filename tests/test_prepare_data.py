@@ -52,6 +52,7 @@ def run(tmp_path_factory):
         "evaluation": load("manifests/evaluation.json"),
         "splits": load("splits/dialogue_splits.json"),
         "report": load("manifests/data_report.json"),
+        "reference": load("manifests/reference_transcripts.json"),
     }
 
 
@@ -242,3 +243,24 @@ def test_original_data_untouched(run):
 def test_refuses_to_write_inside_data(tmp_path):
     with pytest.raises(SystemExit):
         prepare_data.build(DATA_DIR, DATA_DIR / "artifacts")
+
+
+def test_reference_transcripts_are_label_free(run):
+    ref, ev = run["reference"], run["evaluation"]
+    assert set(ref) == {"schema_version", "calls"}
+    assert sorted(ref["calls"]) == sorted(c["call_id"] for c in run["inference"]["calls"])
+    assert len(ref["calls"]) == 62
+    leaks = {"Stufe", "Bearbeitung", "Sollbewertung", "Begründung", "Testziel", "Transkript",
+             "alarm", "no_alert", "review"}
+    for d in ev["dialogues"].values():
+        leaks |= {d["title"]} | ({d["reasoning"]} if d["reasoning"] else set())
+    for c in ev["calls"].values():
+        leaks |= {c["original_filename"], Path(c["original_filename"]).stem}
+    dialogue_id_re = re.compile(r"\b(" + "|".join(ev["dialogues"]) + r")\b")
+    for cid, turns in ref["calls"].items():
+        assert turns, cid
+        assert all(set(t) == {"segment_id", "speaker", "text"} for t in turns), cid
+        blob = json.dumps(turns, ensure_ascii=False)
+        for leak in leaks:
+            assert leak not in blob, (cid, leak)
+        assert not dialogue_id_re.search(blob), (cid, dialogue_id_re.search(blob)[0])

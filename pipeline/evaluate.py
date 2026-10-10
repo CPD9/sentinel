@@ -9,9 +9,8 @@ Reports, always all three until the organizers confirm their convention:
 each overall and broken down per Stufe, per variant (clean / noisy / unspecified) and per test target,
 plus the evidence validity rate of flagged calls (alarm + review).
 
-`reference_transcript(call_id)` also lives here: it looks a call's organizer script up through the
-evaluation manifest and returns only the dialogue turns (segment_id, speaker, text) - never the label,
-file name, Stufe or assessment. It is what "reference transcript mode" feeds to a system under test.
+In reference mode, evidence is checked against the same label-free scripts the system under test saw
+(pipeline.reference, artifacts/manifests/reference_transcripts.json).
 """
 from __future__ import annotations
 
@@ -27,6 +26,7 @@ from collections import Counter, defaultdict
 from difflib import SequenceMatcher
 from pathlib import Path
 
+from pipeline.reference import reference_transcript
 from pipeline.schemas import DECISIONS, RunResult
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -42,37 +42,6 @@ FLAGGED = ("alarm", "review")
 
 def _load(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
-
-
-# --------------------------------------------------------------------------- reference transcripts
-
-# Same two script formats as scripts/prepare_data.parse_turns (a test keeps them in sync).
-_TURN_DOT_RE = re.compile(r"^(T\d{3}) · (\S+)$")          # "T001 · Beratung" + text lines
-_TURN_INLINE_RE = re.compile(r"^(T\d{3}) ([A-Z]): (.*)$")  # "T001 B: text"
-_ROLE = {"Beratung": "advisor", "B": "advisor", "Kundin": "customer", "Kunde": "customer", "K": "customer"}
-
-
-def _parse_turns(text: str) -> list[dict]:
-    turns: list[dict] = []
-    for line in text.splitlines():
-        line = line.rstrip()
-        if m := _TURN_INLINE_RE.match(line):
-            turns.append({"segment_id": m[1], "speaker": _ROLE.get(m[2], "unknown"), "text": m[3].strip()})
-        elif m := _TURN_DOT_RE.match(line):
-            turns.append({"segment_id": m[1], "speaker": _ROLE.get(m[2], "unknown"), "text": ""})
-        elif line.strip() and turns:
-            turns[-1]["text"] = (turns[-1]["text"] + " " + line.strip()).strip()
-    return turns
-
-
-def reference_transcript(call_id: str, eval_manifest: Path = EVAL_MANIFEST) -> list[dict]:
-    """Label-free organizer script of one call: [{segment_id, speaker, text}]."""
-    ev = _load(eval_manifest)
-    dlg = ev["dialogues"][ev["calls"][call_id]["dialogue_id"]]
-    turns = _parse_turns((REPO_ROOT / dlg["transcript_path"]).read_text(encoding="utf-8"))
-    if not turns:
-        raise ValueError(f"{call_id}: reference transcript has no turns")
-    return [{"segment_id": t["segment_id"], "speaker": t["speaker"], "text": t["text"]} for t in turns]
 
 
 # --------------------------------------------------------------------------- metrics

@@ -1,7 +1,7 @@
 """Milestone 2 baseline: one LLM prompt per call over the reference transcript -> decision + evidence.
 
-For every call in a split, the organizer script is looked up through pipeline.evaluate.reference_transcript
-(label-free: segment_id, speaker, text only) and sent with ONE prompt to the self-hosted LLM at
+For every call in a split, the organizer script is read through pipeline.reference.reference_transcript
+(artifacts/manifests/reference_transcripts.json; label-free: segment_id, speaker, text only) and sent with ONE prompt to the self-hosted LLM at
 LLM_BASE_URL, which answers with decision + criterion + evidence quotes as JSON. No rules, no keywords,
 no confidence gate: this is the number the real pipeline has to beat.
 
@@ -24,8 +24,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
-from pipeline.evaluate import reference_transcript  # noqa: E402
 from pipeline.llm import RUNTIME_VERSION, DiskCache, LLMError, from_env  # noqa: E402
+from pipeline.reference import reference_transcript  # noqa: E402
 from pipeline.schemas import (CRITERIA, DECISIONS, SPEAKERS, CallResult, Evidence, Finding,  # noqa: E402
                               RunResult, StageError, Versions)
 
