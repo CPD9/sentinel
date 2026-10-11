@@ -63,13 +63,16 @@ def _already_sent(path: Path, payload: dict) -> dict | None:
 
 
 def send_triggers(call_id: str, decision: str, findings: list[Finding], out_dir: Path,
-                  ui_base: str | None = None) -> tuple[list[dict], list[StageError]]:
-    """Only for alarms. Returns (records, errors); each record holds the payload and what happened to it."""
-    if decision != "alarm":
+                  ui_base: str | None = None, confirmed: bool = False) -> tuple[list[dict], list[StageError]]:
+    """Only for alarms, or for any call an officer confirmed as fraud (`confirmed`, from the API's report endpoint;
+    the title then says "confirmed fraud"). Returns (records, errors); each record holds the payload and what
+    happened to it."""
+    if decision != "alarm" and not confirmed:
         return [], []
+    label = decision if decision == "alarm" else "confirmed fraud"
     target = os.environ.get("TRIGGER_URL")
     records, errors = [], []
-    for n, payload in enumerate(build_payloads(call_id, decision, [f for f in findings if f.risk > 0], ui_base)):
+    for n, payload in enumerate(build_payloads(call_id, label, [f for f in findings if f.risk > 0], ui_base)):
         rec: dict = {"mode": "send" if target else "dry-run", "payload": payload}
         path = Path(out_dir) / f"{call_id}_{n}.json"
         if target and (prev := _already_sent(path, payload)) is not None:

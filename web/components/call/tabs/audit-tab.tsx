@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { fmtSeconds, humanize, pct } from "@/lib/format";
 import type { AnalysisArtifact, CallResult, DecisionTrace, Transcript } from "@/lib/types";
 import type { Loadable } from "@/lib/use-async";
+import { AuditRecord } from "../audit-record";
 
 const nz = (v: string | null | undefined) => v ?? <span className="text-muted-foreground">not run</span>;
 
@@ -15,6 +16,9 @@ export function AuditTab({ result, trace, analysis, transcript }: {
 }) {
   return (
     <div className="grid gap-4 lg:grid-cols-2">
+      <div className="lg:col-span-2">
+        <AuditRecord result={result} trace={trace.data ?? null} transcript={transcript.data ?? null} />
+      </div>
       <Card>
         <CardHeader><CardTitle>Versions</CardTitle></CardHeader>
         <CardContent>

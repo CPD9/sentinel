@@ -337,15 +337,19 @@ def analysis(call: tuple, result: dict, seed: int, failed: tuple[str, ...] = ())
 
 # --------------------------------------------------------------------------- inbox + SSE
 
-def calls_list(r1: dict, r2: dict, r4: dict) -> list[dict]:
-    def row(r: dict, status: str, dur: float, variant: str, ts: str) -> dict:
-        crit = [f["criterion"] for f in sorted(r["findings"], key=lambda f: -f["risk"])]
+def calls_list(r1: dict, r2: dict, r4: dict, t1: dict, t2: dict) -> list[dict]:
+    def row(r: dict, status: str, dur: float, variant: str, ts: str, trace: dict | None = None) -> dict:
+        findings = sorted(r["findings"], key=lambda f: -f["risk"])
+        # why: the trace's decision path (stage_error when a failed call has no trace) and the top finding's reason
+        path = trace["decision_path"] if trace else ("stage_error" if r["stage_errors"] else None)
         return {"call_id": r["call_id"], "status": status, "duration_s": dur, "variant": variant,
                 "decision": r["decision"], "risk_score": r["risk_score"], "confidence": r["confidence"],
-                "criteria": crit, "n_stage_errors": len(r["stage_errors"]), "updated_at": ts, "is_mock": True}
+                "criteria": [f["criterion"] for f in findings], "n_stage_errors": len(r["stage_errors"]),
+                "updated_at": ts, "is_mock": True, "decision_path": path,
+                "reason": findings[0]["reason"] if findings else None}
     rows = [
-        row(r1, "done", CALL_1[1], "clean", "2026-10-10T14:02:11Z"),
-        row(r2, "done", CALL_2[1], "noisy", "2026-10-10T14:03:40Z"),
+        row(r1, "done", CALL_1[1], "clean", "2026-10-10T14:02:11Z", t1),
+        row(r2, "done", CALL_2[1], "noisy", "2026-10-10T14:03:40Z", t2),
         {"call_id": "call_MOCK_003", "status": "processing", "duration_s": 212.0, "variant": "unspecified",
          "updated_at": "2026-10-10T14:05:02Z", "is_mock": True},
         row(r4, "error", 175.3, "noisy", "2026-10-10T14:04:19Z"),
@@ -624,7 +628,7 @@ def build() -> dict[str, object]:
     a2 = analysis(CALL_2, r2, seed=2, failed=("pitch",))
     t1, t2 = with_audio_quality(t1, a1), with_audio_quality(t2, a2)
     return {
-        "calls.json": calls_list(r1, r2, r4),
+        "calls.json": calls_list(r1, r2, r4, t1, t2),
         "call_MOCK_001.result.json": r1,
         "call_MOCK_001.transcript.json": transcript(CALL_1),
         "call_MOCK_001.trace.json": t1,

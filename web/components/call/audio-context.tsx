@@ -55,7 +55,8 @@ export function CallAudioProvider({ src, children }: { src: string | null; child
     if (!a || error) return;
     if (l !== undefined) setLoop(l);
     if (from != null) a.currentTime = from;
-    void a.play().catch((e) => setError(String(e?.message ?? e)));
+    // a rejected play() (autoplay policy, a click without user activation) is not a broken file: keep audio usable
+    void a.play().catch((e) => { if (e?.name !== "NotAllowedError" && e?.name !== "AbortError") setError(String(e?.message ?? e)); });
   }, [error]);
   const pause = useCallback(() => ref.current?.pause(), []);
 

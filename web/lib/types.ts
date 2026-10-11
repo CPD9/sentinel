@@ -29,7 +29,7 @@ export const CRITERION_BY_FAMILY: Record<string, Criterion> = {
 
 export const STAGES = [
   "upload", "asr", "diarize", "keywords", "extract", "validate", "rules",
-  "confidence", "decide", "narrate", "snippets", "analysis", "trigger",
+  "confidence", "decide", "narrate", "snippets", "analysis", "trigger", "judge",
 ] as const;
 export type Stage = (typeof STAGES)[number];
 
@@ -37,7 +37,7 @@ export const VARIANTS = ["clean", "noisy", "unspecified"] as const;
 export type Variant = (typeof VARIANTS)[number];
 export const CALL_STATUSES = ["queued", "processing", "done", "error"] as const;
 export type CallStatus = (typeof CALL_STATUSES)[number];
-export const EVENT_TYPES = ["job_queued", "stage_started", "stage_finished", "stage_failed", "job_finished"] as const;
+export const EVENT_TYPES = ["job_queued", "stage_started", "stage_finished", "stage_failed", "job_finished", "notice"] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
 
 // ---- CallResult
@@ -112,7 +112,11 @@ export type InfoType = "credentials" | "nonpublic_info" | "client_data" | "other
 export const CONFIDENCE_COMPONENTS = ["asr", "threshold_proximity", "conflicts", "missing_evidence", "audio_quality"] as const;
 export type DecisionPath =
   | "stage_error" | "missing_evidence" | "contradictory_evidence" | "low_confidence"
-  | "alarm" | "review_band" | "no_alert";
+  | "alarm" | "review_band" | "no_alert"
+  // decision_source "direct_judge": the AI judge's verdict decides; facts and rules stay as the why (pipeline/schemas.py)
+  | "judge_alarm" | "judge_review" | "judge_no_alert"
+  // judge mode with keyword review on: keyword hits alone raised the call to review (never an alarm)
+  | "keyword_review";
 export interface Fact {
   fact_id: string;
   speaker: Speaker;
@@ -144,7 +148,8 @@ export interface RuleResult {
   keyword_hit_ids: string[];
 }
 export interface ConfidenceBreakdown { value: number; gate: number; components: Record<string, number> }
-export interface Thresholds { alarm: number; review: number; confidence_gate: number }
+export interface KeywordReview { enabled: boolean; min_segments: number }
+export interface Thresholds { alarm: number; review: number; confidence_gate: number; keyword_review?: KeywordReview }
 export interface DecisionTrace {
   call_id: string;
   decision: Decision;
@@ -221,6 +226,34 @@ export interface CallListItem {
   decision_path?: DecisionPath | null;  // why the decision came out this way (from the trace); docs/API.md GET /calls
   reason?: string | null;               // the top finding's reason, one line
 }
+// ---- Evidence behind the Quality page (local-run fallback: GET /evidence/quality)
+export interface CrossvalRow {
+  label: string; folds: Record<string, number | null>; recall_folds?: Record<string, number | null>; cv_mean: number | null; cv_min: number | null; cv_max: number | null;
+  all62: number | null; flag_all: Record<string, number> | null;
+}
+export interface QualityEvidence {
+  crossval: CrossvalRow[];
+  strategies: { tuning_set: string | null; rows: { id: string; strategy: string | null; description: string | null; n: number | null; esc_f1: number | null; ci: [number, number] | null }[] } | null;
+  auc: { value: number; run_id: string | null; note: string } | null;
+  judge_eval?: { auc: Record<string, { value: number | null; ci: [number, number] | null; n: number | null }>; citations_valid: number | null; citations_total: number | null; judge_version: string | null } | null;
+  methods?: { ship_rule_pass: boolean | null; rows: { name: string; oof: { esc_p?: number | null; esc_r?: number | null; esc_f1?: number | null; bacc?: number | null; review_load?: number | null; false_alarms?: number | null } | null; cv_bacc: number | null; cv_bacc_range: [number, number] | null }[] } | null;
+}
+
+// ---- Threshold curve (artifacts/metrics/threshold_curve.json): false alarms / missed / review load per setting, in-sample
+export interface CurvePointCounts { false_alarms: number; missed: number; review_load: number; alarms: number; reviews: number; esc_p: number | null; esc_r: number | null }
+export interface ThresholdCurveFile {
+  calls: number;
+  current: { alarm: number; review: number; keyword_review: KeywordReview };
+  current_point: CurvePointCounts;
+  review_threshold: (CurvePointCounts & { review: number })[];
+  alarm_threshold: (CurvePointCounts & { alarm: number })[];
+  keyword_review: (CurvePointCounts & { keyword_review: boolean; min_segments?: number })[];
+  note: string;
+}
+
+// ---- The AI judge's verdict on one call (<run>/judge/<call_id>.json): its citations are Fact-shaped, ids j001…
+export interface JudgeVerdict { decision: Decision; criterion: string; risk: number; reason: string; citations: Fact[]; version: string | null }
+
 // ---- How each detection method decided (strategy comparison run, scripts/strategy_lab.py)
 export interface MethodDecision { id: string; decision: Decision | null; risk: number | null; reason: string | null; criteria: string[]; error: boolean }
 export interface MethodsResponse { call_id: string; run: string; default: string | null; top3: string[]; methods: MethodDecision[] }
@@ -275,7 +308,7 @@ export interface QualityReport {
   system: string;
   provider: string;
   mode: Mode;
-  split: "dev" | "holdout" | "test";
+  split: "dev" | "holdout" | "test" | "all";   // "all" = every case call, tuned on them: in-sample
   bootstrap: Bootstrap;
   overall: ConventionSet;
   breakdowns: Record<string, Record<string, ConventionSet>>;
@@ -300,7 +333,8 @@ export interface RuleConfig { criterion: Criterion; enabled: boolean; [param: st
 export interface RulesConfig { version: string; rules: RuleConfig[] }
 export interface PreviewRequest { thresholds?: Thresholds; keywords?: KeywordsConfig; rules?: RulesConfig }
 export interface PreviewResponse {
-  decision_counts: { before: Record<string, number>; after: Record<string, number> };
+  decision_counts: { before: Record<string, number>; after: Record<string, number> } | null;   // null: decisions cannot be previewed on this run (see note)
+  note?: string;
   changed: { call_id: string; decision_before: Decision; decision_after: Decision; risk_before: number; risk_after: number }[];
   keyword_hit_counts: Record<string, Record<string, number>>;
   rule_fire_counts: Record<string, number>;

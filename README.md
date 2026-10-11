@@ -37,8 +37,20 @@ Banks record client phone calls, but people can only listen to a small sample of
 - **Evidence for every alert.** The design discards any alert whose quote cannot be found in the call at the cited time, before anyone sees it.
 - **It says when it is unsure.** If the audio is poor, the transcript is doubtful or the evidence conflicts, the call goes to **review**. The design never turns doubt into a confident alarm, and a technical failure is recorded as an error, not as "all clear".
 - **Self-hosted by design.** The plan is to run all models on our own server in Switzerland, with no audio or transcript sent to any cloud AI service.
-- **People stay in charge.** The AI reads and writes text. The decision comes from rules and thresholds that a compliance officer can read and change without programming.
-- **Measured carefully.** Quality is to be reported on held-out calls, with its uncertainty, because the sample is small. No such results exist yet.
+- **People stay in charge.** An AI judge reads each call and must cite the exact words behind every flag; the alarm and review thresholds and the keyword list are settings a compliance officer can read and change without programming, with the effect shown immediately.
+- **Measured carefully.** Every number comes with its uncertainty, because the sample is small, and the negative results are reported too ([`docs/RESULTS.md`](docs/RESULTS.md)).
+
+## Results at a glance
+
+On all 62 case calls, from speech recognition to decision, the shipped multi-check judge ranks calls better than
+chance (AUC 0.69 [0.58, 0.80]), raises **no false alarm**, sends **21 %** of calls to a person and finds 13 of the 34
+calls that need escalation (precision 1.00, recall 0.38). It is zero-shot with no tuned parameter, so these numbers
+are effectively unseen. Our first design, fact extraction plus hand-written rules, ranked calls worse than chance; we
+report that too. Full report, method and limitations: [`docs/RESULTS.md`](docs/RESULTS.md).
+
+![AUC ladder](docs/assets/results/ladder.png)
+
+![Threshold curve: false alarms, missed cases and review load](docs/assets/results/threshold_curve.png)
 
 ## Project status
 
@@ -61,7 +73,10 @@ Banks record client phone calls, but people can only listen to a small sample of
 | Audio analysis | Waveform, spectrogram, quality score for the UI | 🟡 |
 | What-if, feedback, suggestions | Simulate a config change over cached calls (flipped calls with reasons, officer workload), record officer verdicts, rank the smallest change that fixes flagged false alarms / misses without touching calls marked correct ([`simulate.py`](pipeline/simulate.py), [`suggest.py`](pipeline/suggest.py), [`feedback.py`](pipeline/feedback.py)) | 🟡 engine built and tested on a synthetic corpus only (no real traces or officer feedback yet); `GET`/`POST /feedback` built in the API (in memory in fixture mode); `/simulate`, `/suggestions` and `/audit` specified in [API.md](docs/API.md) but not built |
 | API service | FastAPI, job queue, live events ([`services/api/`](services/api/README.md)) | 🟡 endpoints answer in fixture mode (MOCK data), with tests, incl. `/feedback`; no real mode yet (reading `out/` results), uploads, audio and `process_call()` not wired yet |
-| Web app | Two-panel Overview (grouped call list + call panel with transcript excerpt and waveform player), call dashboard, Sensitivity, Keywords & checks, Detection quality ([`web/`](web/README.md)) | 🟡 all screens built and run in api mode against the API in fixture mode (MOCK data); not yet run against real pipeline results (the API has no real mode yet) |
+| Model arena | The S4 judge prompt on all 62 case calls (ASR) for every open-weight model on the OpenRouter allowlist vs self-hosted Apertus 8B; leaderboard, blind duel with local Elo, governed learning loop ([`scripts/arena.py`](scripts/arena.py), `/arena`) | 🟢 run 11 Oct 2026 06:20 (6 remote models, fictional case calls only, ~0.13 USD): AUC qwen3-32b 0.72 [0.58, 0.85] (12 failed calls), mistral-small-3.2-24b 0.69 [0.53, 0.84], Apertus 0.63 [0.53, 0.74] (0 false alarms, 25/34 missed); every CI overlaps Apertus, so no measured win yet. Duel votes live only in the browser; few-shot bank and promotion gate are design only |
+| Web app | Two-panel Overview (grouped call list + call panel with transcript excerpt and waveform player), call dashboard, Sensitivity, Keywords & checks, Detection quality ([`web/`](web/README.md)) | ✅ runs on the real pipeline run `s4t_0551_final` (62 calls, ASR transcripts, AI judge) through the read-only local-run fallback (`/run-api`); fixture mode (MOCK data) still available for development; see the web storyboard row below |
+| Web storyboard: officer journey and demo | Overview → Alerts → call page (reason, risk vs alert line, passage player, facts, AI judge verdict, printable audit record) → Settings (threshold, keyword review switch, keywords) → Quality (cross-validated ladder) → How it runs; Model arena and Patterns in the nav; an 8-step demo path over the real screens (→ / ←, drafts reset between steps), live upload of one WAV, dark and light ([`web/`](web/README.md)) | ✅ runs on the final run `s4t_0551_final` through the read-only local-run fallback (`/run-api`, 11 Oct 2026): all 62 calls match the run's results and traces (1 alert / 8 review / 53 no alert); keyword review (min 2 passages) previews 1 / 21 / 40, missed cases 25 → 20, false alarms stay 0 (in-sample, `threshold_curve.json`); one live upload end to end in 100 s; backup recording in dark and light. Saving settings needs the API (off in the local run) |
+| Copilot: ask about a call, patterns across calls | "Ask about this call" panel on the call page and a `/patterns` page: grounded chat answered by the self-hosted Apertus 8B (`builder_pod`, provider registry, one request at a time), every claim validated with the evidence checker and cited as playable timestamps; entities and repeated phrasing across all calls ([`web/scripts/copilot.py`](web/scripts/copilot.py), [`web/app/copilot-api/route.ts`](web/app/copilot-api/route.ts)) | 🟡 built and unit-tested (fake client), run live on the final run `s4t_final` (11 Oct 2026): 8 of 9 suggested questions on 3 flagged calls answered with a validated citation (~1–4 s each), 1 ended as "Not in this call." after one retry; a validated quote proves the words exist in the cited segment, not that the claim is correct; patterns are lexicon/n-gram heuristics, not an LLM |
 
 ## Team
 

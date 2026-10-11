@@ -2,12 +2,13 @@
 // How it runs: the self-hosted pipeline, where it runs tonight vs. in production, the guarantees, the operating concept,
 // and the versions of the run on screen (read from a real result, not typed in).
 import Link from "next/link";
+import { CopyButton } from "@/components/ui/copy-button";
 import { getCall, getCalls } from "@/lib/data";
 import { useAsync } from "@/lib/use-async";
 
 const STEPS: { name: string; what: string; kind: "ai" | "rule" | "out" }[] = [
-  { name: "Transcribe", what: "Swiss German speech to text with timestamps (Whisper, on our GPU)", kind: "ai" },
-  { name: "Who speaks", what: "advisor or customer; “unknown” is allowed", kind: "ai" },
+  { name: "Transcribe", what: "Swiss German speech to text with timestamps (Whisper large-v3-turbo, on our own hardware)", kind: "ai" },
+  { name: "Who speaks", what: "advisor or customer when known; “unknown” is allowed (the speech run has no speaker separation yet)", kind: "ai" },
   { name: "Keywords", what: "word families with Swiss German variants, fuzzy match", kind: "rule" },
   { name: "AI facts", what: "an open-weight LLM on our own server reads the whole call and lists who did what, with quotes", kind: "ai" },
   { name: "Evidence check", what: "every quote must be found in the transcript, or the fact is dropped", kind: "rule" },
@@ -31,6 +32,7 @@ export function HowItRuns() {
       <div className="space-y-2">
         <Link href="/overview" className="text-sm text-muted-foreground hover:text-foreground">← Overview</Link>
         <h1 className="text-headline font-semibold tracking-tight">How it runs</h1>
+        <p className="text-sm"><Link href="/model-card" className="underline underline-offset-4">Model &amp; data card →</Link></p>
         <p className="max-w-3xl text-lead text-muted-foreground">Perceive with AI, decide with rules. The AI steps find what was said; fixed, editable rules decide. Every step runs on servers we control.</p>
       </div>
 
@@ -46,6 +48,8 @@ export function HowItRuns() {
           ))}
         </ol>
       </section>
+
+      <RunYourCalls />
 
       <section className="grid gap-5 lg:grid-cols-2">
         <div className="elevated space-y-3 rounded-[var(--radius-panel)] p-6">
@@ -89,5 +93,50 @@ export function HowItRuns() {
         ) : <p className="text-sm text-muted-foreground">{v.status === "loading" ? "Loading…" : "No finished call to read versions from."}</p>}
       </section>
     </div>
+  );
+}
+
+const CMD = "./run.sh /path/to/your_wavs --transcripts asr --out out";
+const TREE = `out/
+├── results.json            every call: decision, risk, confidence
+├── results/<call_id>.json  findings, evidence, reason, versions
+├── snippets/<call_id>/     each cited passage ±10 s (.wav)
+├── triggers/               trigger API payloads (dry run)
+└── id_map.json             file name → neutral call id`;
+
+/** Feasibility: one command over a folder of WAVs, what it writes, how long it took, what it needs. */
+function RunYourCalls() {
+  return (
+    <section aria-labelledby="run-own" className="elevated space-y-5 rounded-[var(--radius-panel)] p-6">
+      <div className="flex flex-wrap items-baseline justify-between gap-3">
+        <h2 id="run-own" className="text-title font-semibold">Run it on your own calls</h2>
+        <p className="text-sm text-muted-foreground">No manual steps · no cloud AI · models self-hosted</p>
+      </div>
+      <div className="grid gap-5 lg:grid-cols-2">
+        <div className="space-y-3">
+          <p className="eyebrow">One command, from the repository root</p>
+          <div className="flex items-start gap-2 rounded-xl bg-muted p-3">
+            <code className="min-w-0 flex-1 break-all font-mono text-sm">{CMD}</code>
+            <CopyButton text={CMD} />
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Needs two settings in <code className="font-mono">.env</code>: <code className="font-mono">ASR_MODEL_PATH</code> (the Swiss German Whisper model,
+            here <code className="font-mono">faster-whisper-large-v3-turbo</code>) and <code className="font-mono">LLM_BASE_URL</code> (our own model server). Every WAV
+            in the folder is transcribed, checked and decided; no API or web app has to run. A step that fails is recorded on the call and sends it to review.
+          </p>
+          <dl className="grid grid-cols-[minmax(0,12rem)_1fr] gap-x-4 gap-y-1.5 text-sm">
+            <dt className="text-muted-foreground">Cold run, fresh folder</dt><dd><b className="tabular">188 s for 2 WAVs</b> (~95 s per call), laptop CPU for speech, from the final evaluation</dd>
+            <dt className="text-muted-foreground">One 2 min 23 s call</dt><dd><b className="tabular">56 s</b>, measured tonight: speech on the laptop CPU, facts on our GPU</dd>
+            <dt className="text-muted-foreground">Final run</dt><dd>all 62 calls in one command, zero failed steps</dd>
+          </dl>
+        </div>
+        <div className="space-y-3">
+          <p className="eyebrow">What it writes</p>
+          <pre className="overflow-x-auto whitespace-pre rounded-xl bg-muted p-3 font-mono text-xs leading-relaxed">{TREE}</pre>
+          <p className="text-xs text-muted-foreground">Original file names stay in <code className="font-mono">id_map.json</code>; only the neutral id reaches the models.</p>
+          <p className="text-xs text-muted-foreground">Models are downloaded once; after that nothing is sent to a cloud service. Speech recognition runs on the machine itself, the language model on our own GPU server through an SSH tunnel.</p>
+        </div>
+      </div>
+    </section>
   );
 }

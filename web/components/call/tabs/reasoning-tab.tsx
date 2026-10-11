@@ -19,6 +19,7 @@ const PATH_STEPS: { id: DecisionPath[]; label: string; gives: string }[] = [
   { id: ["alarm"], label: "2 · Validated evidence and a rule hit at or above the alert line", gives: "alert" },
   { id: ["review_band"], label: "3 · Risk inside the review band", gives: "review" },
   { id: ["no_alert"], label: "4 · Otherwise", gives: "no alert" },
+  { id: ["judge_alarm", "judge_review", "judge_no_alert"], label: "AI judge decides (decision source “direct judge”): its verdict, with its cited passages; facts and rules stay as the why", gives: "the judge's verdict" },
 ];
 
 export function ReasoningTab({ result, trace }: { result: CallResult; trace: Loadable<DecisionTrace> }) {

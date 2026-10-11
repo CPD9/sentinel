@@ -1,7 +1,128 @@
-# SENTINEL results (DRAFT)
+# SENTINEL results
 
-Draft while tuning is in progress. Every number here was computed on the date shown, from the runs named.
-**Nothing on this page is from the holdout split**: holdout (14 calls) is run exactly once, at the end (final evaluation).
+SENTINEL listens to Swiss German bank calls and decides `alarm`, `review` or `no_alert`, with timestamped,
+playable evidence for every flag. This page is the scientific report: what we measured, how, and what it means.
+Every number was computed on 11 Oct 2026 from the runs and files named; nothing here is estimated.
+
+## Summary
+
+![AUC ladder](assets/results/ladder.png)
+
+- **The shipped decision is a multi-check LLM judge on speech-recognition transcripts**: Apertus v1.5 8B, self-hosted,
+  checks the whole call once per compliance criterion, names the criterion and cites the lines; every citation is
+  checked against the transcript. On all 62 case calls it ranks better than chance (**AUC 0.69 [0.58, 0.80]**), raises
+  **no false alarm**, sends **21 % of calls** to a person, and finds **13 of the 34 calls that need escalation**
+  (precision 1.00, recall 0.38, balanced accuracy 0.69). It is zero-shot with **no tuned parameter**, so these numbers
+  are effectively unseen; per split the balanced accuracy is 0.69 (dev), 0.63 (Testset_30), 0.83 (holdout). The
+  single-prompt judge it replaced reached AUC 0.63 and found 9 of 34.
+- **The negative result**: our first design, LLM fact extraction followed by hand-written rules, ranks calls *worse
+  than chance* (AUC 0.36–0.43). Its earlier escalation F1 numbers never beat the trivial "send everything to review"
+  baseline. We report it because it shaped the final design and because it is the honest answer to "does it work".
+- **The adjustable threshold** acts on the judge's risk; one slider move or one keyword switch changes the number of
+  hits immediately (re-decision from cache in under 30 ms for 62 calls).
+- **Limits**: 62 calls in 24 dialogue groups; recall is low; WER against the Swiss German scripts is about 0.6 (the ASR writes
+  Standard German). The jury's hidden set is the independent test.
+
+## Setup
+
+- **Data**: the Outcept case set, 62 calls (30 clean and 30 noisy recordings of the same scripts, plus 2 calls without
+  a variant tag), in 24 dialogue groups. Gold labels: 25 alarm, 9 review, 28 no_alert (34 need escalation).
+  Stufe 1–3 = difficulty.
+- **Splits** (`artifacts/splits/dialogue_splits.json`, grouped by dialogue so clean and noisy twins never cross
+  splits): dev 28 calls, Testset_30 20 calls (cleared by Outcept for tuning), holdout 14 calls. Until T5 the holdout
+  was kept unseen and scored once (escalation F1 0.00, recorded below as the pre-fix result). From T5b on, everything
+  is "tuned on all case data; independent test = the jury's hidden set", and anything tuned is reported in 3-fold
+  cross-validation over the three splits.
+- **Label isolation**: only `pipeline/evaluate.py` reads labels; the pipeline sees neutral ids (`call_017`) and never a
+  file name or label.
+- **Models, all self-hosted** on a rented A40 (Montreal) for the hackathon, reached through an SSH tunnel:
+  faster-whisper large-v3-turbo (ASR, GPU float16), Apertus v1.5 8B (vLLM, temperature 0, strict JSON schema, cached
+  by content hash). Qwen2.5-32B-AWQ was evaluated and not chosen. The production target is a Swiss-region or
+  on-premise GPU.
+- **Metrics**: three conventions (strict alarm, escalation = alarm or review, 3-class macro F1), balanced accuracy,
+  AUC of the risk score against gold escalation; 95 % CIs by bootstrap over dialogue groups.
+
+## ASR
+
+![ASR error rates](assets/results/asr_wer.png)
+
+faster-whisper large-v3-turbo stays the ASR model: in the GPU bake-off (Loyola, 10–11 Oct) the full large-v3 only
+tied it on case WER at twice the VRAM, and the Swiss German fine-tune was slightly worse (that bake-off's raw numbers
+are not in this repository). Against the Swiss German reference scripts, WER is 0.58–0.62 and CER 0.26–0.30 for every
+split and both variants: most of that "error" is the model writing Standard German for Swiss German speech, which
+the downstream LLM reads fine. Clean and noisy recordings come out the same. Post-decode re-segmentation at sentence
+ends and pauses (T5b) changed little (3555 → 3974 segments): Whisper's segments were already sentence-sized.
+
+## Fact extraction, v1 → v2 → v2-asr
+
+Prompt v1 cited zero-stripped ids and produced few facts; v2 fixed the id format, capped citations at 3 adjacent
+lines and asked for one fact per relevant utterance (reference transcripts, dev + Testset_30: escalation F1 0.58 →
+0.63 under the then-untuned rules). On ASR transcripts the unknown speakers broke it: shown as "(unknown)", Apertus
+returned no facts at all; with a neutral label and the ASR prompt `extract-v2-asr` (roles inferred per fact) facts per
+call rose from 1.6 to 10.6. Apertus beat Qwen2.5-32B-AWQ on both prompts.
+
+## The negative result: facts → rules has no skill
+
+![ROC](assets/results/roc.png)
+
+The risk score of the facts → rules decision ranks calls below chance in every variant we ran: AUC 0.43 (T5,
+pre-fix), 0.36 [0.24, 0.51] after the ASR fix, 0.41 on reference scripts. Calibration cannot fix a ranking: the best
+threshold reached a balanced accuracy of 0.51. And with 34 of 62 calls needing escalation, "everything to review"
+scores escalation F1 0.71, above every escalation F1 we had reported for this design (0.47 at best).
+
+Why, in one call: `call_002` is a textbook control-evasion case: the customer splits a 9000 payment into two
+transfers of 4500 "so that the whole thing does not land at the approval desk". The extractor recorded no fact for
+it and the call scored risk 0.0. At the same time, harmless calls in which a customer reads out digits scored 0.9 as
+credential sharing. The case set is built so that harmless calls carry the same topics and keywords as violations:
+facts that capture the topic do not capture the violation.
+
+## The direct judge
+
+First one prompt per call (`pipeline/judge.py`), then, shipped, one focused zero-shot check per criterion
+(`pipeline/judge_multi.py`, call risk = the maximum over the six checks): the criteria, the decision scale, and
+verbatim citations of at most 15 words with the line id; every citation goes through the same validator as the facts.
+The judge decides; an alarm also needs a validated citation and confidence at the gate. Facts, rules and keyword hits
+stay in every trace as the "why", and the snippets are cut from the judge's validated citations.
+
+| method (all 62, ASR mode) | AUC [95% CI] | balanced accuracy | escalation P / R | review load | false alarms |
+|---|---|---|---|---|---|
+| everything to review | 0.50 | 0.50 | 0.55 / 1.00 | 100 % | 0 |
+| keywords only | 0.57 [0.39, 0.73] | 0.51 (CV) | | | |
+| facts → rules | 0.36 [0.24, 0.51] | 0.46 (CV) | | 5 % | 0 |
+| single judge | 0.63 [0.53, 0.74] | 0.63 | 1.00 / 0.26 | 15 % | 0 |
+| **multi-check judge (shipped)** | **0.69 [0.58, 0.80]** | **0.69** | **1.00 / 0.38** | **21 %** | **0** |
+| judge + learned review conditions | = judge | 0.64 (CV) = judge alone | | | |
+
+A learned recall layer (depth-3 tree over judge risk, mined n-grams, keyword hits and fact flags, mined and fitted
+inside each CV fold) either sent 74 % of calls to review at balanced accuracy 0.53, or, held to ≤ 40 % review load,
+added nothing. It is not shipped.
+
+## The threshold
+
+![Threshold curve](assets/results/threshold_curve.png)
+
+`config/thresholds.json`: alarm if the judge's risk ≥ 0.70 with a validated citation, review if ≥ 0.20 (for the
+single judge these defaults reproduce its own verdicts on all 62 calls). With the multi-check judge: 0 false alarms,
+21 missed of 34, 21 % review load at the defaults; raising the alarm/review cut to 0.70 halves the load (10 %) at 7
+more missed cases; lowering the review threshold to 0 sends everything to a person. The keyword switch
+(`keyword_review`) lets keyword hits alone raise a call to review, never to alarm: with at least 2 hit segments per
+family it finds 4 more cases at 40 % review load. False alarms stay 0 along the whole curve.
+
+## Limitations
+
+- **n is small**: 62 calls in 24 dialogue groups; CIs are wide (AUC 0.53–0.74 for the judge).
+- **Recall is low**: the judge finds 13 of the 34 calls that need escalation; it is precise, not thorough.
+  A compliance team using it today would still sample the rest.
+- **Everything ran on rented hardware outside Switzerland** with fictional case data only. Real customer data needs the
+  self-hosted Swiss or on-premise deployment described in the architecture; no data ever went to a cloud LLM API.
+- **No diarization**: speaker roles are inferred by the LLM from content.
+- **Tuning on case data**: thresholds and prompts were developed on these 62 calls; the judge's verdict has no fitted
+  parameter, but the prompt was written while looking at the case material. The jury's hidden set is the real test.
+- **The bake-off raw numbers** (large-v3 vs turbo vs Swiss fine-tune) live in Loyola's notes, not in this repository.
+
+---
+
+# Detailed log (chronological, as measured during the night)
 
 ## Model and prompt choice (T2/T3, 11 Oct 2026)
 
@@ -215,7 +336,7 @@ run (split "all", in-sample label kept although the verdict has no tuned paramet
 false alarm or sent a harmless call to review on these 62 calls. It is conservative: it finds about a quarter of the
 calls that need escalation (9 of 34). Its escalation F1 (0.42) is still below the flag-all baseline (0.71); what it
 offers over flag-all is precision 1.00 at a workload of 9 calls instead of 62. Next levers: recall (a second pass on
-calls the facts flag but the judge clears; criterion-specific prompts), and n: 62 calls, 31 dialogues.
+calls the facts flag but the judge clears; criterion-specific prompts), and n: 62 calls, 24 dialogue groups.
 
 ## The ladder (headline for the pitch)
 
@@ -266,3 +387,23 @@ tuned on these numbers; false alarms = gold no_alert decided alarm, missed = gol
 | default + keyword review, min 4 segments | 0 | 25 | 18 % |
 | default + keyword review, min 2 segments | 0 | 20 | 35 % |
 | default + keyword review, min 1 segment | 0 | 17 | 40 % |
+
+## Multi-check judge (11 Oct 2026, 06:30–07:00): shipped
+
+Instead of one general verdict, the judge runs once per criterion (`pipeline/judge_multi.py`, `judge-asr-mc-v1`):
+six focused zero-shot prompts that share the single judge's criterion definitions, citation rules, JSON schema and
+evidence validator. The call's risk is the maximum over the checks; the criterion and citations come from the top
+check; a check that says "not met" cannot carry more than 0.1 risk; an unusable check becomes a review (0 of 372 on
+the 62 calls). Zero-shot, nothing fitted on labels, so the all-62 numbers are effectively unseen. `config/thresholds.json`
+`judge_mode: "multi"` (`"single"` restores the one-prompt judge). Gate set before measuring: balanced accuracy above the
+single judge and at most 1 false alarm at the default thresholds (0.70 / 0.20).
+
+| all 62 calls, ASR mode | AUC [95% CI] | balanced accuracy (dev / test30 / holdout) | escalation P / R | false alarms | review load | alarm / review / no_alert |
+|---|---|---|---|---|---|---|
+| single judge (S4) | 0.63 [0.53, 0.74] | 0.63 (0.66 / 0.58 / 0.67) | 1.00 / 0.26 | 0 | 15 % | 1 / 8 / 53 |
+| **multi-check judge** | **0.69 [0.58, 0.80]** | **0.69 (0.69 / 0.63 / 0.83)** | **1.00 / 0.38** | **0** | **21 %** | 6 / 7 / 49 |
+
+Gate: **pass**. Run `mc_final` (`~/Developer/sentinel-runs/mc_0656_final/`): alarms call_022 and call_050 (control
+evasion), call_026 and call_044 (documentation concealment), call_037 and call_041 (insider trading); every call fully
+explained; each call's per-criterion answers are kept in `<out>/judge/<id>.json` (`checks`). Threshold curve at the
+defaults: 0 false alarms, 21 missed of 34, 21 % review load; keyword review with >= 2 hit segments: 17 missed at 40 %.

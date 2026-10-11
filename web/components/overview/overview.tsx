@@ -4,6 +4,7 @@
 import { ArrowRight, Check, Eye, OctagonAlert } from "lucide-react";
 import Link from "next/link";
 import { Tween } from "@/components/ui/tween";
+import { ImpactMeter } from "./impact-meter";
 import { ErrorCard } from "@/components/shell/states";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getCalls } from "@/lib/data";
@@ -54,6 +55,7 @@ export function Overview() {
           </Link>
         ))}
       </section>
+      <ImpactMeter />
       {calls.data && (
         <p className="text-sm text-muted-foreground">
           {rows.length} calls checked{errors ? ` · ${errors} with a failed step, shown on the call` : ""}. Self-hosted: no call leaves our own servers, and no cloud AI service is used.

@@ -36,7 +36,7 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(stages, "run_asr", lambda audio, cid, **k: (asr_transcript(cid), []))
     from pipeline import runner
     monkeypatch.setattr(runner, "_decision_source", lambda: "rules")     # judge-path tests switch it on themselves
-    monkeypatch.setattr(stages, "run_judge", lambda t: pytest.fail("judge must not run in rules mode"))
+    monkeypatch.setattr(stages, "run_judge", lambda t, *a: pytest.fail("judge must not run in rules mode"))
     return types.SimpleNamespace(wav=make_wav(tmp_path / "a.wav"), art=tmp_path / "art", out=tmp_path / "out")
 
 
@@ -298,7 +298,7 @@ def fake_judge(monkeypatch, decision, cites, risk=0.9, boom=None):
     from pipeline.validate import validate_facts
     monkeypatch.setattr(runner, "_decision_source", lambda: "direct_judge")
 
-    def run_judge(t):
+    def run_judge(t, *a):
         if boom:
             return None, [StageError("judge", str(boom))]
         facts = [Fact(f"j{i:03d}", "customer", "other", "other", [sid], q) for i, (sid, q) in enumerate(cites, 1)]

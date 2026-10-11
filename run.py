@@ -75,7 +75,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--run-id")
     ap.add_argument("--predictions", action="store_true", help="also write artifacts/predictions/<run_id>.json")
     ap.add_argument("--allow-test", action="store_true")
-    ap.add_argument("--workers", type=int, default=1, help="calls in parallel (default 1)")
+    ap.add_argument("--workers", type=int, default=1, help="calls in parallel (default 1; 4 for a hidden set)")
+    ap.add_argument("--artifacts", type=Path, default=None,
+                    help="own artifacts dir (transcripts, traces, analysis and the ASR / LLM caches) instead of the "
+                         "repo's artifacts/; use it for any new set so nothing shared is read or written")
     a = ap.parse_args(argv)
     if bool(a.folder) == bool(a.split):
         ap.error("give exactly one of <wav_folder> or --split")
@@ -93,11 +96,15 @@ def main(argv: list[str] | None = None) -> int:
                                                 "map": id_map})
 
     t0 = time.perf_counter()
+    if a.artifacts:                                   # the LLM caches follow the artifacts dir too
+        from pipeline import extract, judge
+        extract.CACHE_DIR, judge.CACHE_DIR = a.artifacts / "cache" / "extract", a.artifacts / "cache" / "judge"
 
     def one(job):
         cid, wav = job
         t1 = time.perf_counter()
-        d = process_call(str(wav), cid, transcripts=a.transcripts, no_llm=a.no_llm, out_dir=out)
+        d = process_call(str(wav), cid, transcripts=a.transcripts, no_llm=a.no_llm, out_dir=out,
+                         artifacts_dir=a.artifacts)
         errs = ",".join(e["stage"] for e in d["stage_errors"]) or "-"
         print(f"{cid}: {d['decision']:8s} risk {d['risk_score']:.2f} conf "
               f"{'n/a' if d['confidence'] is None else format(d['confidence'], '.2f')} "

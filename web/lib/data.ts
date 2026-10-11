@@ -8,7 +8,7 @@ import { approxSimulate, patchComponents, samePatch, type WhatifCalls } from "./
 import type {
   AnalysisArtifact, ApiErrorBody, ApplyResponse, AuditEntry, CallListItem, CallResult, DecisionTrace, FeedbackEntry,
   Decision, KeywordsConfig, Patch, PreviewRequest, PreviewResponse, ProcessingEvent, QualityReport, QualityReportSummary,
-  MethodsResponse, ReportResponse, Stage, RerunResponse, RulesConfig, SimulationResult, SpeakerRoles, SuggestionsResponse, Thresholds, Transcript, Verdict,
+  JudgeVerdict, MethodsResponse, ThresholdCurveFile, QualityEvidence, ReportResponse, Stage, RerunResponse, RulesConfig, SimulationResult, SpeakerRoles, SuggestionsResponse, Thresholds, Transcript, Verdict,
 } from "./types";
 import { CRITERIA, EVENT_TYPES, verdictAllowed } from "./types";
 
@@ -17,6 +17,9 @@ export const isFixtures = DATA_MODE === "fixtures";
 const API_PREFIX = process.env.NEXT_PUBLIC_API_PREFIX === "/run-api" ? "/run-api" : "/api";
 /** True when api mode reads the local-run fallback (app/run-api) instead of the FastAPI service. */
 export const isLocalRun = !isFixtures && API_PREFIX === "/run-api";
+/** Live upload through the local-run fallback (app/run-api/uploads.ts). NEXT_PUBLIC_LIVE_UPLOAD=0 hides every upload control. */
+export const liveUpload = !isFixtures && process.env.NEXT_PUBLIC_LIVE_UPLOAD !== "0" && (API_PREFIX === "/run-api");
+export const isUploadedCall = (id: string) => /^upload_\d{6}(_\d+)?$/.test(id);
 export const DATA_SOURCE_LABEL = isFixtures ? "fixtures (MOCK)" : isLocalRun ? "local run, read-only" : "live API";
 
 export class ApiError extends Error {
@@ -135,6 +138,7 @@ export function subscribeCallEvents(
   onEvent: (e: ProcessingEvent) => void,
   onStatus: (s: StreamStatus) => void,
 ): Subscription {
+  if (isLocalRun && isUploadedCall(id)) return sse(api(`/calls/${id}/events`), onEvent, onStatus, true);
   if (isLocalRun) return runReplay(id, onEvent, onStatus);
   return isFixtures ? mockReplay(id, onEvent, onStatus) : sse(api(`/calls/${id}/events`), onEvent, onStatus, true);
 }
@@ -178,7 +182,9 @@ function runReplay(id: string, onEvent: (e: ProcessingEvent) => void, onStatus: 
     if (cancelled) return;
     if (!detail || detail.kind !== "result") { onStatus("closed"); return; }
     const failed = new Map(detail.data.stage_errors.map((e) => [e.stage, e.message]));
-    const order: Stage[] = ["asr", "diarize", "keywords", "extract", "validate", "rules", "confidence", "decide", "narrate", "snippets", "trigger"];
+    // the AI judge runs right after decide (as in a live run); only when the recorded decision came from it
+    const judged = !!trace && (trace.decision_path.startsWith("judge_") || trace.decision_path === "keyword_review");
+    const order: Stage[] = ["asr", "diarize", "keywords", "extract", "validate", "rules", "confidence", "decide", ...(judged ? ["judge" as Stage] : []), "narrate", "snippets", "trigger"];
     const evs: Omit<ProcessingEvent, "seq" | "ts">[] = [{ event: "job_queued", call_id: id, stage: null, elapsed_s: null, cached: null, message: "replay of the recorded run", decision: null }];
     for (const st of order) {
       evs.push({ event: "stage_started", call_id: id, stage: st, elapsed_s: null, cached: null, message: null, decision: null });
@@ -375,6 +381,27 @@ function persistFeedback() {
 const routeMissing = (e: unknown) => e instanceof ApiError && (e.status === 404 || e.status === 405);
 const notBuilt = (what: string, route: string) => new ApiError(404, "not_available", `${what}: not available on this server yet (${route} is not implemented).`);
 
+/** CV, baselines and AUC behind the Quality page. null when the server has none (fixtures, or an API without the route). */
+export async function getQualityEvidence(): Promise<QualityEvidence | null> {
+  if (isFixtures) return null;
+  try { return (await getJson<QualityEvidence>(api("/evidence/quality"))).data; }
+  catch (e) { if (e instanceof ApiError && (e.status === 404 || e.status === 405)) return null; throw e; }
+}
+
+/** The AI judge's verdict and citations for one call; null when the run has no judge file for it. */
+export async function getJudge(id: string): Promise<JudgeVerdict | null> {
+  if (isFixtures) return null;
+  try { return (await getJson<JudgeVerdict>(api(`/calls/${encodeURIComponent(id)}/judge`))).data; }
+  catch (e) { if (e instanceof ApiError && (e.status === 404 || e.status === 405)) return null; throw e; }
+}
+
+/** False alarms / missed cases / review load over the adjustable settings (artifacts/metrics/threshold_curve.json). */
+export async function getThresholdCurve(): Promise<ThresholdCurveFile | null> {
+  if (isFixtures) return null;
+  try { return (await getJson<ThresholdCurveFile>(api("/evidence/threshold-curve"))).data; }
+  catch (e) { if (e instanceof ApiError && (e.status === 404 || e.status === 405)) return null; throw e; }
+}
+
 /** How each detection method decided on this call (strategy comparison run). null when the server or call has none. */
 export async function getMethods(id: string): Promise<MethodsResponse | null> {
   if (isFixtures) return null;
@@ -464,8 +491,9 @@ async function simulateViaPreview(patch: Patch): Promise<SimulationResult> {
     }
   }
   const p = await previewSettings(req);
+  if (!p.decision_counts) throw new ApiError(409, "baseline_mismatch", p.note ?? "Decisions cannot be previewed on this run.");
   const full = (c: Record<string, number>) => ({ alarm: c.alarm ?? 0, review: c.review ?? 0, no_alert: c.no_alert ?? 0 }) as Record<Decision, number>;
-  const before = full(p.decision_counts.before), after = full(p.decision_counts.after);
+  const before = full(p.decision_counts.before), after = full(p.decision_counts.after);   // checked above
   const load = (c: Record<Decision, number>) => {
     const n = c.alarm + c.review + c.no_alert, per = (x: number) => (n ? Math.round((10000 * x) / n) / 100 : 0);
     return { n, alarms_per_100: per(c.alarm), reviews_per_100: per(c.review), flagged_per_100: per(c.alarm + c.review) };

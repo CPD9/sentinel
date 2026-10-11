@@ -1,5 +1,5 @@
 "use client";
-import { Play, Search } from "lucide-react";
+import { Pause, Play, Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { DocGate, EmptyState } from "@/components/shell/states";
 import { Select } from "@/components/ui/select";
@@ -61,7 +61,9 @@ function Body({ result, hits, facts, t, focusSeg }: { result: CallResult; hits: 
   const rows = t.segments.filter((s) => (!speaker || s.speaker === speaker) && (!q || s.text.toLowerCase().includes(q.toLowerCase())));
   const firstFocusId = rows.find((s) => focus.has(s.id))?.id;
 
+  const playingId = audio.playing ? t.segments.find((x) => x.start_s != null && audio.time >= x.start_s && audio.time < (x.end_s ?? x.start_s + 1))?.id ?? null : null;
   const onPlay = (s: TranscriptSegment) => {
+    if (playingId === s.id) { audio.pause(); return; }
     if (s.start_s == null) { setNote("No timestamp on this line: the run used the reference transcript, so there is no audio position to jump to."); return; }
     if (!audio.available) { setNote(audio.error ?? "Audio is not available."); return; }
     setNote(null);
@@ -99,10 +101,13 @@ function Body({ result, hits, facts, t, focusSeg }: { result: CallResult; hits: 
             const quoted = factSegs.has(s.id);
             const ref = s.id === firstFocusId ? firstFocus : undefined;
             return (
-              <li key={`${s.id}-${isFocus ? focusSeg : ""}`} ref={ref} id={`seg-${s.id}`} className={cn("flex gap-3 px-3 py-2.5", isFocus && "jumped ring-2 ring-inset ring-ring")}
+              <li key={`${s.id}-${isFocus ? focusSeg : ""}`} ref={ref} id={`seg-${s.id}`} aria-current={playingId === s.id ? "true" : undefined}
+                className={cn("flex gap-3 px-3 py-2.5 transition-colors duration-[var(--dur-fast)]", isFocus && "jumped ring-2 ring-inset ring-ring", playingId === s.id && "ring-2 ring-inset ring-foreground/60")}
                 style={{ borderLeft: `4px solid ${SPEAKER_COLOR[s.speaker]}`, background: crit ? `color-mix(in srgb, ${criterionColor(crit)} 14%, transparent)` : undefined }}>
-                <button type="button" onClick={() => onPlay(s)} className="tabular flex w-16 shrink-0 items-start gap-1 text-left text-xs text-muted-foreground hover:text-foreground" aria-label={`Play from ${fmtTime(s.start_s)}`}>
-                  <Play className="mt-0.5 size-3" />{s.start_s == null ? s.id : fmtTime(s.start_s)}
+                <button type="button" onClick={() => onPlay(s)} aria-pressed={playingId === s.id}
+                  className={cn("tabular flex w-16 shrink-0 items-start gap-1 text-left text-xs hover:text-foreground", playingId === s.id ? "font-semibold text-foreground" : "text-muted-foreground")}
+                  aria-label={playingId === s.id ? `Pause at ${fmtTime(s.start_s)}` : `Play from ${fmtTime(s.start_s)}`}>
+                  {playingId === s.id ? <Pause className="mt-0.5 size-3" /> : <Play className="mt-0.5 size-3" />}{s.start_s == null ? s.id : fmtTime(s.start_s)}
                 </button>
                 <div className="min-w-0 flex-1">
                   <div className="mb-0.5 flex items-center gap-2"><span className="text-xs font-semibold" style={{ color: SPEAKER_COLOR[s.speaker] }}>{speakerLabel(s.speaker)}</span>
