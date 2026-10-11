@@ -1,5 +1,5 @@
 "use client";
-import { Moon, ShieldCheck, Sun } from "lucide-react";
+import { Moon, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -10,9 +10,10 @@ import { DATA_MODE } from "@/lib/data";
 import { cn } from "@/lib/utils";
 
 const LINKS = [
-  { href: "/", label: "Inbox" },
-  { href: "/settings", label: "Settings" },
-  { href: "/quality", label: "Quality lab" },
+  { href: "/", label: "Overview" },
+  { href: "/sensitivity", label: "Sensitivity" },
+  { href: "/keywords", label: "Keywords & checks" },
+  { href: "/quality", label: "Detection quality" },
 ];
 
 export function MockBanner() {
@@ -42,15 +43,13 @@ export function TopNav() {
     <header className="sticky top-0 z-30 border-b border-border bg-background/95 backdrop-blur">
       <MockBanner />
       <div className="mx-auto flex h-12 max-w-[1400px] items-center gap-3 px-4 sm:gap-6">
-        <Link href="/" className="flex items-center gap-2 font-semibold tracking-tight">
-          <ShieldCheck className="size-5" aria-hidden /><span className="hidden sm:inline">SENTINEL</span>
-        </Link>
-        <nav className="flex gap-1" aria-label="Main">
+        <Link href="/" className="text-[17px] font-bold tracking-[-0.02em]" aria-label="Sentinel, overview">Sentinel</Link>
+        <nav className="-my-2 flex min-w-0 gap-1 overflow-x-auto py-2" aria-label="Main">
           {LINKS.map((l) => {
             const active = l.href === "/" ? path === "/" || path.startsWith("/calls") : path.startsWith(l.href);
             return (
               <Link key={l.href} href={l.href} aria-current={active ? "page" : undefined}
-                className={cn("whitespace-nowrap rounded-md px-2.5 py-1.5 text-sm sm:px-3", active ? "bg-muted font-semibold" : "text-muted-foreground hover:bg-muted")}>
+                className={cn("whitespace-nowrap rounded-md px-2.5 py-1.5 text-sm sm:px-3", active ? "bg-primary/15 font-semibold text-link" : "text-muted-foreground hover:bg-muted hover:text-foreground")}>
                 {l.label}
               </Link>
             );

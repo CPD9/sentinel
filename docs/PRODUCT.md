@@ -41,32 +41,43 @@ exists in the fixtures. If you rename a field, the test fails until this doc is 
 
 ---
 
-## 1. Inbox
+## 1. Overview (two panels)
 
-The list of all calls. It is the default page.
+The default page (`/`). Left: every call, grouped by what the officer has to do. Right: the selected call
+(`/?call=<id>`, default the first alarm), enough to judge it without leaving the page. On narrow screens the two
+panels stack. Components: `web/components/inbox/` (`call-list.tsx`, `call-panel.tsx`, `excerpt-player.tsx`).
+
+**Left panel: call list**
 
 | Element | Fed by |
 |---|---|
-| Call ID (neutral, e.g. `call_017`) | `calls[].call_id` |
-| Processing status pill (queued / processing / done / error) | `calls[].status` |
-| Decision badge (blank while queued/processing) | `calls[].decision` |
-| Risk bar 0–100 % | `calls[].risk_score` |
-| Confidence (dimmed when below the gate) | `calls[].confidence`, gate from `GET /api/settings/thresholds` |
-| Top criterion chip, "+n" for more | `calls[].criteria` |
-| Stage error chip with count | `calls[].n_stage_errors` |
-| Duration, recording variant (clean / noisy / unspecified) | `calls[].duration_s`, `calls[].variant` |
-| Last update | `calls[].updated_at` |
-| Filters: decision, status, criterion, variant, "has stage errors"; sort by risk / confidence / updated | client-side over the same fields |
-| Upload button (drag and drop of .wav) | `POST /api/calls` |
-| Live updates | `GET /api/events` (global SSE): on `job_finished` re-fetch that row |
+| Groups Alarms / To review / No alert / Processing, each with its count (No alert folded by default; Processing only while something runs) | `calls[].decision`, `calls[].status` |
+| Row: call ID, kind of fraud, risk %, time | `calls[].call_id`, `calls[].criteria`, `calls[].risk_score`, `calls[].updated_at` |
+| Stage error chip (risk hidden when a failed call was never checked) | `calls[].n_stage_errors` |
+| Processing rows show the current stage | `GET /api/events` (global SSE), latest `event.stage` |
 
-Default sort: alarm, then review, then no_alert. Within each decision, risk descending.
+Within a group: risk descending (Processing: newest first).
 
-- **Loading:** 8 skeleton rows.
-- **Empty:** "No calls yet. Drop .wav files here or run `./run.sh <folder>`."
-- **Error:** the list request failed → banner with retry. The table keeps the last good data, marked stale.
-- **Row-level:** `status=processing` shows an animated pill and the current stage (latest `event.stage`).
-  `status=error` shows the decision (always review) plus the error chip.
+**Right panel: selected call**
+
+| Element | Fed by |
+|---|---|
+| Header: decision │ call ID · time · duration, link "Open full call" | `calls[].decision`, `calls[].duration_s` |
+| What was said: cited lines bold (click = play that passage), one line before and after in grey, keywords underlined | `result.findings[].evidence[].segment_ids`, `transcript.segments[].text`, `trace.keyword_hits[].segment_id`, `trace.keyword_hits[].matched_text` |
+| One player: the passage ±10 s over the call's waveform, cited words highlighted | `result.findings[].evidence[].snippet_path`, `analysis.waveform_peaks.max` |
+| Risk and threshold: big %, one bar with the alarm threshold; confidence as one line (above / below the gate) | `result.risk_score`, `result.confidence`, `GET /api/settings/thresholds` |
+| Why this was flagged / why a person must look / why it was not flagged | `result.findings[].reason`, `trace.decision_path`, `trace.what_would_change`, `trace.why_not_flagged`, `result.stage_errors` |
+| Evidence: kind of fraud, keywords found ×n | `result.findings[].criterion`, `trace.keyword_hits[].term` |
+| Reliability: call quality, transcript certainty (words + %; the 70 % / 40 % cut-offs are a display choice) | `analysis.audio_quality.call_score`, `trace.confidence_breakdown.components.asr` |
+
+A cleared call shows its top finding's passages as "below the review threshold" (demo moment 3).
+
+**Below the panels:** "All calls" table, folded: filters by decision, status, criterion, variant, "has stage errors"; sort by
+risk / confidence / updated (`calls[].confidence`, `calls[].variant`). **Header:** upload button and drop anywhere on the page (`POST /api/calls`).
+
+- **Loading:** skeleton rows on the left, skeleton blocks in the panel. **Empty:** "No calls yet. Drop .wav files on this page or run `./run.sh <folder>`."
+- **Error:** the list request failed → banner with retry, last good data kept and marked stale. A missing transcript, trace or
+  analysis (404) makes only its part say "not available"; a call whose ASR failed shows its stage error instead.
 
 ## 2. Processing view
 
@@ -326,7 +337,7 @@ when `quality.overall.n` < 30. Test-split reports carry a "locked test set — f
 All four run on the laptop UI against the real API (SSH tunnel to the GPU VM). Before the demo, each
 step is rehearsed on fixtures. Times below are targets.
 
-1. **Audio → alert with snippet (≈90 s).** Inbox → drag a held-out alarm .wav onto the page → the
+1. **Audio → alert with snippet (≈90 s).** Overview → drag a held-out alarm .wav onto the page → the
    Processing view opens and stages tick through live (`event.stage`, `event.elapsed_s`) →
    `job_finished` with `event.decision` = alarm → "Open call" → Summary narrative
    (`result.narrative`) → Evidence tab → press play on the snippet
@@ -334,7 +345,7 @@ step is rehearsed on fixtures. Times below are targets.
    says the quoted words. Optional: Audio analysis tab, where the shaded window lines up with the
    spectrogram while the playhead runs.
 2. **Threshold / keyword change (≈60 s).** Settings → Tuning → drag `alarm` from 0.70 to 0.85 → the
-   impact panel shows which calls would move from alarm to review → Save → back to the Inbox, where
+   impact panel shows which calls would move from alarm to review → Save → back to the Overview, where
    the badges change within seconds. Nothing is re-transcribed: the Processing view shows "from cache"
    (`event.cached`). Then Configuration → add a Swiss German variant to a keyword family → the hit
    count rises live. Restore the original values afterwards.

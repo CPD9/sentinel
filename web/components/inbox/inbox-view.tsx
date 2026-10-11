@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { ChevronRight } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -7,7 +8,9 @@ import { Select } from "@/components/ui/select";
 import { CriterionChip, DecisionBadge, StageErrorChip, StatusPill } from "@/components/shell/badges";
 import { EmptyState, ErrorCard } from "@/components/shell/states";
 import { ScoreBar } from "@/components/shell/score";
-import { UploadZone } from "./upload";
+import { CallList, callsIn } from "./call-list";
+import { CallPanel } from "./call-panel";
+import { UploadButton, useWavUpload } from "./upload";
 import { getCalls, getThresholds, subscribeGlobalEvents } from "@/lib/data";
 import { fmtDateTime, fmtTime } from "@/lib/format";
 import { useReportMock } from "@/lib/mock-store";
@@ -31,9 +34,10 @@ function sortRows(rows: CallListItem[], sort: Sort): CallListItem[] {
   return out.sort((a, b) => decisionRank(a.decision) - decisionRank(b.decision) || risk(b) - risk(a));
 }
 
-export function InboxView() {
+export function InboxView({ selected }: { selected: string | null }) {
   const calls = useAsync(getCalls, "calls");
-  const gate = useAsync(() => getThresholds().then((t) => t.confidence_gate), "gate");
+  const th = useAsync(getThresholds, "thresholds");
+  const gate = th.data?.confidence_gate ?? null;
   const [decision, setDecision] = useState("");
   const [status, setStatus] = useState("");
   const [criterion, setCriterion] = useState("");
@@ -41,6 +45,8 @@ export function InboxView() {
   const [onlyErrors, setOnlyErrors] = useState(false);
   const [sort, setSort] = useState<Sort>("default");
   const [stages, setStages] = useState<Record<string, string>>({});
+  const [dragging, setDragging] = useState(false);
+  const upload = useWavUpload(calls.reload);
 
   useReportMock("inbox", calls.data?.some((c) => c.is_mock) ? { is_mock: true } : null);
 
@@ -70,16 +76,57 @@ export function InboxView() {
 
   const stale = calls.status === "error" && calls.data;
 
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">Inbox</h1>
-          <p className="text-sm text-muted-foreground">Every call, most urgent first. Review means a person should look; it is not an alarm.</p>
-        </div>
-      </div>
-      <UploadZone onUploaded={calls.reload} />
+  // The call in the right panel: the one in the URL, else the first alarm, else the first review, and so on.
+  const current = useMemo(() => {
+    const all = calls.data ?? [];
+    return all.find((c) => c.call_id === selected)
+      ?? (["alarm", "review", "no_alert", "processing"] as const).map((g) => callsIn(all, g)[0]).find(Boolean) ?? null;
+  }, [calls.data, selected]);
 
+  return (
+    <div className="relative space-y-5"
+      onDragOver={(e) => { if (e.dataTransfer.types.includes("Files")) { e.preventDefault(); setDragging(true); } }}
+      onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false); }}
+      onDrop={(e) => { e.preventDefault(); setDragging(false); void upload.send(e.dataTransfer.files); }}>
+      {dragging && (
+        <div className="pointer-events-none fixed inset-3 z-40 flex items-center justify-center rounded-2xl border-2 border-dashed border-primary bg-background/80 text-lg font-semibold text-link">
+          Drop .wav files to analyse them
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Overview</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Every call is checked automatically, not sampled.</p>
+        </div>
+        <UploadButton upload={upload} />
+      </div>
+
+      {calls.status === "error" && <ErrorCard error={calls.error} title="Could not load the call list" onRetry={calls.reload} />}
+      {stale && <p className="text-xs text-review">Showing the last good data. It may be stale.</p>}
+      {calls.data && calls.data.length === 0 ? (
+        <EmptyState>No calls yet. Drop .wav files on this page or run <code className="font-mono">./run.sh &lt;folder&gt;</code>.</EmptyState>
+      ) : (
+        // Two panels: the list on the left, the selected call on the right. Both stay in view and scroll on their own
+        // on wide screens; on narrow screens they stack (list first).
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] lg:items-start">
+          <div className="surface-tint rounded-2xl p-2 lg:sticky lg:top-24 lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto">
+            <CallList calls={calls.data ?? null} selected={current?.call_id ?? null} stages={stages} />
+          </div>
+          <div className="min-w-0 lg:sticky lg:top-24 lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto">
+            {current ? <CallPanel key={current.call_id} item={current} thresholds={th.data ?? null} />
+              : calls.data ? null : <Skeleton className="h-96 rounded-2xl" />}
+          </div>
+        </div>
+      )}
+
+      <details className="group rounded-2xl border border-border bg-card/40">
+        <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-semibold [&::-webkit-details-marker]:hidden">
+          <ChevronRight className="size-4 transition-transform group-open:rotate-90 motion-reduce:transition-none" aria-hidden />
+          All calls{calls.data ? ` (${calls.data.length})` : ""}
+          <span className="font-normal text-muted-foreground">· including no-alert calls, processing and errors</span>
+        </summary>
+        <div className="space-y-4 border-t border-border p-4">
       <div className="flex flex-wrap items-center gap-3">
         <Select label="Decision" value={decision} onChange={(e) => setDecision(e.target.value)}>
           <option value="">all</option>
@@ -104,12 +151,10 @@ export function InboxView() {
         </Select></div>
       </div>
 
-      {calls.status === "error" && <ErrorCard error={calls.error} title="Could not load the call list" onRetry={calls.reload} />}
-      {stale && <p className="text-xs text-review">Showing the last good data. It may be stale.</p>}
-      {gate.status === "error" && !gate.data && (
+      {th.status === "error" && !th.data && (
         <div role="alert" className="flex items-center justify-between gap-3 rounded-md border border-review bg-review-bg px-3 py-2 text-sm text-review">
-          <span>The confidence gate could not be loaded ({gate.error.message}), so low-confidence calls are not flagged with ▼ below.</span>
-          <button type="button" className="rounded border border-review px-2 py-0.5 text-xs" onClick={gate.reload}>Retry</button>
+          <span>The confidence gate could not be loaded ({th.error.message}), so low-confidence calls are not flagged with ▼ below.</span>
+          <button type="button" className="rounded border border-review px-2 py-0.5 text-xs" onClick={th.reload}>Retry</button>
         </div>
       )}
 
@@ -130,7 +175,7 @@ export function InboxView() {
             <tbody className="divide-y divide-border">
               {rows.map((r) => {
                 const href = r.status === "processing" || r.status === "queued" ? `/calls/${r.call_id}/processing` : `/calls/${r.call_id}`;
-                const dim = r.confidence != null && gate.data != null && r.confidence < gate.data;
+                const dim = r.confidence != null && gate != null && r.confidence < gate;
                 return (
                   <tr key={r.call_id} className="hover:bg-muted/60">
                     <td className="px-3 py-2.5"><Link href={href} className="font-mono font-medium underline-offset-2 hover:underline">{r.call_id}</Link></td>
@@ -157,6 +202,8 @@ export function InboxView() {
         </Card>
       )}
       {calls.data && <p className="text-xs text-muted-foreground">{rows.length} of {calls.data.length} calls. <RiskConfidenceHint /></p>}
+        </div>
+      </details>
     </div>
   );
 }

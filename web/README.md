@@ -24,7 +24,7 @@ Copy `.env.example` to `.env.local` to switch.
 ## Layout
 
 ```
-app/            routes: / (Inbox), calls/[id] (?tab=), calls/[id]/processing, settings, quality
+app/            routes: / (Overview, ?call=), calls/[id] (?tab=), calls/[id]/processing, sensitivity, keywords, quality (settings redirects)
 components/     shell/ (nav, badges, states)  inbox/  processing/  call/ (+tabs/)  audio/ (lanes)  settings/  quality/
 lib/            types.ts (mirror of pipeline/schemas.py)  data.ts  mock-replay.ts  format.ts  colors.ts
 ```

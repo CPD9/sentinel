@@ -2,17 +2,21 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* Calm, high-contrast, no decoration. Colour carries meaning only (decision, speaker, criterion). */
+/* Calm, high-contrast. Colour carries meaning: red/amber/grey = decision, violet = interactive,
+   criterion and speaker colours = categories. Inspired by uxpeak (dark) and Proton (light). */
 :root {
-  --background: #f6f6f4;
-  --foreground: #16181d;
+  /* Light theme: calm, faintly violet-tinted (after Proton's light list section). */
+  --background: #f7f6fb;
+  --foreground: #1a1530;
   --card: #ffffff;
-  --muted: #ecece8;
-  --muted-foreground: #4b505a;
-  --border: #d6d6d0;
-  --ring: #1f4fd8;
-  --primary: #16181d;
+  --muted: #efedf6;
+  --muted-foreground: #5b5870;
+  --border: #e2dfec;
+  --ring: #6d4aff;
+  /* Violet = "you can click this". Never used for a decision. */
+  --primary: #6d4aff;
   --primary-foreground: #ffffff;
+  --link: #5b3ae6;
 
   --alarm: #b3261e;      --alarm-bg: #fbe4e2;
   --review: #8a5a00;     --review-bg: #fcefc9;
@@ -24,31 +28,39 @@
   --customer: #b45309;
   --unknown: #6b7280;
 
-  /* Okabe–Ito based criterion palette (colour-blind safe) */
+  /* Okabe–Ito based criterion palette (colour-blind safe). control_evasion moved off purple to cyan,
+     so no criterion can be confused with the violet accent. */
   --c-insider_trading: #0072b2;
   --c-credential_sharing: #d55e00;
   --c-third_party_disclosure: #009e73;
   --c-documentation_concealment: #cc79a7;
-  --c-control_evasion: #7a5cc4;
+  --c-control_evasion: #087a8e;
   --c-payment_card_data: #b88a00;
   --c-other: #6b7280;
 
+  --tint: #eeebf6;
+  --gauge-review: #d68f0e;
+  --gauge-alarm: #d33a2c;
+  --shadow-card: 0 1px 2px rgba(26, 21, 48, 0.06), 0 12px 32px -16px rgba(26, 21, 48, 0.22);
+
   --lane-bg: #ffffff;
-  --grid: #e3e3de;
-  --axis: #4b505a;
-  --trace: #16181d;
+  --grid: #e6e3ee;
+  --axis: #5b5870;
+  --trace: #1a1530;
 }
 
 .dark {
-  --background: #0f1115;
-  --foreground: #eceef2;
-  --card: #171a20;
-  --muted: #232730;
-  --muted-foreground: #a9afbb;
-  --border: #353a45;
-  --ring: #7aa2ff;
-  --primary: #eceef2;
-  --primary-foreground: #0f1115;
+  /* Dark theme (default): near-black with a violet tint, after uxpeak. */
+  --background: #0b0a10;
+  --foreground: #f5f5f7;
+  --card: #16141e;
+  --muted: #221f2d;
+  --muted-foreground: #8a8f98;
+  --border: #2a2736;
+  --ring: #a78bfa;
+  --primary: #7c3aed;
+  --primary-foreground: #ffffff;
+  --link: #a78bfa;
 
   --alarm: #ff8a80;      --alarm-bg: #3d1a18;
   --review: #f5c451;     --review-bg: #3a2c08;
@@ -60,22 +72,27 @@
   --customer: #f0a24b;
   --unknown: #9aa1ae;
 
-  --c-insider_trading: #56b4e9;
+  --c-insider_trading: #4f9cf9;
   --c-credential_sharing: #ff8f40;
   --c-third_party_disclosure: #2fd1a0;
   --c-documentation_concealment: #e79ac4;
-  --c-control_evasion: #a58df0;
+  --c-control_evasion: #5ee0f0;
   --c-payment_card_data: #e8bb2e;
   --c-other: #9aa1ae;
 
-  --lane-bg: #12151a;
-  --grid: #2a2e38;
-  --axis: #a9afbb;
-  --trace: #eceef2;
+  --tint: #17151f;
+  --gauge-review: #f5c451;
+  --gauge-alarm: #ff8a80;
+  --shadow-card: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 0 0 1px rgba(255, 255, 255, 0.06), 0 16px 32px -20px rgba(0, 0, 0, 0.8);
+
+  --lane-bg: #110f18;
+  --grid: #262330;
+  --axis: #8a8f98;
+  --trace: #f5f5f7;
 }
 
 @theme inline {
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-sans: var(--font-instrument), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -86,6 +103,7 @@
   --color-ring: var(--ring);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
+  --color-link: var(--link);
   --color-alarm: var(--alarm);
   --color-alarm-bg: var(--alarm-bg);
   --color-review: var(--review);
@@ -101,7 +119,7 @@
   --color-unknown: var(--unknown);
 }
 
-html { color-scheme: light; }
+html { color-scheme: light; accent-color: var(--primary); }  /* sliders + checkboxes in the violet accent */
 html.dark { color-scheme: dark; }
 body { background: var(--background); color: var(--foreground); font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
 *:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
@@ -110,3 +128,39 @@ body { background: var(--background); color: var(--foreground); font-family: var
 @keyframes shimmer { 0% { opacity: 1 } 50% { opacity: .5 } 100% { opacity: 1 } }
 .skeleton { animation: shimmer 1.4s ease-in-out infinite; background: var(--muted); border-radius: 6px; }
 @media (prefers-reduced-motion: reduce) { .skeleton { animation: none } }
+
+/* ⓘ info bubble: grows out of its icon on open, shrinks back on close. No motion when the user asks for less. */
+.info-tip { opacity: 0; transform: scale(0.94); transition: opacity 160ms cubic-bezier(0.2, 0.8, 0.2, 1), transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.info-tip[data-state="open"] { opacity: 1; transform: scale(1); }
+.info-tip[data-state="exit"] { opacity: 0; transform: scale(0.97); transition-duration: 110ms; transition-timing-function: ease-in; }
+@media (prefers-reduced-motion: reduce) { .info-tip { transition: none; } }
+
+/* Overview load moment: hit cards rise in order, gauges fill once, the player's progress glides between updates. */
+@keyframes rise { from { opacity: 0; transform: translateY(6px); } }
+@keyframes gauge-grow { from { clip-path: inset(0 100% 0 0 round 999px); } to { clip-path: inset(0 0 0 0 round 999px); } }
+.hit-card { animation: rise 420ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.gauge-fill { animation: gauge-grow 700ms cubic-bezier(0.2, 0.8, 0.2, 1) 120ms both; }
+.player-progress { transition: width 250ms linear; }
+@media (prefers-reduced-motion: reduce) { .hit-card, .gauge-fill { animation: none; } .player-progress { transition: none; } }
+
+/* Surfaces (after Proton Drive): tinted boxes without a border; elevated cards stand off the page by shadow, not outline. */
+.surface-tint { background: var(--tint); }
+.elevated { background: var(--card); box-shadow: var(--shadow-card); }
+.gauge-marker { animation: marker-in 260ms ease-out 650ms both; }
+@keyframes marker-in { from { opacity: 0; transform: translate(-50%, -50%) scale(0.6); } }
+@media (prefers-reduced-motion: reduce) { .gauge-marker { animation: none; } }
+
+/* Sensitivity slider: native range input (keyboard + screen reader for free) drawn over our own gradient track.
+   The thumb is 18 px wide, so the track, the saved tick and the call dots are inset by 9 px to line up with its centre.
+   display:block matters: an inline input gets extra line-height below it, which put the thumb off the track's centre. */
+.sens-range { -webkit-appearance: none; appearance: none; display: block; background: transparent; width: 100%; height: 24px; margin: 0; cursor: pointer; position: relative; }
+.sens-range::-webkit-slider-runnable-track { height: 6px; background: transparent; }
+.sens-range::-moz-range-track { height: 6px; background: transparent; }
+.sens-range::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; box-sizing: border-box; width: 18px; height: 18px; margin-top: -6px; border-radius: 999px; background: var(--card); border: 3px solid var(--primary); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25); transition: transform 120ms ease-out; }
+.sens-range::-moz-range-thumb { box-sizing: border-box; width: 18px; height: 18px; border-radius: 999px; background: var(--card); border: 3px solid var(--primary); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25); }
+.sens-range:active::-webkit-slider-thumb { transform: scale(1.12); }
+.sens-range:focus-visible { outline: none; }
+.sens-range:focus-visible::-webkit-slider-thumb { outline: 2px solid var(--ring); outline-offset: 2px; }
+.sens-range:focus-visible::-moz-range-thumb { outline: 2px solid var(--ring); outline-offset: 2px; }
+.call-dot { transition: background-color 200ms ease-out, border-color 200ms ease-out; }
+@media (prefers-reduced-motion: reduce) { .sens-range::-webkit-slider-thumb, .call-dot { transition: none; } }

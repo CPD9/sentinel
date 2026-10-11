@@ -13,7 +13,7 @@ os.environ["SENTINEL_REPLAY_SCALE"] = "0"   # replay events without waiting
 from fastapi.testclient import TestClient  # noqa: E402
 
 from pipeline import schemas  # noqa: E402
-from services.api import settings  # noqa: E402
+from services.api import feedback, settings  # noqa: E402
 from services.api.main import app  # noqa: E402
 
 client = TestClient(app)
@@ -22,8 +22,10 @@ client = TestClient(app)
 @pytest.fixture(autouse=True)
 def fresh_settings():
     settings.reset()
+    feedback.reset()
     yield
     settings.reset()
+    feedback.reset()
 
 
 def assert_error(r, status, code):
@@ -150,6 +152,33 @@ def test_preview_shows_alarm_flipping_to_review_without_saving():
                                 "risk_before": 0.91, "risk_after": 0.91}]
     assert body["keyword_hit_counts"]["access"]["Passwort"] > 0
     assert client.get("/api/settings/thresholds").json()["alarm"] == 0.7   # nothing saved
+
+
+# ----------------------------------------------------------------- feedback
+def test_feedback_post_then_latest_wins():
+    before = client.get("/api/feedback").json()
+    assert all(schemas.FeedbackEntry.validate(e) == [] for e in before)
+    r = client.post("/api/feedback", json={"call_id": "call_MOCK_004", "verdict": "missed", "note": " Passwort genannt "})
+    assert r.status_code == 201, r.text
+    e = r.json()
+    assert e["decision_at_feedback"] == "review" and e["note"] == "Passwort genannt" and e["is_mock"] and e["ts"]
+    assert e["config_version"] == "MOCK"
+    r = client.post("/api/feedback", json={"call_id": "call_MOCK_004", "verdict": "false_alarm"})   # change of mind
+    assert r.status_code == 201
+    rows = [x for x in client.get("/api/feedback").json() if x["call_id"] == "call_MOCK_004"]
+    assert len(rows) == 1 and rows[0]["verdict"] == "false_alarm"
+    assert len(client.get("/api/feedback").json()) == len(before) + 1
+
+
+def test_feedback_rejects_nonsense():
+    assert_error(client.post("/api/feedback", json={"call_id": "call_MOCK_001", "verdict": "missed"}), 422, "invalid")
+    assert_error(client.post("/api/feedback", json={"call_id": "call_MOCK_002", "verdict": "false_alarm"}), 422, "invalid")
+    assert_error(client.post("/api/feedback", json={"call_id": "call_MOCK_001", "verdict": "maybe"}), 422, "invalid")
+    assert_error(client.post("/api/feedback", json={"call_id": "call_MOCK_001", "verdict": "correct", "x": 1}), 422, "invalid")
+    assert_error(client.post("/api/feedback", json={"call_id": "call_MOCK_001", "verdict": "correct", "note": "a" * 2001}),
+                 422, "invalid")
+    assert_error(client.post("/api/feedback", json={"call_id": "call_UNKNOWN", "verdict": "correct"}), 404, "not_found")
+    assert_error(client.post("/api/feedback", json={"call_id": "call_MOCK_003", "verdict": "correct"}), 409, "conflict")
 
 
 # ----------------------------------------------------------------- quality

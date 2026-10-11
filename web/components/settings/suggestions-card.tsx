@@ -16,7 +16,7 @@ import { ConfirmDialog } from "./confirm-dialog";
 const errText = (e: unknown) => (e instanceof ApiError ? (Array.isArray(e.detail) ? e.detail.join("; ") : `${e.code}: ${e.detail}`) : String(e));
 
 /** Ranked, simulated config changes built from the officer's verdicts. Preview loads one into the draft; Apply asks for confirmation. */
-export function SuggestionsCard({ activePatch, onPreview, onApplied }: { activePatch: Patch | null; onPreview: (p: Patch) => void; onApplied: (message: string) => void }) {
+export function SuggestionsCard({ activePatch, onPreview, onApplied, bare }: { activePatch: Patch | null; onPreview: (p: Patch) => void; onApplied: (message: string) => void; bare?: boolean }) {
   const state = useAsync(() => getSuggestions(), "suggestions");
   const [confirm, setConfirm] = useState<Suggestion | null>(null);
   const [note, setNote] = useState("");
@@ -38,20 +38,14 @@ export function SuggestionsCard({ activePatch, onPreview, onApplied }: { activeP
   };
 
   const d = state.data;
-  return (
-    <Card>
-      <CardHeader>
-        <div>
-          <CardTitle className="flex items-center gap-2"><Lightbulb className="size-4" aria-hidden />Suggested changes</CardTitle>
-          <CardDescription>
-            {d ? <>Built from your {d.n_feedback} verdict{d.n_feedback === 1 ? "" : "s"} ({d.counts_by_verdict.false_alarm} false alarm, {d.counts_by_verdict.missed} missed, {d.counts_by_verdict.correct} correct). Never applied automatically.</> : "Built from your false alarm / missed / correct verdicts. Never applied automatically."}
-          </CardDescription>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-3">
+  const description = (
+    d ? <>Built from your {d.n_feedback} verdict{d.n_feedback === 1 ? "" : "s"} ({d.counts_by_verdict.false_alarm} false alarm, {d.counts_by_verdict.missed} missed, {d.counts_by_verdict.correct} correct). Never applied automatically.</> : "Built from your false alarm / missed / correct verdicts. Never applied automatically."
+  );
+  const body = (
+    <>
         {isFixtures && <p role="note" className="rounded-md border border-review bg-review-bg px-3 py-2 text-xs text-review">MOCK: sample suggestions computed by the real search over 12 invented calls. They are not recomputed from your clicks, and Apply is disabled.</p>}
         {state.status === "loading" && !d ? <SkeletonBlock rows={4} />
-          : state.status === "error" && !d && state.error.notAvailable ? <EmptyState>{state.error.message} The settings below still work.</EmptyState>
+          : state.status === "error" && !d && state.error.notAvailable ? <EmptyState>{state.error.message} The thresholds above still work.</EmptyState>
           : state.status === "error" && !d ? <ErrorCard error={state.error} onRetry={state.reload} title="Could not load suggestions" />
           : d && d.suggestions.length === 0 ? (
             <EmptyState>{d.reason ?? "No suggestions."} {d.n_feedback === 0 && "Open a call and use the False alarm / Missed / Correct buttons."}</EmptyState>
@@ -87,8 +81,9 @@ export function SuggestionsCard({ activePatch, onPreview, onApplied }: { activeP
               <p className="text-[11px] text-muted-foreground">{d.caveat}</p>
             </>
           )}
-      </CardContent>
-
+    </>
+  );
+  const dialog = (
       <ConfirmDialog open={!!confirm} title="Apply this change?" confirmLabel="Apply change" busy={busy} error={err} onConfirm={apply} onClose={() => { if (!busy) { setConfirm(null); setErr(null); } }}>
         {confirm && (
           <div className="space-y-3 text-sm">
@@ -100,10 +95,22 @@ export function SuggestionsCard({ activePatch, onPreview, onApplied }: { activeP
             ))}</ul>
             <label className="block text-xs text-muted-foreground">Note for the audit log (optional)
               <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} className="mt-1 h-8 w-full rounded-md border border-border bg-card px-2 text-sm text-foreground" /></label>
-            <p className="text-[11px] text-muted-foreground">Written to the audit log with the old and new configuration version. You can undo it by saving the previous values in Settings.</p>
+            <p className="text-[11px] text-muted-foreground">Written to the audit log with the old and new configuration version. You can undo it by saving the previous values on this page.</p>
           </div>
         )}
       </ConfirmDialog>
+  );
+  if (bare) return <div className="space-y-3"><p className="text-xs text-muted-foreground">{description}</p>{body}{dialog}</div>;
+  return (
+    <Card>
+      <CardHeader>
+        <div>
+          <CardTitle className="flex items-center gap-2"><Lightbulb className="size-4" aria-hidden />Suggested changes</CardTitle>
+          <CardDescription>{description}</CardDescription>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">{body}</CardContent>
+      {dialog}
     </Card>
   );
 }
