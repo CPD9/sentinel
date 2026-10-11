@@ -39,9 +39,9 @@ export function humanize(s: string): string {
   return s.replaceAll("_", " ");
 }
 
-export const VERDICT_LABEL = { false_alarm: "False alarm", missed: "Missed", correct: "Correct" } as const;
+export const VERDICT_LABEL = { false_alarm: "False alarm", missed: "Missed", correct: "Correct", escalate: "Escalated" } as const;
 
-/** "thresholds.alarm=0.8" → "alarm threshold 0.8", "rules.disable:insider_trading" → "rule insider trading off". */
+/** "thresholds.alarm=0.8" → "alert line 0.8", "rules.disable:insider_trading" → "rule insider trading off". */
 export function componentLabel(c: string): string {
   const [kind, rest = ""] = c.split(/[=:]/);
   if (kind === "thresholds.confidence_gate") return `confidence gate ${rest}`;

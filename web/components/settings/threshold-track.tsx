@@ -1,7 +1,7 @@
 "use client";
 // The alarm-threshold slider with every decided call as a pin hanging from the track at its risk, like the marks of a
 // ruler. A pin takes the colour of the decision the call would get with the current draft (from the simulation's flipped
-// list) and gets a violet outline when that decision would change. Calls at (almost) the same risk stack into a taller pin,
+// list) and gets an ink outline when that decision would change. Calls at (almost) the same risk stack into a taller pin,
 // one coloured segment per call, so the lane reads like a tiny bar chart. The track uses the same grey → amber → red
 // gradient as the Overview gauges, with the stops on the draft thresholds.
 import { pct } from "@/lib/format";
@@ -10,7 +10,7 @@ import type { CallListItem, Decision } from "@/lib/types";
 const GREY = "color-mix(in srgb, var(--noalert) 55%, var(--card))";
 const SOFT = 3;
 const COLOUR: Record<Decision, string> = { alarm: "var(--gauge-alarm)", review: "var(--gauge-review)", no_alert: "var(--noalert)" };
-const LABEL: Record<Decision, string> = { alarm: "alarm", review: "review", no_alert: "no alert" };
+const LABEL: Record<Decision, string> = { alarm: "alert", review: "review", no_alert: "no alert" };
 /** Position on the track: the thumb is 18 px wide, so 0 % sits 9 px from the left edge and 100 % 9 px from the right. */
 const at = (x: number) => `calc(9px + ${Math.min(1, Math.max(0, x))} * (100% - 18px))`;
 const clampPct = (x: number) => Math.min(100, Math.max(0, x));
@@ -53,7 +53,7 @@ export function ThresholdTrack({ id, value, saved, review, calls, after, onChang
         ))}
         <span aria-hidden title={`saved ${pct(saved)}`} className="absolute top-1/2 h-3 w-0.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-foreground/50" style={{ left: at(saved) }} />
         <input id={id} type="range" min={0} max={1} step={0.01} value={value} onChange={(e) => onChange(+e.target.value)}
-          className="sens-range" aria-valuetext={`${pct(value)} alarm threshold`} />
+          className="sens-range" aria-valuetext={`${pct(value)} alert line`} />
       </div>
       <div className="mt-1 flex justify-between gap-4 text-xs text-muted-foreground">
         <span>catches more</span>

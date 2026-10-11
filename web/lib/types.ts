@@ -108,6 +108,7 @@ export interface Fact {
   counter_evidence: string | null;
   valid: boolean;
   drop_reason: string | null;
+  gloss_de?: string | null;            // the quote in Standard German (pipeline/schemas.py Fact.gloss_de)
 }
 export interface KeywordHit {
   hit_id: string;
@@ -281,10 +282,11 @@ export interface RerunResponse { rerun: { stages: string[]; n_calls: number } }
 
 // ---- What-if, feedback, suggestions (pipeline/schemas.py, docs/API.md "What-if, feedback and suggestions")
 export const VERDICTS = ["false_alarm", "missed", "correct"] as const;
-export type Verdict = (typeof VERDICTS)[number];
+/** "escalate" is accepted only when the API says so (GET /api/capabilities, see data.ts getCapabilities). */
+export type Verdict = (typeof VERDICTS)[number] | "escalate";
 export const DECISION_RANK: Record<Decision, number> = { no_alert: 0, review: 1, alarm: 2 };
 /** A false alarm needs a flag to be false; a miss needs room above the current decision. */
-export const verdictAllowed = (v: Verdict, d: Decision) => !((v === "false_alarm" && d === "no_alert") || (v === "missed" && d === "alarm"));
+export const verdictAllowed = (v: Verdict, d: Decision): boolean => !((v === "false_alarm" && d === "no_alert") || (v === "missed" && d === "alarm"));
 
 export interface Patch {
   thresholds?: Partial<Thresholds>;
@@ -313,7 +315,7 @@ export interface Suggestion {
   fix_credit: number; fixed: string[]; not_fixed: string[]; collateral_flips: string[]; effect: SimulationResult;
 }
 export interface SuggestionsResponse {
-  generated_at: string; config_version: string; n_feedback: number; counts_by_verdict: Record<Verdict, number>;
+  generated_at: string; config_version: string; n_feedback: number; counts_by_verdict: Record<(typeof VERDICTS)[number], number> & { escalate?: number };
   suggestions: Suggestion[]; caveat: string; reason: string | null; is_mock: boolean; schema_version: number;
 }
 export interface AuditEntry {

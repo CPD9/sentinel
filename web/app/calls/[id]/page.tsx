@@ -8,5 +8,5 @@ export default function Page({
 }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string; win?: string; seg?: string }> }) {
   const { id } = use(params);
   const q = use(searchParams);
-  return <CallDashboard id={id} tab={isTab(q.tab) ? q.tab : "transcript"} sel={{ win: q.win, seg: q.seg }} />;
+  return <CallDashboard id={id} tab={isTab(q.tab) ? q.tab : "reasoning"} sel={{ win: q.win, seg: q.seg }} />;
 }

@@ -19,7 +19,7 @@ export function Headline({ r }: { r: QualityReport }) {
     {
       label: "Caught", value: `${esc.tp} of ${needed}`,
       hint: rec.value == null ? "recall undefined (no call needed attention)"
-        : `${pct(rec.value)} of the calls that needed attention were flagged (alarm or review)${rec.ci_low != null ? ` · CI ${pct(rec.ci_low)}–${pct(rec.ci_high)}` : ""}`,
+        : `${pct(rec.value)} of the calls that needed attention were flagged (alert or review)${rec.ci_low != null ? ` · CI ${pct(rec.ci_low)}–${pct(rec.ci_high)}` : ""}`,
     },
     { label: "Missed", value: String(esc.fn), hint: "calls that needed attention but came out as no alert" },
     { label: "False alarms", value: String(strict.fp), hint: "alarms raised on calls that should not be an alarm" },

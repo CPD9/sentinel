@@ -10,7 +10,7 @@ export function DecisionBadge({ decision, size = "md" }: { decision: Decision | 
   if (!decision) return <span className="text-xs text-muted-foreground">–</span>;
   const sz = size === "lg" ? "px-3 py-1 text-sm" : size === "sm" ? "px-1.5 py-0 text-[11px]" : "";
   if (decision === "alarm")
-    return <Badge className={cn("border-alarm/35 bg-alarm-bg font-semibold text-alarm", sz)}><OctagonAlert className="size-3.5" aria-hidden />Alarm</Badge>;
+    return <Badge className={cn("border-alarm/35 bg-alarm-bg font-semibold text-alarm", sz)}><OctagonAlert className="size-3.5" aria-hidden />Alert</Badge>;
   if (decision === "review")
     return <Badge className={cn("border-dashed border-review bg-review-bg font-semibold text-review", sz)}><Eye className="size-3.5" aria-hidden />Review</Badge>;
   return <Badge className={cn("border-noalert/30 bg-noalert-bg font-medium text-noalert", sz)}><Check className="size-3.5" aria-hidden />No alert</Badge>;

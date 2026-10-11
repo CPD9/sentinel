@@ -8,8 +8,8 @@ const TIP = { background: "var(--card)", border: "1px solid var(--border)", font
 const err = (m: Metric): [number, number] | undefined => (m.value != null && m.ci_low != null ? [m.value - m.ci_low, m.ci_high! - m.value] : undefined);
 
 export const METRICS = {
-  "strict_alarm.precision": ["Strict alarm · precision", (c: ConventionSet) => c.strict_alarm.precision],
-  "strict_alarm.recall": ["Strict alarm · recall", (c: ConventionSet) => c.strict_alarm.recall],
+  "strict_alarm.precision": ["Strict alert · precision", (c: ConventionSet) => c.strict_alarm.precision],
+  "strict_alarm.recall": ["Strict alert · recall", (c: ConventionSet) => c.strict_alarm.recall],
   "escalation.precision": ["Escalation · precision", (c: ConventionSet) => c.escalation.precision],
   "escalation.recall": ["Escalation · recall", (c: ConventionSet) => c.escalation.recall],
   "three_class.macro_f1": ["3-class · macro F1", (c: ConventionSet) => c.three_class.macro_f1],
