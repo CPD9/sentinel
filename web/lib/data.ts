@@ -8,7 +8,7 @@ import { approxSimulate, patchComponents, samePatch, type WhatifCalls } from "./
 import type {
   AnalysisArtifact, ApiErrorBody, ApplyResponse, AuditEntry, CallListItem, CallResult, DecisionTrace, FeedbackEntry,
   Decision, KeywordsConfig, Patch, PreviewRequest, PreviewResponse, ProcessingEvent, QualityReport, QualityReportSummary,
-  JudgeVerdict, MethodsResponse, ThresholdCurveFile, QualityEvidence, ReportResponse, Stage, RerunResponse, RulesConfig, SimulationResult, SpeakerRoles, SuggestionsResponse, Thresholds, Transcript, Verdict,
+  JudgeVerdict, MethodsResponse, ThresholdCurveFile, QualityEvidence, ReportResponse, Stage, RerunResponse, RulesConfig, SimulationResult, SpeakerRoles, DialectEstimate, SuggestionsResponse, Thresholds, Transcript, Verdict,
 } from "./types";
 import { CRITERIA, EVENT_TYPES, verdictAllowed } from "./types";
 
@@ -98,6 +98,16 @@ export async function getTrace(id: string): Promise<DecisionTrace> {
 }
 export async function getAnalysis(id: string): Promise<AnalysisArtifact> {
   return (await getJson<AnalysisArtifact>(isFixtures ? fx(`${id}.analysis.json`) : api(`/calls/${id}/analysis`))).data;
+}
+/** Display-only language routing per speaker (scripts/dialect_map.py). Local-run only; null when absent. */
+export async function getDialect(id: string): Promise<DialectEstimate | null> {
+  if (!isLocalRun) return null;
+  try {
+    return (await getJson<DialectEstimate>(api(`/calls/${id}/dialect`))).data;
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404) return null;
+    throw e;
+  }
 }
 /** Display-only speaker roles (scripts/assign_speakers.py). Only the local-run fallback serves them; null when absent. */
 export async function getSpeakers(id: string): Promise<SpeakerRoles | null> {
