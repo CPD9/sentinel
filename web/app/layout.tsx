@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import { ThemeProvider } from "next-themes";
+import { DemoBar } from "@/components/shell/demo-bar";
 import { TopNav } from "@/components/shell/nav";
 import "./globals.css";
 
@@ -18,7 +19,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
           <TopNav />
-          <main className="mx-auto max-w-[1600px] px-4 pb-10 pt-4 sm:px-6">{children}</main>
+          <main className="mx-auto max-w-[1600px] px-4 pb-24 pt-4 sm:px-6">{children}</main>
+          <DemoBar />
         </ThemeProvider>
       </body>
     </html>

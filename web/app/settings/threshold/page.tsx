@@ -1,7 +1,9 @@
+import { Suspense } from "react";
+import { SkeletonBlock } from "@/components/shell/states";
 import { Tuning } from "@/components/settings/tuning";
 import { SettingsDraftProvider } from "@/lib/settings-draft";
 
-// Tuning renders its own title row, so Reset / Save can sit next to the title.
+// Suspense: Tuning reads ?draft_alarm= (demo path) with useSearchParams.
 export default function Page() {
-  return <SettingsDraftProvider><Tuning /></SettingsDraftProvider>;
+  return <SettingsDraftProvider><Suspense fallback={<SkeletonBlock rows={6} />}><Tuning /></Suspense></SettingsDraftProvider>;
 }
