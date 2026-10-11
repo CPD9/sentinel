@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -104,8 +105,18 @@ def cmd_cv(a) -> int:
         top = np.argsort(-mean)[:3]
         calls.setdefault(cid, {})[role] = {"top3": [{"region": str(clf.classes_[i]), "p": round(float(mean[i]), 4)}
                                                     for i in top]}
+    tops = Counter(r["top3"][0]["region"] for c in calls.values() for r in c.values())
+    region, k = tops.most_common(1)[0]
+    n = sum(tops.values())
+    warning = WARNING
+    if k / n >= 0.5:      # the case voices collapse onto one SwissDial speaker: say so where the number is shown
+        label = json.loads((REPO_ROOT / "config" / "dialect_regions.json").read_text(encoding="utf-8"))[
+            "dialect_regions"].get(region, {}).get("label", region)
+        warning += (f" On the case calls, {k} of {n} speakers come out as {label}: the synthetic voices resemble that "
+                    f"one SwissDial speaker; this is not a dialect finding.")
     RESEARCH_OUT.write_text(json.dumps({"cv_accuracy": res["accuracy"], "cv_ci95": res["ci95"],
-                                        "chance": res["chance"], "warning": WARNING, "calls": calls}, indent=1),
+                                        "chance": res["chance"], "warning": warning, "case_top1": dict(tops),
+                                        "calls": calls}, indent=1),
                             encoding="utf-8")
     print(f"wrote {RESEARCH_OUT} for {len(calls)} calls")
     return 0

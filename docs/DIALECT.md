@@ -28,10 +28,12 @@ A bank deploying this would document it in its processing register and its data 
 
 1. **Speaker turns** come from the display-only speaker roles (`sentinel-runs/speakers/<call_id>.json`,
    pyannote 3.1 + Apertus, 87.3 % of words with the right role; see [RESULTS.md](RESULTS.md)).
-2. **Language ID** ([`scripts/pod_langid.py`](../scripts/pod_langid.py), on the GPU Pod): each speaker's turns of
+2. **Language ID** ([`scripts/pod_langid.py`](../scripts/pod_langid.py), on the GPU Pod or the laptop CPU; the numbers
+   below were run on the laptop CPU, int8, about 35 s per call): each speaker's turns of
    at least 1 s are concatenated and cut into windows of at most 30 s; faster-whisper large-v3-turbo's
    `detect_language` gives a distribution over Whisper's ~100 languages per window; windows are averaged weighted by
-   their speech seconds and collapsed to de / fr / it / en / other.
+   their speech seconds and collapsed to de / fr / it / en / other. For the 18 calls whose speaker roles come from
+   the content-only fallback (no time-stamped turns), the role's transcript segments give the times.
    **Whisper has no Romansh**, so Romansh speech can never be recognised as such (the UI says "not supported").
 3. **Regions** ([`scripts/dialect_map.py`](../scripts/dialect_map.py), [`config/dialect_regions.json`](../config/dialect_regions.json)):
    de → German-speaking, fr → French-speaking, it → Italian-speaking Switzerland, at canton level by majority
@@ -43,13 +45,45 @@ A bank deploying this would document it in its processing register and its data 
    4.7.0 (`2026/ch-combined.json`, code BSD-3-Clause). Geodata: **Bundesamt für Statistik (BFS), GEOSTAT**,
    generalised administrative boundaries, based on swisstopo. No new npm package.
 
-## Validation (measured)
+## Validation (measured, 11 Oct 2026)
 
-*Filled in from `artifacts/metrics/langid_validation.json` after the Pod run.*
+Whisper large-v3-turbo `detect_language`, int8 on the laptop CPU (the same model the pipeline transcribes with), one
+detection per clip; numbers from `artifacts/metrics/langid_validation.json`
+([`scripts/langid_validation.py`](../scripts/langid_validation.py)), 95 % Wilson intervals.
+
+| set | what it tests | correct | 95 % CI |
+|---|---|---|---|
+| FLEURS test, French (`fr_fr`) | French is recognised | **50 / 50** | 92.9–100 % |
+| FLEURS test, Italian (`it_it`) | Italian is recognised | **50 / 50** | 92.9–100 % |
+| FLEURS test, German (`de_de`) | Standard German control | **50 / 50** | 92.9–100 % |
+| SwissDial, 8 dialects × 20 | Swiss German is routed to German | **158 / 160** | 95.6–99.7 % |
+| case calls, per speaker (62 calls × 2) | every case call is Swiss German | **124 / 124** German on top | 97.0–100.0 % |
+
+The two SwissDial misses are the same 1.1–1.3 s sentence (top language Italian / French at p ≈ 0.31): very short
+speech is unreliable, which is why a speaker with little speech gets *low* confidence. FLEURS is clean read speech,
+and the first 50 clips of each test archive (streamed by [`scripts/fetch_fleurs_sample.py`](../scripts/fetch_fleurs_sample.py),
+CC BY 4.0) come from few speakers, so these are easy conditions: they show that French and Italian are recognised at
+all, not how a noisy phone line in Ticino performs.
 
 ## Dialect (research only)
 
-*Filled in from `artifacts/metrics/dialect_swissdial.json` after the Pod run.*
+Whisper large-v3-turbo encoder output, mean-pooled per clip (1280-d), standardised logistic regression over the 8
+SwissDial dialects, 5-fold cross-validation **grouped by sentence** (a sentence is never in training and test),
+95 % CI by bootstrap over sentences ([`scripts/dialect_research.py`](../scripts/dialect_research.py),
+`artifacts/metrics/dialect_swissdial.json`):
+
+| | |
+|---|---|
+| accuracy, held-out sentences | **60.6 %** (97 / 160), 95 % CI 53.8–67.5 % |
+| chance (8 classes) | 12.5 % |
+| best / worst dialect | LU and SG 15 / 20, ZH 8 / 20, AG 7 / 20 |
+
+It is above chance, so the research panel appears, but read the confound below before using the number.
+
+**On the case calls it says nothing about dialect:** applied to the 124 speakers of the 62 case calls, **123 come out
+as St. Gallen** (one as Valais). The synthetic voices all resemble the one SwissDial speaker recorded for St. Gallen;
+the panel's warning says exactly this, computed from the data. This is the confound below made visible, and the reason
+the map shows language only.
 
 **Data:** SwissDial 1.1 as used in the ASR bake-off: 8 dialects (AG, BE, BS, GR, LU, SG, VS, ZH) × 20 parallel
 sentences, **one speaker per dialect**. The case calls carry no canton or dialect tag, and **the case voices are

@@ -1,4 +1,7 @@
-"""Pod-side language ID (and optional Whisper-encoder embeddings) for the language-routing map. Display only.
+"""Language ID (and optional Whisper-encoder embeddings) for the language-routing map. Display only.
+
+Runs on the Pod GPU (default cuda/float16) or on the laptop CPU (--device cpu --compute-type int8, ~35 s per call
+with --embed); the 11 Oct 2026 numbers in docs/DIALECT.md were computed on the laptop CPU while the Pod was down.
 
     # per speaker of each call: speaker turns (sentinel-runs/speakers/<id>.json) -> <out>/<call_id>.json
     python scripts/pod_langid.py calls <inference.json> <speakers_dir> <out_dir> --audio-root /workspace/sentinel [--embed]
@@ -66,6 +69,22 @@ def windows(audio: np.ndarray, turns: list[tuple[float, float]]) -> list[np.ndar
     return [w for w in out if len(w) >= MIN_TURN_S * SR]
 
 
+def role_spans(spk: dict, role: str) -> tuple[list[tuple[float, float]], str]:
+    """(start, end) spans of one role. Time-stamped turns (pyannote + mapping) when the speaker file has them; for the
+    "content only" fallback, which assigns roles per transcript segment, the times of those segments in the transcript
+    the speaker file names (spk["transcript"]["path"], the exact one its segment ids refer to)."""
+    turns = [(t["start_s"], t["end_s"]) for t in spk.get("turns", []) if t.get("role") == role]
+    if turns:
+        return turns, "turns"
+    tp = Path((spk.get("transcript") or {}).get("path", ""))
+    if not tp.is_file():
+        return [], "none"
+    seg = {s["id"]: s for s in json.loads(tp.read_text(encoding="utf-8"))["segments"]}
+    spans = [(seg[s["id"]]["start_s"], seg[s["id"]]["end_s"]) for s in spk.get("segments", [])
+             if s.get("role") == role and s["id"] in seg and seg[s["id"]].get("start_s") is not None]
+    return sorted(spans), "transcript segments"
+
+
 def average(dists: list[dict[str, float]], weights: list[float]) -> dict[str, float]:
     tot = sum(weights)
     out: dict[str, float] = {}
@@ -87,18 +106,19 @@ def cmd_calls(a) -> int:
         if not sp.is_file():
             print(f"{c['call_id']}: no speaker file, skipped", flush=True)
             continue
-        turns = json.loads(sp.read_text(encoding="utf-8")).get("turns", [])
+        spk = json.loads(sp.read_text(encoding="utf-8"))
         p = Path(c["audio_path"])
         audio = decode_audio(str(p if p.is_absolute() else a.audio_root / p), sampling_rate=SR)
         t0 = time.perf_counter()
         speakers = {}
         for role in ("advisor", "customer"):
-            ws = windows(audio, [(t["start_s"], t["end_s"]) for t in turns if t.get("role") == role])
+            spans, source = role_spans(spk, role)
+            ws = windows(audio, spans)
             if not ws:
                 continue
             dists = [detect(model, w) for w in ws]
             secs = [len(w) / SR for w in ws]
-            speakers[role] = {"speech_s": round(sum(secs), 1), "chunks": len(ws),
+            speakers[role] = {"speech_s": round(sum(secs), 1), "chunks": len(ws), "spans_from": source,
                               "probs": {k: round(v, 5) for k, v in average(dists, secs).items() if v >= 1e-5}}
             if a.embed:
                 emb_rows += [(c["call_id"], role, i, embed(model, w)) for i, w in enumerate(ws)]

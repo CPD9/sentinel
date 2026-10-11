@@ -143,3 +143,16 @@ def test_langid_validation_accuracy_and_wilson(tmp_path):
                                                                    "customer": {"probs": {"nl": 0.6, "de": 0.4}}}}))
     c = lv.calls(calls)
     assert (c["speakers"], c["de_on_top"], c["top_language"]) == (2, 1, {"de": 1, "nl": 1})
+
+
+def test_role_spans_fall_back_to_transcript_segments(tmp_path):
+    import pod_langid as pl
+    tr = tmp_path / "t.json"
+    tr.write_text(json.dumps({"segments": [{"id": "S0001", "start_s": 0.0, "end_s": 4.0},
+                                           {"id": "S0002", "start_s": 4.5, "end_s": 9.0}]}))
+    content_only = {"turns": [], "transcript": {"path": str(tr)},
+                    "segments": [{"id": "S0001", "role": "advisor"}, {"id": "S0002", "role": "customer"}]}
+    assert pl.role_spans(content_only, "customer") == ([(4.5, 9.0)], "transcript segments")
+    acoustic = {"turns": [{"start_s": 1.0, "end_s": 3.0, "role": "advisor"}], "segments": []}
+    assert pl.role_spans(acoustic, "advisor") == ([(1.0, 3.0)], "turns")
+    assert pl.role_spans({"turns": [], "transcript": {"path": str(tmp_path / "gone.json")}}, "advisor") == ([], "none")
