@@ -257,6 +257,32 @@ def score_decisions(decisions: dict[str, str], eval_manifest: Path = EVAL_MANIFE
     return out
 
 
+def escalation_auc(scores: dict[str, float], n_resamples: int = 2000, seed: int = 20261011,
+                   eval_manifest: Path = EVAL_MANIFEST) -> dict:
+    """Threshold-free ranking quality of a per-call score for escalation (gold alarm/review vs no_alert): AUC overall
+    with a percentile CI from resampling whole dialogue groups, and AUC per split. 0.5 = chance."""
+    import random
+    labels = _call_labels(_load(eval_manifest))
+    pos = {c: labels[c]["label"] in FLAGGED for c in scores}
+
+    def auc(ids):
+        p = [scores[c] for c in ids if pos[c]]
+        n = [scores[c] for c in ids if not pos[c]]
+        if not p or not n:
+            return None
+        return sum((a > b) + 0.5 * (a == b) for a in p for b in n) / (len(p) * len(n))
+    groups = [[c for c in g["call_ids"] if c in scores] for s in _load(SPLITS_FILE)["splits"].values() for g in s["groups"]]
+    groups = [g for g in groups if g]
+    rng = random.Random(seed)
+    boot = [auc([c for _ in groups for c in groups[rng.randrange(len(groups))]]) for _ in range(n_resamples)]
+    lo, hi = _ci(boot, 0.95)
+    by_split = {}
+    for c in scores:
+        by_split.setdefault(labels[c]["split"], []).append(c)
+    return {"auc": auc(list(scores)), "ci95": [lo, hi], "n": len(scores), "n_positive": sum(pos.values()),
+            "by_split": {k: auc(v) for k, v in sorted(by_split.items())}}
+
+
 def evaluate(pred_path: Path, split: str | None = None, eval_manifest: Path = EVAL_MANIFEST) -> dict:
     if not pred_path.is_file():
         raise SystemExit(f"no predictions at {pred_path}")

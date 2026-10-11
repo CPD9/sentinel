@@ -17,6 +17,9 @@ _PATH_TEXT = {
     "alarm": "a rule hit reached the alarm threshold with validated evidence",
     "review_band": "risk is in the review band",
     "no_alert": "no rule reached the review threshold",
+    "judge_alarm": "the direct judge found a clear violation, backed by a validated citation",
+    "judge_review": "the direct judge found a possible violation (or an alarm without a validated citation)",
+    "judge_no_alert": "the direct judge found no criterion met",
 }
 
 
@@ -38,6 +41,11 @@ def narrate(trace: DecisionTrace, findings: list[Finding]) -> tuple[str, str | N
         elif trace.decision_path == "no_alert":
             change = (f"Risk would have to reach {th.review:.2f} (review) or {th.alarm:.2f} (alarm), "
                       "e.g. through a validated fact supporting a rule.")
+        elif trace.decision_path == "judge_no_alert":
+            change = ("The judge would have to find a criterion met in the transcript (e.g. a disclosed active "
+                      "secret, a split payment to avoid approval); a better transcript of the passage could change it.")
+        elif trace.decision_path == "judge_review":
+            change = "An alarm needs the judge to find a criterion clearly met with a citation that validates."
         elif trace.decision_path == "low_confidence":
             change = f"Confidence would have to reach the gate {th.confidence_gate:.2f} (better audio or ASR)."
         else:

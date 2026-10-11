@@ -147,6 +147,38 @@ def _span(transcript: Transcript, ids: list[str]) -> tuple[float | None, float |
     return min(s.start_s for s in segs), max(s.end_s for s in segs)
 
 
+def run_judge(transcript: Transcript):
+    """(JudgeResult | None, errors): the S4 direct judge with validated citations (pipeline/judge.py)."""
+    from pipeline import judge
+    try:
+        return judge.judge_call(transcript), []
+    except Exception as exc:
+        return None, _err("judge", exc)
+
+
+def judge_findings(result, transcript: Transcript) -> list[Finding]:
+    """The judge's verdict as one finding whose evidence is its VALIDATED citations (they drive the snippets)."""
+    if result.decision == "no_alert":
+        return []
+    text = {s.id: s.text for s in transcript.segments}
+    ev = []
+    for c in result.valid_citations:
+        s, e = _span(transcript, c.segment_ids)
+        ev.append(Evidence(segment_ids=list(c.segment_ids), speaker=c.speaker,
+                           text=c.quote or " ".join(text.get(i, "") for i in c.segment_ids), start_s=s, end_s=e))
+    return [Finding(result.criterion, result.risk, f"Direct judge: {result.reason}", ev, [])]
+
+
+def apply_judge(trace: DecisionTrace, result) -> None:
+    """The judge's verdict decides (decision_source "direct_judge"): an alarm needs >= 1 validated citation, else it
+    is a review, never an alarm; so is an alarm below the confidence gate. Facts, rules and the confidence breakdown stay in the trace as the why."""
+    decision = result.decision
+    low_conf = trace.confidence is None or trace.confidence < trace.thresholds.confidence_gate
+    if decision == "alarm" and (not result.valid_citations or low_conf):
+        decision = "review"                   # never a confident alarm without validated evidence and confidence
+    trace.decision, trace.decision_path, trace.risk_score = decision, f"judge_{decision}", result.risk
+
+
 def build_findings(trace: DecisionTrace, transcript: Transcript) -> list[Finding]:
     """Rules with risk > 0 -> findings, risk-descending. Evidence comes from the rule's valid facts (counter acts go
     to counter_evidence), else from keyword hits (so a keyword-only risk still points at the passage)."""

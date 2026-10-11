@@ -494,6 +494,8 @@ CONFIDENCE_COMPONENTS = ("asr", "threshold_proximity", "conflicts", "missing_evi
 DECISION_PATHS = {
     "stage_error": "review", "missing_evidence": "review", "contradictory_evidence": "review",
     "low_confidence": "review", "alarm": "alarm", "review_band": "review", "no_alert": "no_alert",
+    # decision_source "direct_judge" (config/thresholds.json): the S4 judge's verdict decides; facts/rules stay as the why
+    "judge_alarm": "alarm", "judge_review": "review", "judge_no_alert": "no_alert",
 }
 
 
@@ -867,7 +869,7 @@ class AnalysisArtifact(_Artifact):
 VARIANTS = ("clean", "noisy", "unspecified")
 CALL_STATUSES = ("queued", "processing", "done", "error")
 STAGES = ("upload", "asr", "diarize", "keywords", "extract", "validate", "rules", "confidence",
-          "decide", "narrate", "snippets", "analysis", "trigger")
+          "decide", "narrate", "snippets", "analysis", "trigger", "judge")
 EVENT_TYPES = ("job_queued", "stage_started", "stage_finished", "stage_failed", "job_finished")
 
 
