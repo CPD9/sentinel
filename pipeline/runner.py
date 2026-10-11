@@ -200,7 +200,7 @@ def _run(audio_path, call_id, ev: _Events, P, mode, no_llm, config, do_trigger) 
         ev.emit("stage_finished", stage=name, elapsed_s=round(trace.timings_s.get(name, 0.0), 3))
 
     judged = None
-    if not errors and _decision_source() == "direct_judge":
+    if not errors and not no_llm and _decision_source() == "direct_judge":     # --no-llm: never call the judge
         judged, errs = ev.stage("judge", lambda: stages.run_judge(transcript))
         errors += errs
         if judged is not None:
