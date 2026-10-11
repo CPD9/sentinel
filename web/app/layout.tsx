@@ -3,6 +3,7 @@ import localFont from "next/font/local";
 import { ThemeProvider } from "next-themes";
 import { DemoBar } from "@/components/shell/demo-bar";
 import { TopNav } from "@/components/shell/nav";
+import { ThemeFromUrl } from "@/components/shell/theme-from-url";
 import "./globals.css";
 
 // Instrument Sans (SIL Open Font License, see app/fonts/OFL.txt), shipped in the repo: no font is fetched from the internet.
@@ -18,6 +19,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className={sans.variable} suppressHydrationWarning>
       <body>
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
+          <ThemeFromUrl />
           <TopNav />
           <main className="mx-auto max-w-[1600px] px-4 pb-24 pt-4 sm:px-6">{children}</main>
           <DemoBar />

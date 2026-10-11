@@ -107,43 +107,37 @@ function Report({ r }: { r: QualityReport }) {
         </div>
       </Panel>
 
-      <Panel title="Ablations" desc="Escalation recall: keyword-only vs LLM-only vs combined, on reference and ASR transcripts.">{r.ablations.length ? <AblationChart items={r.ablations} /> : hidden("Ablations")}</Panel>
-      <div className="grid gap-4 lg:grid-cols-2">
+      {r.ablations.length > 0 && <Panel title="Ablations" desc="Escalation recall: keyword-only vs LLM-only vs combined, on reference and ASR transcripts."><AblationChart items={r.ablations} /></Panel>}
+      {r.evidence_validity && (
         <Panel title="Evidence validity" desc="Flagged passages with valid segment refs, timestamps inside the audio and a playable snippet.">
-          {r.evidence_validity ? (
-            <div className="space-y-2">
-              <p className="text-sm"><b className="tabular text-lg">{pct(r.evidence_validity.item_validity_rate, 1)}</b> of {r.evidence_validity.n_items} passages fully valid ({r.evidence_validity.n_valid_items})</p>
-              {Object.entries(r.evidence_validity.per_check_pass_rate).map(([k, v]) => (
-                <div key={k} className="grid grid-cols-[10rem_1fr_3.5rem] items-center gap-2 text-sm"><span>{humanize(k)}</span><div className="h-2 rounded-full bg-muted"><div className="h-2 rounded-full bg-ok" style={{ width: `${v * 100}%` }} /></div><span className="tabular text-right text-xs">{pct(v, 1)}</span></div>
-              ))}
-              {r.evidence_validity.checks_skipped.length > 0 && <div className="rounded-md bg-muted p-2 text-xs"><b>Checks skipped:</b><ul className="list-disc pl-4">{r.evidence_validity.checks_skipped.map((c) => <li key={c}>{c}</li>)}</ul></div>}
-            </div>
-          ) : hidden("Evidence validity")}
+          <div className="space-y-2">
+            <p className="text-sm"><b className="tabular text-lg">{pct(r.evidence_validity.item_validity_rate, 1)}</b> of {r.evidence_validity.n_items} passages fully valid ({r.evidence_validity.n_valid_items})</p>
+            {Object.entries(r.evidence_validity.per_check_pass_rate).map(([k, v]) => (
+              <div key={k} className="grid grid-cols-[10rem_1fr_3.5rem] items-center gap-2 text-sm"><span>{humanize(k)}</span><div className="h-2 rounded-full bg-muted"><div className="h-2 rounded-full bg-ok" style={{ width: `${v * 100}%` }} /></div><span className="tabular text-right text-xs">{pct(v, 1)}</span></div>
+            ))}
+            {r.evidence_validity.checks_skipped.length > 0 && <div className="rounded-md bg-muted p-2 text-xs"><b>Checks skipped:</b><ul className="list-disc pl-4">{r.evidence_validity.checks_skipped.map((c) => <li key={c}>{c}</li>)}</ul></div>}
+          </div>
         </Panel>
-      </div>
-      <details className="group space-y-4">
-        <summary className="flex cursor-pointer list-none items-center gap-2 rounded-2xl border border-border bg-card/40 px-4 py-3 text-sm font-semibold [&::-webkit-details-marker]:hidden">
-          <ChevronRight className="size-4 transition-transform group-open:rotate-90 motion-reduce:transition-none" aria-hidden />
-          More analysis <span className="font-normal text-muted-foreground">· threshold curves, confidence reliability, transcript quality vs recall, speed per step</span>
-        </summary>
-        <div className="space-y-4 pt-4">
-      <Panel title="Threshold curves" desc="Precision and recall as one threshold moves; the marker is the value used in this run.">
-        {r.threshold_curves.length === 0 ? hidden("Threshold curves") : (
+      )}
+      {r.threshold_curves.length > 0 && (
+        <Panel title="Threshold curves" desc="Precision and recall as one threshold moves; the marker is the value used in this run.">
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{r.threshold_curves.map((c, i) => (
             <div key={i}><h4 className="mb-1 text-xs font-semibold">{humanize(c.param)} · {humanize(c.convention)}</h4><CurveChart curve={c} /></div>
           ))}</div>
-        )}
-      </Panel>
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Panel title="Confidence reliability" desc="Does a confidence of 80 % mean right 80 % of the time?">{r.reliability ? <ReliabilityDiagram r={r.reliability} /> : hidden("Reliability")}</Panel>
-      </div>
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Panel title="WER vs downstream recall" desc="Does a worse transcript cost recall?">{r.wer_vs_recall.length ? <WerChart bins={r.wer_vs_recall} /> : hidden("WER vs recall")}</Panel>
-        <Panel title="Per-stage latency" desc="Bar = p50, whisker to p95.">{r.latency.length ? <LatencyBars items={r.latency} /> : hidden("Latency")}</Panel>
-      </div>
+        </Panel>
+      )}
+      {(r.reliability || r.wer_vs_recall.length > 0 || r.latency.length > 0) && (
+        <div className="grid gap-4 lg:grid-cols-2">
+          {r.reliability && <Panel title="Confidence reliability" desc="Does a confidence of 80 % mean right 80 % of the time?"><ReliabilityDiagram r={r.reliability} /></Panel>}
+          {r.wer_vs_recall.length > 0 && <Panel title="WER vs downstream recall" desc="Does a worse transcript cost recall?"><WerChart bins={r.wer_vs_recall} /></Panel>}
+          {r.latency.length > 0 && <Panel title="Per-stage latency" desc="Bar = p50, whisker to p95."><LatencyBars items={r.latency} /></Panel>}
         </div>
-      </details>
+      )}
+      {(() => {
+        const missing = [r.ablations.length ? null : "ablations", r.threshold_curves.length ? null : "threshold curves", r.reliability ? null : "confidence reliability",
+          r.wer_vs_recall.length ? null : "transcript quality vs recall", r.latency.length ? null : "speed per step", r.evidence_validity ? null : "evidence validity"].filter(Boolean);
+        return missing.length ? <p className="text-xs text-muted-foreground">Not computed for this report: {missing.join(", ")}.</p> : null;
+      })()}
       {r.notes.length > 0 && <ul className="list-disc pl-5 text-xs text-muted-foreground">{r.notes.map((n, i) => <li key={i}>{n}</li>)}</ul>}
     </div>
   );

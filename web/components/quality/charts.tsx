@@ -1,5 +1,5 @@
 "use client";
-import { Bar, BarChart, CartesianGrid, ErrorBar, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, LabelList, CartesianGrid, ErrorBar, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { fmtMetric, fmtSeconds, pct } from "@/lib/format";
 import type { Ablation, ConventionSet, Metric, Reliability, StageLatency, WerBin } from "@/lib/types";
 
@@ -30,7 +30,11 @@ export function GroupBars({ groups, metric, label }: { groups: Record<string, Co
             <XAxis dataKey="name" tick={AX} interval={0} />
             <YAxis domain={[0, 1]} tick={AX} width={52} label={{ value: "score (0–1)", angle: -90, position: "insideLeft", offset: 6, style: { textAnchor: "middle" }, fill: "var(--axis)", fontSize: 11 }} />
             <Tooltip contentStyle={TIP} formatter={(v) => (typeof v === "number" ? v.toFixed(2) : "n/a")} />
-            <Bar dataKey="value" fill="var(--c-insider_trading)" isAnimationActive={false} maxBarSize={56}><ErrorBar dataKey="err" stroke="var(--foreground)" width={6} strokeWidth={1.5} /></Bar>
+            <Bar dataKey="value" fill="var(--c-insider_trading)" isAnimationActive={false} maxBarSize={56} minPointSize={2}>
+              <ErrorBar dataKey="err" stroke="var(--foreground)" width={6} strokeWidth={1.5} />
+              {/* the value on every bar, so a measured 0.00 reads as a result, not as an empty chart */}
+              <LabelList dataKey="value" position="top" formatter={(v: unknown) => (typeof v === "number" ? v.toFixed(2) : "n/a")} style={{ fill: "var(--foreground)", fontSize: 12 }} />
+            </Bar>
           </BarChart>
         </ResponsiveContainer>
       </div>

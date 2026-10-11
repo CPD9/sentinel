@@ -11,7 +11,7 @@ import { DecisionBadge } from "@/components/shell/badges";
 import { ErrorCard, SkeletonBlock } from "@/components/shell/states";
 import { InfoTip } from "@/components/ui/info-tip";
 import { Tween } from "@/components/ui/tween";
-import { ApiError, getCalls, getQualityReport, getQualityReports, getThresholds, isFixtures, isLocalRun, saveDraft } from "@/lib/data";
+import { ApiError, getCalls, getQualityReport, getQualityReports, getSuggestions, getThresholds, isFixtures, isLocalRun, saveDraft } from "@/lib/data";
 import { DECISION_LABEL, score } from "@/lib/explain";
 import type { Term } from "@/lib/glossary";
 import { useSettingsDraft } from "@/lib/settings-draft";
@@ -33,6 +33,7 @@ const DECIDED = (c: CallListItem) => (c.status === "done" || c.status === "error
 export function Tuning() {
   const saved = useAsync(getThresholds, "thresholds");
   const calls = useAsync(getCalls, "calls");
+  const suggestions = useAsync(() => getSuggestions(), "tuning-suggestions-probe");
   const report = useAsync(async () => { const r = await getQualityReports(); return r.length ? getQualityReport(r[0].report_id) : null; }, "tuning-report");
   const { draft: d, setThreshold, loadPatch, reset, toPatch } = useSettingsDraft();
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -133,16 +134,15 @@ export function Tuning() {
 
       <OutcomeCounts />
 
-      {/* the trade-off, quieter */}
-      <section aria-labelledby="tradeoff-h" className="surface-tint space-y-2 rounded-2xl p-5">
+      {/* the trade-off, only when a curve exists: an empty chart is a stagnant control */}
+      {curve && <section aria-labelledby="tradeoff-h" className="surface-tint space-y-2 rounded-2xl p-5">
         <h3 id="tradeoff-h" className="text-sm font-semibold">How strictness trades off on the test set</h3>
         <p className="flex flex-wrap items-center gap-x-1 text-xs text-muted-foreground">
           Precision<InfoTip term="precision" /> and recall<InfoTip term="recall" /> at every alert line
           {report.data ? `, measured on ${report.data.overall.n} ${report.data.split} calls${report.data.is_mock ? " (MOCK curve)" : ""}` : ""}. The solid line is your draft.
         </p>
-        {curve ? <CurveChart curve={curve} dragged={draft.alarm} />
-          : report.status === "loading" ? <div className="skeleton h-24" /> : <p className="text-sm text-muted-foreground">No curve yet: it appears after the first evaluation run.</p>}
-      </section>
+        <CurveChart curve={curve} dragged={draft.alarm} />
+      </section>}
 
       <Fold title="Advanced" hint={`review line ${score(draft.review)}, confidence gate ${score(draft.confidence_gate)}`}>
         <div className="grid gap-6 md:grid-cols-2">
@@ -150,13 +150,20 @@ export function Tuning() {
           <SmallSlider k="confidence_gate" term="confidence_gate" title="Confidence gate" help="Below this confidence, a call with some risk always goes to a person." value={draft.confidence_gate} saved={saved.data.confidence_gate} onChange={(v) => set("confidence_gate", v)} />
         </div>
       </Fold>
-      <Fold title="Suggested changes from your feedback" hint="built from calls you marked as false alarm, missed or correct">
-        <SuggestionsCard bare key={epoch} activePatch={patch} onPreview={(p: Patch) => { setMsg(null); setApplied(null); loadPatch(saved.data!, p); }}
-          onApplied={(message) => { setApplied(message); setMsg(null); reset(); saved.reload(); calls.reload(); setEpoch((e) => e + 1); }} />
-      </Fold>
-      <Fold title="Change log" hint="who changed the settings, when, and what">
-        <AuditLog bare refreshKey={epoch} />
-      </Fold>
+      {/* Suggestions need the API's suggestion search; the change log needs saving. Neither exists in the read-only local
+          run, so they are not shown there (never a dead control). */}
+      {!isLocalRun && suggestions.status !== "error" && (
+        <Fold title="Suggested changes from your feedback" hint="built from calls you marked as false alarm, missed or correct">
+          <SuggestionsCard bare key={epoch} activePatch={patch} onPreview={(p: Patch) => { setMsg(null); setApplied(null); loadPatch(saved.data!, p); }}
+            onApplied={(message) => { setApplied(message); setMsg(null); reset(); saved.reload(); calls.reload(); setEpoch((e) => e + 1); }} />
+        </Fold>
+      )}
+      {!readOnly && (
+        <Fold title="Change log" hint="who changed the settings, when, and what">
+          <AuditLog bare refreshKey={epoch} />
+        </Fold>
+      )}
+      {isLocalRun && <p className="text-xs text-muted-foreground">Read-only local run: suggestions from officer feedback and the change log need the API with saving; they appear there.</p>}
     </div>
   );
 }

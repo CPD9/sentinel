@@ -34,7 +34,11 @@ export function ThresholdTrack({ id, value, saved, review, calls, after, onChang
     pin.segs.push({ c, d: after.get(c.call_id) ?? c.decision, changed: after.has(c.call_id) });
     pins.set(bucket, pin);
   }
-  const tallest = Math.max(1, ...[...pins.values()].map((p) => p.segs.length));
+  // a pin shows at most MAX_SEGS calls, changed ones first; the rest is a "+N" count (53 no-alert calls at risk 0 would
+  // otherwise stretch the whole card)
+  const MAX_SEGS = 12;
+  for (const p of pins.values()) p.segs.sort((x, y) => Number(y.changed) - Number(x.changed));
+  const tallest = Math.max(1, ...[...pins.values()].map((p) => Math.min(p.segs.length, MAX_SEGS) + (p.segs.length > MAX_SEGS ? 1.6 : 0)));
   const laneH = 4 + tallest * (SEG + GAP);
 
   return (
@@ -45,10 +49,11 @@ export function ThresholdTrack({ id, value, saved, review, calls, after, onChang
         {[...pins.values()].map((p) => (
           <div key={p.risk} className="absolute flex -translate-x-1/2 flex-col items-center" style={{ left: at(p.risk), top: TRACK_BOTTOM + 1, gap: GAP }}
             title={p.segs.map((s) => `${s.c.call_id}: risk ${pct(s.c.risk_score)}, ${s.changed ? `would become ${LABEL[s.d]}` : LABEL[s.d]}`).join("\n")}>
-            {p.segs.map((s) => (
+            {p.segs.slice(0, MAX_SEGS).map((s) => (
               <span key={s.c.call_id} className="call-dot block w-1.5 rounded-sm"
                 style={{ height: SEG, background: COLOUR[s.d], boxShadow: s.changed ? "0 0 0 1.5px var(--primary)" : undefined }} />
             ))}
+            {p.segs.length > MAX_SEGS && <span className="tabular text-[10px] leading-none text-muted-foreground">+{p.segs.length - MAX_SEGS}</span>}
           </div>
         ))}
         <span aria-hidden title={`saved ${pct(saved)}`} className="absolute top-1/2 h-3 w-0.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-foreground/50" style={{ left: at(saved) }} />
