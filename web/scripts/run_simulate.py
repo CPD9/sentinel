@@ -36,7 +36,9 @@ def main() -> None:
         (view / "transcripts").symlink_to(artifacts / f"transcripts{suffix}")
         if (artifacts / "analysis").exists():
             (view / "analysis").symlink_to(artifacts / "analysis")
-        sim = sm.Simulator(sm.load_inputs(view, out_dir))
+        # only the calls of this run: shared artifacts may also hold traces of other runs (e.g. a test on a renamed WAV)
+        ids = {p.stem for p in (out_dir / "results").glob("*.json")}
+        sim = sm.Simulator([i for i in sm.load_inputs(view, out_dir) if not ids or i.call_id in ids])
         print(json.dumps({"ready": len(sim.inputs)}), flush=True)
         for line in sys.stdin:
             try:

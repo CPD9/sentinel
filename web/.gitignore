@@ -4,3 +4,5 @@ next-env.d.ts
 public/fixtures/
 .env.local
 *.tsbuildinfo
+demo-recording.webm
+demo-shots/
