@@ -354,6 +354,19 @@ def test_providers_yaml_contract():
     assert not re.search(r"sk-[A-Za-z0-9]|Bearer |api[_-]?key\s*:\s*\S", text)       # env names only
 
 
+def test_builder_pod_qwen_self_hosted(monkeypatch):
+    n = net(monkeypatch, plain("ok"))
+    monkeypatch.delenv("SENTINEL_ALLOW_REMOTE_LLM", raising=False)
+    spec = load_providers()[1]["builder_pod_qwen"]
+    assert spec.self_hosted and spec.model == "qwen-32b" and not spec.key_env
+    assert spec.base_url == "http://127.0.0.1:8002/v1"                  # laptop 8001 is the API, not the tunnel
+    check_permitted(spec, spec.model)                                    # no remote gate for a self-hosted provider
+    c = get_client("builder_pod_qwen")
+    assert c.model == "qwen-32b" and c.chat(MSG, stream=False) == "ok"
+    assert n.calls[0]["url"] == "http://127.0.0.1:8002/v1/chat/completions"
+    assert "Authorization" not in n.calls[0]["headers"]
+
+
 def test_infomaniak_url_placeholder(monkeypatch):
     s = load_providers()[1]["infomaniak"]
     with pytest.raises(LLMError, match="INFOMANIAK_PRODUCT_ID"):
