@@ -4,11 +4,15 @@
 export const DEMO_ALERT = process.env.NEXT_PUBLIC_DEMO_ALERT || "call_022";   // an alert with snippets in the final ASR run
 export const DEMO_HARMLESS = process.env.NEXT_PUBLIC_DEMO_HARMLESS || "call_026";
 
-export interface DemoStep { href: string; moment: string; title: string; say: string }
+export interface DemoStep { href: string; moment: string; title: string; say: string; live?: string }
+
+/** Optional proof of "no manual steps" for moment 1: one live run in a terminal on a renamed WAV (a new neutral id,
+ *  so the shared artifacts of the recorded run are untouched). The recorded replay is the default. */
+export const LIVE_RUN = "mkdir -p /tmp/live && cp <dev wav> /tmp/live/demo_call.wav && ASR_MODEL_PATH=mobiuslabsgmbh/faster-whisper-large-v3-turbo ./run.sh /tmp/live --transcripts asr --out /tmp/live-out";
 
 export const DEMO_STEPS: DemoStep[] = [
   { href: "/overview", moment: "Start", title: "Every call, checked", say: "Every Swiss German call is checked, not a sample. This is today's result." },
-  { href: `/calls/${DEMO_ALERT}/processing`, moment: "Moment 1", title: "From audio to alert", say: "One call through every step, with what each step produced." },
+  { href: `/calls/${DEMO_ALERT}/processing`, moment: "Moment 1", title: "From audio to alert (recorded replay)", say: "One call through every step, with what each step produced. Optional: the same pipeline live in the terminal.", live: LIVE_RUN },
   { href: `/calls/${DEMO_ALERT}`, moment: "Moment 1", title: "The alert and its evidence", say: "Reason, risk against the line, the passage, the facts behind it. Click a fact." },
   { href: "/settings/threshold?draft_alarm=0.5", moment: "Moment 2", title: "One threshold, visible effect", say: "Cautious lowers the alert line: watch calls move from Review to Alert. Nothing is saved." },
   { href: "/settings/keywords", moment: "Moment 2", title: "Keywords without code", say: "Add a word to a family: its hit count and the calls it changes appear at once." },

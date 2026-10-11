@@ -34,7 +34,16 @@ export function DemoBar() {
   if (step == null) return null;
   const s = DEMO_STEPS[step];
   return (
-    <div role="region" aria-label="Demo path" className="fixed inset-x-0 bottom-4 z-50 flex justify-center px-4">
+    <div role="region" aria-label="Demo path" className="fixed inset-x-0 bottom-4 z-50 flex flex-col items-center gap-2 px-4">
+      {s.live && (
+        <details className="elevated max-w-4xl rounded-2xl border border-border px-4 py-2 text-xs">
+          <summary className="cursor-pointer text-muted-foreground">Optional: run it live in the terminal (~1 min per call)</summary>
+          <div className="mt-2 flex items-start gap-2">
+            <code className="block min-w-0 flex-1 break-all font-mono">{s.live}</code>
+            <button type="button" onClick={() => void navigator.clipboard?.writeText(s.live!).catch(() => {})} className="shrink-0 rounded-full border border-border px-2 py-0.5 hover:bg-muted">copy</button>
+          </div>
+        </details>
+      )}
       <div className="elevated flex max-w-4xl items-center gap-4 rounded-full border border-border px-4 py-2 text-sm">
         <button type="button" onClick={() => go(step - 1)} disabled={step === 0} aria-label="Previous step" className="rounded-full p-1 hover:bg-muted disabled:opacity-30"><ChevronLeft className="size-4" /></button>
         <ol className="flex items-center gap-1.5" aria-label={`Step ${step + 1} of ${DEMO_STEPS.length}`}>
