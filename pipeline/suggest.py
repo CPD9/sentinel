@@ -85,7 +85,7 @@ class _Search:
 
     def singles(self) -> list[_Cand]:
         patches = []
-        for k in THRESHOLD_KEYS:
+        for k in THRESHOLD_KEYS[:3]:                     # the numeric thresholds (keyword_review is a switch)
             cur = round(getattr(self.cur, k), 2)
             patches += [{"thresholds": {k: v}} for v in (round(i / 100, 2) for i in range(101)) if v != cur]
         patches += [{"keywords": {"disable_families": [f]}} for f in sorted(self.sim.raw.keywords.get("families") or {})]

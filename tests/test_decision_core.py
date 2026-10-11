@@ -8,13 +8,15 @@ import pytest
 import yaml
 
 from pipeline import llm
-from pipeline.decide import Config, config_from_dicts, decide_call, load_config, with_thresholds
+from pipeline.decide import Config, config_from_dicts, decide_call, judge_decide, load_config, with_thresholds
 from pipeline.keywords import ConfigError, find_hits
 from pipeline.rules import parse_rules
 from pipeline.schemas import (AnalysisArtifact, DecisionTrace, Fact, StageError, Transcript, TranscriptSegment)
 
 CONFIG_DIR = Path(__file__).parents[1] / "config"
 CFG = load_config()
+# The shipped review threshold (0.20) is calibrated for the direct judge's risk; facts -> rules was calibrated at 0.30.
+RULES_CFG = with_thresholds(CFG, review=0.3)
 
 TEXTS = {
     "s001": ("advisor", "Grüezi, Bank Lindenhof."),
@@ -179,7 +181,7 @@ def test_every_trace_validates_and_matches_paths(name):
 def test_counter_evidence_lowers_risk():
     asked = fact("F1", "customer", "request", "credentials", ["s002"])
     alone = run([asked]).risk_score
-    refused = run([asked, fact("F2", "advisor", "refuse", "credentials", ["s003"])])
+    refused = run([asked, fact("F2", "advisor", "refuse", "credentials", ["s003"])], config=RULES_CFG)
     assert refused.risk_score < alone
     assert refused.decision == "no_alert"
     own = fact("F1", "customer", "request", "credentials", ["s002"], counter_evidence="joked")
@@ -328,7 +330,7 @@ def test_mock_fixture_facts_reproduce_the_mock_decision(n, expected):
     tr = Transcript.from_dict(json.loads((FIX / f"call_MOCK_{n}.transcript.json").read_text()))
     an = AnalysisArtifact.from_dict(json.loads((FIX / f"call_MOCK_{n}.analysis.json").read_text()))
     facts = [Fact(**f) for f in json.loads((FIX / f"call_MOCK_{n}.trace.json").read_text())["facts"]]
-    assert decide_call(tr, facts, an, CFG).decision == expected
+    assert decide_call(tr, facts, an, RULES_CFG).decision == expected
 
 
 def test_rules_version_changes_with_any_threshold_or_confidence_edit():
@@ -343,3 +345,53 @@ def test_rules_version_changes_with_any_threshold_or_confidence_edit():
         edit(th2)
         assert config_from_dicts(kws, rules, th2).rules_version != base
     assert config_from_dicts(kws, rules, copy.deepcopy(th)).rules_version == base
+
+
+@pytest.mark.parametrize("floor", [0.35, 0.69, 0.95, 1.0])
+def test_asr_keyword_floor_reaches_review_never_alarm(floor):
+    kwd, rules, th = raw()
+    rules = copy.deepcopy(rules)
+    rules["defaults"]["keyword_only_risk_asr"] = floor
+    cfg = config_from_dicts(kwd, rules, th)
+    t = transcript()
+    hits = find_hits(t, cfg.keywords)
+    assert hits, "the test transcript must contain keyword hits"
+    tr = decide_call(t, [], None, cfg)                       # keywords only, no supporting fact
+    assert tr.decision == "review" and tr.decision != "alarm"
+    off = decide_call(t, [], None, CFG)                      # shipped config: floor off -> keyword_only_risk only
+    assert off.risk_score < tr.risk_score
+    ref = Transcript(call_id="call_T", mode="reference", segments=[*t.segments])
+    assert decide_call(ref, [], None, cfg).risk_score == off.risk_score    # reference mode ignores the ASR floor
+
+
+def _judge(risk, valid=True):
+    return {"risk": risk, "citations": [{"valid": valid}] if valid is not None else []}
+
+
+def test_judge_thresholds_decide_and_alarm_needs_a_validated_citation():
+    cfg = config_from_dicts(*raw()[:2], {**raw()[2], "decision_source": "direct_judge"})
+    t = transcript()
+    base = lambda: decide_call(t, [], None, cfg)
+    assert judge_decide(base(), _judge(0.9), cfg).decision == "alarm"
+    assert judge_decide(base(), _judge(0.9, valid=False), cfg).decision_path == "judge_review"   # never alarm uncited
+    assert judge_decide(base(), _judge(0.3), cfg).decision == "review"
+    assert judge_decide(base(), _judge(0.0), cfg).decision == "no_alert"
+    low = with_thresholds(cfg, review=0.05)
+    assert judge_decide(decide_call(t, [], None, low), _judge(0.1), low).decision == "review"     # the threshold moves it
+
+
+def test_keyword_review_raises_to_review_never_alarm_and_is_configurable():
+    kwd, rules, th = raw()
+    off = config_from_dicts(kwd, rules, {**th, "decision_source": "direct_judge", "keyword_review": {"enabled": False}})
+    on = config_from_dicts(kwd, rules, {**th, "decision_source": "direct_judge",
+                                        "keyword_review": {"enabled": True, "min_segments": 1}})
+    t = transcript()
+    assert find_hits(t, on.keywords)
+    assert judge_decide(decide_call(t, [], None, off), _judge(0.0), off).decision == "no_alert"
+    tr = judge_decide(decide_call(t, [], None, on), _judge(0.0), on)
+    assert tr.decision == "review" and tr.decision_path == "keyword_review"
+    no_kw = config_from_dicts({**kwd, "families": {}}, rules, {**th, "decision_source": "direct_judge",
+                                                              "keyword_review": {"enabled": True, "min_segments": 1}})
+    assert judge_decide(decide_call(t, [], None, no_kw), _judge(0.0), no_kw).decision == "no_alert"   # keyword edit, no LLM
+    with pytest.raises(ConfigError):
+        config_from_dicts(kwd, rules, {**th, "keyword_review": {"enabled": "yes"}})

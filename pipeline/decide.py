@@ -42,6 +42,9 @@ class Config:
     thresholds: Thresholds
     confidence: conf.ConfidenceParams
     rules_version: str
+    decision_source: str = "rules"              # "direct_judge": thresholds apply to the cached S4 judge risk
+    keyword_review: bool = False                # judge mode: keyword hits alone may raise a call to review
+    keyword_review_min_segments: int = 2        # ... when one family has hits in at least this many segments
 
 
 def config_from_dicts(keywords: dict, rules: dict, thresholds: dict) -> Config:
@@ -52,10 +55,51 @@ def config_from_dicts(keywords: dict, rules: dict, thresholds: dict) -> Config:
         errs.append("thresholds: need review < alarm")
     if errs:
         raise ConfigError(errs)
+    src = thresholds.get("decision_source", "rules")
+    if src not in ("rules", "direct_judge"):
+        errs.append(f"thresholds.decision_source {src!r}: use 'rules' or 'direct_judge'")
+    kr = thresholds.get("keyword_review") or {}
+    if not isinstance(kr, dict) or not isinstance(kr.get("enabled", False), bool) \
+            or not (isinstance(kr.get("min_segments", 2), int) and kr.get("min_segments", 2) >= 1):
+        errs.append("thresholds.keyword_review: {enabled: bool, min_segments: int >= 1}")
+        kr = {}
+    if errs:
+        raise ConfigError(errs)
     digest = hashlib.sha256(json.dumps([rules, keywords, thresholds], sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:8]
     rc = rl.parse_rules(rules)
     return Config(kw.parse_keywords(keywords), rc, Thresholds(float(t["alarm"]), float(t["review"]), float(t["confidence_gate"])),
-                  conf.parse_confidence(thresholds.get("confidence") or {}), f"{rc.version}+{digest}")
+                  conf.parse_confidence(thresholds.get("confidence") or {}), f"{rc.version}+{digest}",
+                  src, bool(kr.get("enabled", False)), int(kr.get("min_segments", 2)))
+
+
+def judge_decide(trace: DecisionTrace, judge: dict, config: Config) -> DecisionTrace:
+    """decision_source "direct_judge": decide from the cached S4 judge result (pipeline/judge.py, JudgeResult.to_dict())
+    with the adjustable thresholds. Pure, CPU only: the what-if simulator re-decides 62 calls in milliseconds.
+      alarm   judge risk >= alarm AND >= 1 validated citation AND confidence >= gate
+      review  judge risk >= review (an alarm-level risk without a validated citation or confidence lands here)
+      review  keyword_review on and one keyword family hit in >= min_segments segments (never an alarm)
+      no_alert otherwise
+    A call whose stages failed stays as decide_call left it (review). Facts and rules stay in the trace as the why."""
+    if trace.decision_path == "stage_error":
+        return trace
+    th = trace.thresholds
+    risk = float(judge.get("risk") or 0.0)
+    cited = any(c.get("valid") for c in judge.get("citations") or [])
+    conf_ok = trace.confidence is not None and trace.confidence >= th.confidence_gate
+    segs: dict[str, set] = {}
+    for h in trace.keyword_hits:
+        segs.setdefault(h.family, set()).add(h.segment_id)
+    if risk >= th.alarm and cited and conf_ok:
+        path = "judge_alarm"
+    elif risk >= th.review:
+        path = "judge_review"
+    elif config.keyword_review and max((len(v) for v in segs.values()), default=0) >= config.keyword_review_min_segments:
+        path = "keyword_review"
+    else:
+        path = "judge_no_alert"
+    trace.decision_path, trace.decision, trace.risk_score = path, ("alarm" if path == "judge_alarm" else
+                                                                   "no_alert" if path == "judge_no_alert" else "review"), risk
+    return trace
 
 
 def load_config(config_dir: Path = CONFIG_DIR) -> Config:

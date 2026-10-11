@@ -179,10 +179,53 @@ def cache_key(audio_sha: str, asr_model: str, device: str, compute_type: str, de
 
 # --------------------------------------------------------------------------- conversion
 
-def to_transcript(call_id: str, raw: dict, duration_s: float, asr_model: str) -> Transcript:
+# Whisper segments run over several turns (median 10 words, often a question AND its answer), so the extractor
+# cannot cite one utterance. Post-decode re-segmentation into sentence-sized pieces from the word timestamps:
+# cut after sentence-final punctuation, at a pause >= PAUSE_S, or at MAX_WORDS. Times are the words' own, so snippets
+# stay exact. It runs on the cached decode (the decode cache key is unchanged); the version is part of asr_model, and
+# the new segment texts give every extraction request a new cache key.
+SEGMENTATION_VERSION = "sent-v1"
+PAUSE_S = 0.6
+MAX_WORDS = 25
+_SENTENCE_END = (".", "?", "!", "…")
+
+
+def resegment(raw_segments: list[dict]) -> list[dict]:
+    """Split raw Whisper segments at sentence ends / pauses / MAX_WORDS using word timestamps. A segment without
+    word timestamps is kept as it is. Every piece keeps its parent's avg_logprob and no_speech_prob."""
+    out = []
+    for s in raw_segments:
+        words = [w for w in (s.get("words") or []) if w.get("word", "").strip()]
+        if not words or "".join(w["word"].split() and "".join(w["word"].split()) for w in words) != "".join(s["text"].split()):
+            out.append(s)                 # no or partial word timestamps: keep the segment whole
+            continue
+        cur: list[dict] = []
+
+        def flush():
+            if cur:
+                out.append({"start": cur[0]["start"], "end": cur[-1]["end"],
+                            "text": " ".join(w["word"].strip() for w in cur),
+                            "avg_logprob": s["avg_logprob"], "no_speech_prob": s["no_speech_prob"]})
+                cur.clear()
+        for i, w in enumerate(words):
+            cur.append(w)
+            nxt = words[i + 1] if i + 1 < len(words) else None
+            if (w["word"].strip().endswith(_SENTENCE_END) or len(cur) >= MAX_WORDS
+                    or (nxt is not None and nxt["start"] - w["end"] >= PAUSE_S)):
+                flush()
+        flush()
+    return out
+
+
+def to_transcript(call_id: str, raw: dict, duration_s: float, asr_model: str, *, segment: bool = True) -> Transcript:
     """Clamp times into [0, duration]; drop empty or zero-length segments (noted, never silent)."""
     segs, notes = [], []
-    for s in raw["segments"]:
+    raw_segments = resegment(raw["segments"]) if segment else raw["segments"]
+    if segment:
+        asr_model = f"{asr_model}+{SEGMENTATION_VERSION}"
+        notes.append(f"re-segmented {len(raw['segments'])} -> {len(raw_segments)} segments ({SEGMENTATION_VERSION}: "
+                     f"sentence end, pause >= {PAUSE_S} s, max {MAX_WORDS} words)")
+    for s in raw_segments:
         start, end = max(0.0, s["start"]), min(duration_s, s["end"])
         if not s["text"] or end <= start:
             notes.append(f"dropped segment {s['start']:.2f}-{s['end']:.2f} s "

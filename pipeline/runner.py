@@ -8,6 +8,7 @@ ProcessingEvent-shaped dicts (without `seq`); if it raises, the pipeline logs on
 """
 from __future__ import annotations
 
+import json
 import logging
 import re
 import time
@@ -68,8 +69,16 @@ def _paths(artifacts_dir: Path | None, out_dir: Path | None, mode: str) -> dict[
     o = Path(out_dir) if out_dir else REPO_ROOT / "out"
     sfx = "" if mode == "asr" else "_reference"      # reference runs never overwrite ASR transcripts or traces
     return {"analysis": a / "analysis", "transcripts": a / f"transcripts{sfx}", "traces": a / f"traces{sfx}",
-            "cache": a / "cache" / "asr", "results": o / "results", "snippets": o / "snippets",
+            "cache": a / "cache" / "asr", "results": o / "results", "snippets": o / "snippets", "judge": o / "judge",
             "triggers": o / "triggers"}
+
+
+def _decision_source() -> str:
+    """config/thresholds.json "decision_source": "direct_judge" (S4 decides) or "rules" (facts -> rules, default)."""
+    try:
+        return json.loads((dec.CONFIG_DIR / "thresholds.json").read_text(encoding="utf-8")).get("decision_source", "rules")
+    except Exception:
+        return "rules"
 
 
 def _escalate(trace: DecisionTrace, findings: list[Finding]) -> str:
@@ -190,7 +199,15 @@ def _run(audio_path, call_id, ev: _Events, P, mode, no_llm, config, do_trigger) 
     for name in ("keywords", "rules", "confidence", "decide"):
         ev.emit("stage_finished", stage=name, elapsed_s=round(trace.timings_s.get(name, 0.0), 3))
 
-    findings = stages.build_findings(trace, transcript)
+    judged = None
+    if not errors and not no_llm and _decision_source() == "direct_judge":     # --no-llm: never call the judge
+        judged, errs = ev.stage("judge", lambda: stages.run_judge(transcript))
+        errors += errs
+        if judged is not None:
+            stages.apply_judge(trace, judged, config)
+            write_json_atomic(P["judge"] / f"{call_id}.json", judged.to_dict())
+    findings = (stages.judge_findings(judged, transcript, trace) if judged is not None
+                else stages.build_findings(trace, transcript))
     audio_ok = mode == "asr" and transcript.duration_s is not None
     if trace.decision != "no_alert" and audio_ok:
         _, errs = ev.stage("snippets", lambda: (None, snip.cut_snippets(audio_path, call_id, findings,

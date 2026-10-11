@@ -1,6 +1,6 @@
 {
   "alarm": 0.7,
-  "review": 0.3,
+  "review": 0.2,
   "confidence_gate": 0.5,
   "confidence": {
     "gate_scope": "risky_only",
@@ -22,5 +22,11 @@
       "asr_missing_stats": 0.5
     }
   },
-  "_calibrated": "calibration_20261011T020303Z: grid over dev + Testset_30 ASR-mode traces, objective mean(dev, test) escalation F1 = 0.3908; holdout not used"
+  "_calibrated": "calibration_20261011T020303Z: grid over dev + Testset_30 ASR-mode traces, objective mean(dev, test) escalation F1 = 0.3908; holdout not used",
+  "decision_source": "direct_judge",
+  "_decision_source": "direct_judge (S4, pipeline/judge.py): alarm if the judge's risk >= alarm AND >= 1 validated citation AND confidence >= gate; review if risk >= review; keyword_review (off by default) may raise keyword-only calls to review, never alarm. alarm 0.70 / review 0.20 reproduce the S4 verdicts on all 62 calls. 'rules' restores facts -> rules.",
+  "keyword_review": {
+    "enabled": false,
+    "min_segments": 2
+  }
 }
