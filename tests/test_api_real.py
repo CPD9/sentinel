@@ -125,6 +125,17 @@ def test_settings_start_from_the_run(run):
     assert th["alarm"] == 0.8 and th["review"] == 0.45
 
 
+def test_malformed_rules_yaml_falls_back_to_the_mock_default(run, monkeypatch):
+    # reset() runs when the API module is imported: a YAML syntax error must not stop a real-mode API from starting
+    cfg = run / "config"
+    cfg.mkdir()
+    (cfg / "rules.yaml").write_text("rules: [not closed\n  - criterion: :\n", encoding="utf-8")
+    monkeypatch.setattr(settings, "CONFIG_DIR", cfg)
+    settings.reset()
+    assert settings.current["rules"] == settings.DEFAULT_RULES
+    assert client.get("/api/settings/thresholds").json()["alarm"] == 0.8      # the rest still comes from the run
+
+
 def test_run_dir_without_results_is_refused(tmp_path, monkeypatch):
     monkeypatch.delenv("SENTINEL_FIXTURES", raising=False)
     monkeypatch.setenv("SENTINEL_RUN_DIR", str(tmp_path))

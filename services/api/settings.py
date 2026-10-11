@@ -83,16 +83,24 @@ def _run_thresholds() -> dict | None:
         return None
 
 
+def _load_yaml(path):
+    """Parse a YAML file. A syntax error becomes a ValueError, so a malformed config/rules.yaml falls back to the MOCK
+    default like any other unusable config instead of stopping the API at import time (reset() runs on import)."""
+    import yaml  # only needed here; the pipeline already depends on pyyaml for rules.yaml
+
+    try:
+        return yaml.safe_load(path.read_text(encoding="utf-8"))
+    except yaml.YAMLError as e:
+        raise ValueError(f"not valid YAML: {e}") from e
+
+
 def _config_doc(kind: str) -> dict | None:
     """Real mode: config/keywords.json or config/rules.yaml, if present and valid for this API."""
     try:
         if kind == "keywords":
             doc = json.loads((CONFIG_DIR / "keywords.json").read_text(encoding="utf-8"))
         else:
-            # only needed here; the pipeline already depends on pyyaml for rules.yaml
-            import yaml
-
-            doc = yaml.safe_load((CONFIG_DIR / "rules.yaml").read_text(encoding="utf-8"))
+            doc = _load_yaml(CONFIG_DIR / "rules.yaml")
     except (OSError, ValueError, ImportError) as e:
         log.warning("config/%s not usable (%s); using the MOCK default", kind, e)
         return None
