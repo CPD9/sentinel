@@ -57,13 +57,14 @@ All paths are prefixed `/api`. `{id}` is a neutral call ID (`^[A-Za-z0-9_]+$`, v
 
 | Method + path | Response | Notes |
 |---|---|---|
-| `GET /calls` | `200 list[CallListItem]` | All known calls. Query params (optional): `status`, `decision`, `criterion`, `variant`. Filtering is cheap, so the client may also filter. |
+| `GET /calls` | `200 list[CallListItem]` | All known calls. Query params (optional): `status`, `decision`, `criterion`, `variant`. Filtering is cheap, so the client may also filter. Besides the decision fields, each finished row says **why**: `decision_path` (from the trace, one of `alarm`, `review_band`, `low_confidence`, `missing_evidence`, `contradictory_evidence`, `stage_error`, `no_alert`; `null` without a trace) and `reason` (the top finding's reason, one line; `null` without findings). A review row can show "Unsure: …" from `decision_path` instead of a risk %. |
 | `POST /calls` | `202 CallListItem` (`status: "queued"`) | `multipart/form-data`, field `file` (.wav; reject other types with 422). Optional `variant`. The server assigns the `call_id`, stores the audio under `artifacts/uploads/<call_id>.wav`, enqueues `process_call`. Several files = several requests. |
 | `GET /calls/{id}` | `200 CallResult` when status is done/error; `202 CallListItem` (the inbox row) while queued/processing; `404 not_found` unknown | |
 | `GET /calls/{id}/transcript` | `200 Transcript`, `404 not_available` | |
 | `GET /calls/{id}/trace` | `200 DecisionTrace`, `404 not_available` | Baseline runs have no trace. |
 | `GET /calls/{id}/analysis` | `200 AnalysisArtifact`, `404 not_available` | `?feature_maps=1` (**STRETCH**) computes feature maps lazily, then returns the artifact with `feature_maps_status` = ok/error. It may take seconds and is never needed by the UI. |
 | `GET /calls/{id}/audio` | `200 audio/wav` | Full call audio for the synchronised playhead. Must support `Range` (HTTP 206) so the browser can seek. |
+| `POST /calls/{id}/report` | `201 {"call_id", "dry_run": bool, "records": [{"mode": "dry-run" \| "send", "payload": {"url", "title", "description"}, "response"?, "error"?}], "errors": [str]}`; `409 conflict` in fixture mode, for a call without a decision, or without a finding to report | Reports the call to the Outcept trigger API ("Confirm fraud"). `pipeline/trigger.py`: one payload per finding with risk > 0, `url` deep-links to the passage (`/calls/<id>?t=<s>`). **Dry-run by default**: payloads are written to the run's `out*/triggers/<id>_<n>.json`, nothing is sent; a real POST only when `TRIGGER_URL` is set. Alarms and officer-confirmed calls of any decision (title "confirmed fraud: …"). An identical payload already accepted is not reposted. |
 | `GET /calls/{id}/snippets/{name}` | `200 audio/wav` with `Range` support, `404 not_available` | `name` = basename of `evidence[].snippet_path`. Resolve it strictly inside `out/snippets/{id}/`: reject `/`, `..`, and anything that is not `^[\w.-]+\.wav$`. |
 
 `CallListItem.status` comes from the job store: `queued` → `processing` → `done`. A run that finished
@@ -144,7 +145,7 @@ Every key is optional. `keywords` and `rules` may also carry a full document (`{
 | Method + path | Body / response |
 |---|---|
 | `POST /simulate` | Body `{"patch": {…}, "with_feedback": true}` (`with_feedback` defaults to true). `200 SimulationResult`. **Does not save.** Must be fast (< 1 s for 60 calls). `flipped[]` lists every call whose decision changes, with `reasons`, the patch components that `attributed_to` it, and `feedback_verdict` when the officer labelled it. `workload` is alarms + reviews per 100 calls, before and after. `feedback_check` lists labelled calls that moved the right way (`fixed`) or the wrong way (`violations`, which includes any `correct` call that flips), so the UI can warn while the officer drags a slider. |
-| `POST /feedback` | Body `{"call_id", "verdict": "false_alarm" \| "missed" \| "correct", "note"?}`. `201 FeedbackEntry`. The server fills `ts`, `decision_at_feedback` (the call's current decision) and `config_version`, then calls `append_feedback` (atomic append to `out/feedback.jsonl`). `404 not_found` for an unknown call, `409 conflict` for a call that has no decision yet (queued or processing), `422 invalid` for a verdict that makes no sense (`false_alarm` on a `no_alert` call, `missed` on an `alarm`, bad note length). The log is append-only and the **latest verdict per call wins**: to change your mind, post again. |
+| `POST /feedback` | Body `{"call_id", "verdict": "false_alarm" \| "missed" \| "correct" \| "escalate", "note"?}`. `201 FeedbackEntry`. The server fills `ts`, `decision_at_feedback` (the call's current decision) and `config_version`, then calls `append_feedback` (atomic append to `out/feedback.jsonl`). `404 not_found` for an unknown call, `409 conflict` for a call that has no decision yet (queued or processing), `422 invalid` for a verdict that makes no sense (`false_alarm` on a `no_alert` call, `missed` on an `alarm`, bad note length). The log is append-only and the **latest verdict per call wins**: to change your mind, post again. `escalate` ("a person above me must look") is allowed on every decision; like every verdict it never changes the decision, and it is not a label for `/simulate` or `/suggestions` (ignored there). A UI shows escalated calls in its review queue from `GET /feedback`. **Button → verdict:** Dismiss = `false_alarm`; Confirm fraud = `correct` on an alarm but `missed` on a review (the system should have alarmed; `correct` would teach the suggestions that review was right), then `POST /calls/{id}/report`; Escalate = `escalate`. |
 | `GET /feedback` | `200 list[FeedbackEntry]`, the latest verdict per call. |
 | `GET /suggestions` | `200 SuggestionsResponse`. `suggestions` are ranked (most feedback fixed first, then fewest other calls flipped, fewest knobs, smallest change). Each carries its patch, `fixed` / `not_fixed` calls, `collateral_flips` (unlabelled calls that would change) and the full simulated `effect`. An empty list always has a `reason` (no feedback yet, only "correct" verdicts, everything already resolved, or no change satisfies the correct-marked calls); it is not an error. Query `?max=5`. Computed on demand (< 2 s for 60 calls). |
 | `POST /suggestions/{id}/apply` | **Needed for the apply flow.** Body `{"confirm": true, "note"?}`. Recomputes the suggestion `id` against the current config; `409 conflict` if the config changed since (the UI then reloads) or the id is unknown. Writes the config through the same code path as `PUT /settings/*` (`patched_docs(load_raw(), patch)` gives the three documents to save), re-runs steps 6-8, appends an `AuditEntry` (`append_audit`, `out/audit.jsonl`) and answers `202 {"rerun": …, "audit": AuditEntry}`. |
@@ -193,6 +194,26 @@ Implementation notes (`services/api/`, run with `SENTINEL_FIXTURES=1 python -m s
 - Settings start from MOCK defaults. `PUT` validates (422 on bad values) and keeps the values in memory only
   until `config/` exists, answering `202` with `n_calls: 0` because nothing is re-run. `POST /settings/preview`
   re-applies the decide.py priority order to the cached rows (a MOCK approximation).
+
+### Real mode (a pipeline run on disk)
+
+`SENTINEL_RUN_DIR=<folder with out/ and artifacts/> python -m services.api` serves one finished run in the layout of
+"Files" above. Swapping the folder (e.g. for a run with calibrated thresholds) only needs a restart.
+- `GET /calls` builds one row per `out/results/<id>.json` (a run handed over as one `out*/` folder, e.g. `out_jules/`, is found too): status `error` when the result has stage errors, else
+  `done`; criteria from the findings, risk-descending; `duration_s` and `variant` from the label-free
+  `artifacts/manifests/inference.json` (of the run, else of the repo), else the transcript's duration; `updated_at` =
+  the result file's modification time. Half-written `.tmp` files are skipped. No label file is ever opened.
+- Transcripts and traces come from `artifacts/{transcripts,traces}/`, or only from `*_reference/` when the result says it
+  ran on reference transcripts (`versions.asr` starts with `reference`), so documents of two runs are never mixed. Analysis: `artifacts/analysis/<id>/analysis.json`. Quality reports: `artifacts/quality/*.json`.
+- `/audio` serves `artifacts/audio/<id>.wav`, `/snippets/{name}` serves `out/snippets/<id>/<name>`, both
+  `audio/wav` with `Range` (206, 416 when out of range).
+- `/feedback`: `POST` appends to the run's `out/feedback.jsonl` (`append_feedback`), `GET` reads the latest verdict per
+  call back from it, so verdicts survive a restart.
+- Settings start from the thresholds the run used (its traces), else `config/thresholds.json`; keywords and rules from
+  `config/keywords.json` and `config/rules.yaml`; anything missing or invalid falls back to the MOCK default.
+  `PUT` still keeps values in memory and re-runs nothing (`n_calls: 0`).
+- `/calls/{id}/events` synthesizes a short log from the stored result (no live log). `POST /calls` → `409` (uploads
+  are not wired yet: process calls with `./run.sh`).
 
 ## Versions block
 

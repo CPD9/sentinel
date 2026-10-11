@@ -6,9 +6,10 @@ from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
 from typing import Any, Callable
 
-from .store import CALL_ID_RE, FixtureStore
+from .store import CALL_ID_RE, ArtifactStore, FixtureStore, find_out_dir
 
 log = logging.getLogger("sentinel.api")
 
@@ -23,16 +24,37 @@ class ApiError(Exception):
 
 
 # --------------------------------------------------------------------------- store
-def make_store() -> FixtureStore:
+def make_store() -> FixtureStore | ArtifactStore:
+    """SENTINEL_FIXTURES=1 → MOCK fixtures; SENTINEL_RUN_DIR=<folder with out/ and artifacts/> → a real run."""
     if os.environ.get("SENTINEL_FIXTURES") == "1":
         return FixtureStore()
-    raise RuntimeError(
-        "Only fixture mode exists so far: start the API with SENTINEL_FIXTURES=1. "
-        "Real mode (reading pipeline results) arrives with the process_call() milestone."
-    )
+    run_dir = os.environ.get("SENTINEL_RUN_DIR")
+    if run_dir:
+        path = Path(run_dir).expanduser()
+        if find_out_dir(path) is None:
+            raise RuntimeError(f"SENTINEL_RUN_DIR={path} has no out/results/ folder (or exactly one out*/results/): "
+                               "point it at the folder that contains out/ and artifacts/ (the pipeline's output).")
+        log.info("serving the pipeline run in %s", path)
+        return ArtifactStore(path)
+    raise RuntimeError("Choose the data: SENTINEL_FIXTURES=1 (MOCK fixtures) or "
+                       "SENTINEL_RUN_DIR=<folder with out/ and artifacts/> (a real pipeline run).")
 
 
-store = make_store()
+class StoreRef:
+    """The current store. Routers import this one object; `use()` swaps what it points at (tests use it to
+    run the same app on a fixture store and on a temporary real run)."""
+
+    def __init__(self, target: FixtureStore | ArtifactStore):
+        self._target = target
+
+    def use(self, target: FixtureStore | ArtifactStore) -> None:
+        self._target = target
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._target, name)
+
+
+store = StoreRef(make_store())
 
 
 # --------------------------------------------------------------------------- helpers
