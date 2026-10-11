@@ -7,7 +7,7 @@
 //   confirm fraud  → correct (+ report via the trigger API when the API exposes it)
 import { Check } from "lucide-react";
 import { useState } from "react";
-import { ApiError, getCapabilities, getFeedback, isFixtures, postFeedback } from "@/lib/data";
+import { ApiError, getCapabilities, getFeedback, isFixtures, isLocalRun, postFeedback } from "@/lib/data";
 import { VERDICT_LABEL, fmtDateTime } from "@/lib/format";
 import type { Decision, Verdict } from "@/lib/types";
 import { useAsync } from "@/lib/use-async";
@@ -61,6 +61,7 @@ export function ActionBar({ callId, decision, compact }: { callId: string; decis
           : "Your verdict never changes the decision by itself; it feeds the suggested changes in Settings."}
         {decision === "alarm" && !caps.data?.report && !compact && " Report to the trigger API: not available yet."}
         {isFixtures && " (MOCK: kept in this browser only.)"}
+        {isLocalRun && " (Local run: kept in this server’s memory until it restarts.)"}
       </p>
     </section>
   );

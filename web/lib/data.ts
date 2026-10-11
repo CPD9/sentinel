@@ -1,6 +1,8 @@
 // The ONLY module that fetches. Every UI surface goes through here.
 //   NEXT_PUBLIC_DATA_MODE=fixtures  → reads public/fixtures/*.json (copied from ../fixtures; MOCK data)
 //   NEXT_PUBLIC_DATA_MODE=api       → follows docs/API.md exactly, via the same-origin /api proxy (next.config.ts)
+//     + NEXT_PUBLIC_API_PREFIX=/run-api → the same contract served by app/run-api (LOCAL-RUN FALLBACK: one finished
+//       run read from disk, read-only, while the API has no real mode). The UI labels this source everywhere.
 import { replayDelayMs, synthFinishedEvents, synthRunningEvents } from "./mock-replay";
 import { approxSimulate, patchComponents, samePatch, type WhatifCalls } from "./whatif-mock";
 import type {
@@ -12,6 +14,10 @@ import { CRITERIA, EVENT_TYPES, verdictAllowed } from "./types";
 
 export const DATA_MODE: "fixtures" | "api" = process.env.NEXT_PUBLIC_DATA_MODE === "api" ? "api" : "fixtures";
 export const isFixtures = DATA_MODE === "fixtures";
+const API_PREFIX = process.env.NEXT_PUBLIC_API_PREFIX === "/run-api" ? "/run-api" : "/api";
+/** True when api mode reads the local-run fallback (app/run-api) instead of the FastAPI service. */
+export const isLocalRun = !isFixtures && API_PREFIX === "/run-api";
+export const DATA_SOURCE_LABEL = isFixtures ? "fixtures (MOCK)" : isLocalRun ? "local run, read-only" : "live API";
 
 export class ApiError extends Error {
   constructor(public status: number, public code: string, public detail: string | string[]) {
@@ -43,12 +49,19 @@ async function getJson<T>(url: string): Promise<{ status: number; data: T }> {
 }
 
 const fx = (name: string) => `/fixtures/${name}`;
-const api = (path: string) => `/api${path}`;
+const api = (path: string) => `${API_PREFIX}${path}`;
 const unsupported = (what: string) =>
   new ApiError(409, "conflict", `${what} is disabled in fixtures mode (MOCK data only, as in API.md "Fixture mode").`);
 
 function notAvailable(what: string) {
   return new ApiError(404, "not_available", `${what} not available`);
+}
+
+// ------------------------------------------------------------------ run info (local-run fallback only)
+export interface RunInfo { run_id: string; mode: "reference" | "asr"; created_at: string; notes: string[]; system: string | null; provider: string | null; source: string }
+export async function getRunInfo(): Promise<RunInfo | null> {
+  if (!isLocalRun) return null;
+  return (await getJson<RunInfo>(api("/run"))).data;
 }
 
 // ------------------------------------------------------------------ calls

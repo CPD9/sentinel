@@ -267,7 +267,7 @@ export interface QualityReportSummary {
 }
 
 // ---- Settings (proposals, docs/API.md)
-export interface KeywordFamily { criterion: Criterion; terms: string[]; variants: Record<string, string[]> }
+export interface KeywordFamily { criterion: Criterion; terms: string[]; variants: Record<string, string[]>; label?: string }
 export interface KeywordsConfig { families: Record<string, KeywordFamily>; fuzzy_threshold: number }
 export interface RuleConfig { criterion: Criterion; enabled: boolean; [param: string]: unknown }
 export interface RulesConfig { version: string; rules: RuleConfig[] }
