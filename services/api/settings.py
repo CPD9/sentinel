@@ -3,13 +3,18 @@
 GET returns the current values, PUT validates and saves them, POST /settings/preview answers
 "what would change if I used these values?" without saving (the live impact panel while dragging).
 
-Fixture mode: config/thresholds.json, keywords.json and rules.yaml do not exist yet (config milestone),
-so values start from MOCK defaults and PUT keeps them in memory only (lost on restart). Nothing is
-re-run, so PUT answers n_calls = 0. The shapes follow the proposals in docs/API.md.
+Where the starting values come from:
+  fixture mode  MOCK defaults (below)
+  real mode     thresholds: the ones the run used (from its traces), else config/thresholds.json;
+                keywords and rules: config/keywords.json and config/rules.yaml (what the pipeline reads).
+                Any of them that is missing or does not validate falls back to the MOCK default.
+In both modes PUT keeps the values in memory only (lost on restart) and re-runs nothing, so PUT answers
+n_calls = 0 and saved thresholds do not re-decide calls yet. The shapes follow docs/API.md.
 """
 from __future__ import annotations
 
 import copy
+import json
 from typing import Any
 
 from fastapi import APIRouter, Body
@@ -17,7 +22,10 @@ from fastapi.responses import JSONResponse
 
 from pipeline import schemas
 
-from .deps import ApiError, store
+from .deps import ApiError, log, store
+from .store import REPO_ROOT
+
+CONFIG_DIR = REPO_ROOT / "config"
 
 router = APIRouter(prefix="/api/settings")
 
@@ -58,13 +66,50 @@ DEFAULT_RULES = {"version": "MOCK",
 current: dict[str, Any] = {}
 
 
+def _run_thresholds() -> dict | None:
+    """Real mode: the thresholds the run actually used (every trace stores them), else config/thresholds.json."""
+    for row in store.list_calls():
+        trace = store.get_doc(row["call_id"], "trace")
+        th = (trace or {}).get("thresholds")
+        if isinstance(th, dict):
+            th = {k: th.get(k) for k in ("alarm", "review", "confidence_gate")}
+            if not validate_thresholds(th):
+                return th
+    try:
+        raw = json.loads((CONFIG_DIR / "thresholds.json").read_text(encoding="utf-8"))
+        th = {k: raw.get(k) for k in ("alarm", "review", "confidence_gate")}
+        return th if not validate_thresholds(th) else None
+    except (OSError, ValueError):
+        return None
+
+
+def _config_doc(kind: str) -> dict | None:
+    """Real mode: config/keywords.json or config/rules.yaml, if present and valid for this API."""
+    try:
+        if kind == "keywords":
+            doc = json.loads((CONFIG_DIR / "keywords.json").read_text(encoding="utf-8"))
+        else:
+            # only needed here; the pipeline already depends on pyyaml for rules.yaml
+            import yaml
+
+            doc = yaml.safe_load((CONFIG_DIR / "rules.yaml").read_text(encoding="utf-8"))
+    except (OSError, ValueError, ImportError) as e:
+        log.warning("config/%s not usable (%s); using the MOCK default", kind, e)
+        return None
+    errors = VALIDATORS[kind](doc)
+    if errors:
+        log.warning("config/%s does not validate (%s); using the MOCK default", kind, "; ".join(errors[:3]))
+        return None
+    return normalize_keywords(doc) if kind == "keywords" else doc
+
+
 def reset() -> None:
-    """Back to the MOCK defaults (also used by the tests)."""
-    current.update(thresholds=_default_thresholds(), keywords=copy.deepcopy(DEFAULT_KEYWORDS),
-                   rules=copy.deepcopy(DEFAULT_RULES))
+    """Back to the starting values (also used by the tests): MOCK defaults, or the real run + config."""
+    real = not store.is_mock
+    current.update(thresholds=(real and _run_thresholds()) or _default_thresholds(),
+                   keywords=(real and _config_doc("keywords")) or copy.deepcopy(DEFAULT_KEYWORDS),
+                   rules=(real and _config_doc("rules")) or copy.deepcopy(DEFAULT_RULES))
 
-
-reset()
 
 
 # --------------------------------------------------------------------------- validation
@@ -246,3 +291,6 @@ def preview(body: Any = Body(...)) -> dict:
 
     return {"decision_counts": counts, "changed": changed,
             "keyword_hit_counts": keyword_hit_counts, "rule_fire_counts": rule_fire_counts}
+
+
+reset()   # at the end: it uses the validators defined above

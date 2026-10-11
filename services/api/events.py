@@ -69,7 +69,7 @@ def replay_delay(prev: dict | None, ev: dict) -> float:
 
 # --------------------------------------------------------------------------- event logs
 def synth_events(call_id: str, row: dict, result: dict | None) -> list[dict]:
-    """A minimal MOCK log for calls without a recorded one, consistent with their row and result."""
+    """A minimal log for calls without a recorded one (all of them in real mode), consistent with their row and result."""
     ts = row.get("updated_at") or "1970-01-01T00:00:00Z"
     events: list[dict] = []
 
@@ -78,7 +78,7 @@ def synth_events(call_id: str, row: dict, result: dict | None) -> list[dict]:
                        "stage": None, "elapsed_s": None, "cached": None, "message": None,
                        "decision": None, **kw})
 
-    add("job_queued", message="[MOCK] synthesized event log")
+    add("job_queued", message="[MOCK] synthesized event log" if store.is_mock else "synthesized from the stored result")
     add("stage_started", stage="asr")
     if result is None:          # queued / processing: the stream stays open after this
         return events

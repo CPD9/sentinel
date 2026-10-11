@@ -5,7 +5,8 @@ have been flagged (missed). A verdict never changes the decision; it only feeds 
 per call wins, so an officer changes their mind by posting again.
 
 Fixture mode: verdicts start from fixtures/feedback.json and new ones are kept in memory only (lost on restart),
-so the demo works without writing to out/. Real mode will append to out/feedback.jsonl via append_feedback.
+so the demo works without writing to out/. Real mode (SENTINEL_RUN_DIR): every verdict is appended to the run's
+out/feedback.jsonl via append_feedback, and GET reads the latest per call back from that file.
 """
 from __future__ import annotations
 
@@ -15,7 +16,7 @@ from typing import Any
 from fastapi import APIRouter, Body
 from fastapi.responses import JSONResponse
 
-from pipeline.feedback import make_entry
+from pipeline.feedback import append_feedback, latest_feedback, make_entry
 from pipeline.schemas import FeedbackEntry, SchemaError
 
 from .deps import ApiError, known_call, store
@@ -27,8 +28,10 @@ latest: dict[str, dict] = {}
 
 
 def reset() -> None:
-    """Back to the MOCK sample (also used by the tests)."""
+    """Back to the MOCK sample (also used by the tests). Real mode keeps nothing in memory."""
     latest.clear()
+    if store.feedback_path is not None:
+        return
     path = store.root / "feedback.json"
     rows = json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
     for row in rows:
@@ -42,6 +45,8 @@ reset()
 @router.get("")
 def list_feedback() -> list[dict]:
     """The latest verdict per call."""
+    if store.feedback_path is not None:
+        return [e.to_dict() for e in latest_feedback(store.feedback_path).values()]
     return list(latest.values())
 
 
@@ -67,9 +72,13 @@ def post_feedback(body: Any = Body(...)) -> JSONResponse:
     result = store.get_result(call_id) or {}
     try:
         entry = make_entry(call_id, verdict, decision, note=note,
-                           config_version=(result.get("versions") or {}).get("rules"), is_mock=True)
+                           config_version=(result.get("versions") or {}).get("rules"), is_mock=store.is_mock)
     except SchemaError as e:
         raise ApiError(422, "invalid", e.errors)
+    if store.feedback_path is not None:
+        store.feedback_path.parent.mkdir(parents=True, exist_ok=True)
+        append_feedback(entry, store.feedback_path)      # append-only log; the latest line per call wins
+        return JSONResponse(entry.to_dict(), status_code=201)
     doc = entry.to_dict()
     latest.pop(call_id, None)                        # re-insert so the newest verdict is last
     latest[call_id] = doc

@@ -194,6 +194,26 @@ Implementation notes (`services/api/`, run with `SENTINEL_FIXTURES=1 python -m s
   until `config/` exists, answering `202` with `n_calls: 0` because nothing is re-run. `POST /settings/preview`
   re-applies the decide.py priority order to the cached rows (a MOCK approximation).
 
+### Real mode (a pipeline run on disk)
+
+`SENTINEL_RUN_DIR=<folder with out/ and artifacts/> python -m services.api` serves one finished run in the layout of
+"Files" above. Swapping the folder (e.g. for a run with calibrated thresholds) only needs a restart.
+- `GET /calls` builds one row per `out/results/<id>.json`: status `error` when the result has stage errors, else
+  `done`; criteria from the findings, risk-descending; `duration_s` and `variant` from the label-free
+  `artifacts/manifests/inference.json` (of the run, else of the repo), else the transcript's duration; `updated_at` =
+  the result file's modification time. Half-written `.tmp` files are skipped. No label file is ever opened.
+- Transcripts and traces come from `artifacts/{transcripts,traces}/`, falling back to `*_reference/` for runs on
+  reference transcripts. Analysis: `artifacts/analysis/<id>/analysis.json`. Quality reports: `artifacts/quality/*.json`.
+- `/audio` serves `artifacts/audio/<id>.wav`, `/snippets/{name}` serves `out/snippets/<id>/<name>`, both
+  `audio/wav` with `Range` (206, 416 when out of range).
+- `/feedback`: `POST` appends to the run's `out/feedback.jsonl` (`append_feedback`), `GET` reads the latest verdict per
+  call back from it, so verdicts survive a restart.
+- Settings start from the thresholds the run used (its traces), else `config/thresholds.json`; keywords and rules from
+  `config/keywords.json` and `config/rules.yaml`; anything missing or invalid falls back to the MOCK default.
+  `PUT` still keeps values in memory and re-runs nothing (`n_calls: 0`).
+- `/calls/{id}/events` synthesizes a short log from the stored result (no live log). `POST /calls` → `409` (uploads
+  are not wired yet: process calls with `./run.sh`).
+
 ## Versions block
 
 `versions` (in `CallResult` and `DecisionTrace`) is `{asr, llm, prompt, rules, provider, self_hosted}`, all optional.
