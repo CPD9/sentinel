@@ -204,9 +204,10 @@ def _run(audio_path, call_id, ev: _Events, P, mode, no_llm, config, do_trigger) 
         judged, errs = ev.stage("judge", lambda: stages.run_judge(transcript))
         errors += errs
         if judged is not None:
-            stages.apply_judge(trace, judged)
+            stages.apply_judge(trace, judged, config)
             write_json_atomic(P["judge"] / f"{call_id}.json", judged.to_dict())
-    findings = stages.judge_findings(judged, transcript) if judged is not None else stages.build_findings(trace, transcript)
+    findings = (stages.judge_findings(judged, transcript, trace) if judged is not None
+                else stages.build_findings(trace, transcript))
     audio_ok = mode == "asr" and transcript.duration_s is not None
     if trace.decision != "no_alert" and audio_ok:
         _, errs = ev.stage("snippets", lambda: (None, snip.cut_snippets(audio_path, call_id, findings,

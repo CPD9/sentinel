@@ -495,7 +495,7 @@ DECISION_PATHS = {
     "stage_error": "review", "missing_evidence": "review", "contradictory_evidence": "review",
     "low_confidence": "review", "alarm": "alarm", "review_band": "review", "no_alert": "no_alert",
     # decision_source "direct_judge" (config/thresholds.json): the S4 judge's verdict decides; facts/rules stay as the why
-    "judge_alarm": "alarm", "judge_review": "review", "judge_no_alert": "no_alert",
+    "judge_alarm": "alarm", "judge_review": "review", "judge_no_alert": "no_alert", "keyword_review": "review",
 }
 
 
@@ -583,8 +583,9 @@ class DecisionTrace(_Artifact):
             errs.append("thresholds: need review < alarm")
         if path == "alarm" and d["risk_score"] < t["alarm"]:
             errs.append("decision_path alarm but risk_score below the alarm threshold")
-        if path == "review_band" and not t["review"] <= d["risk_score"] < t["alarm"]:
-            errs.append("decision_path review_band but risk_score outside [review, alarm)")
+        # review_band may sit at or above the alarm threshold when no rule FIRED (alarm set below rules fire_at)
+        if path == "review_band" and d["risk_score"] < t["review"]:
+            errs.append("decision_path review_band but risk_score below the review threshold")
         if path == "no_alert" and d["risk_score"] >= t["review"]:
             errs.append("decision_path no_alert but risk_score at or above the review threshold")
         # no_alert may sit below the gate: config gate_scope "risky_only" lets a harmless noisy call stay no_alert.
