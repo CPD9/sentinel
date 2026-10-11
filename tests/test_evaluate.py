@@ -122,3 +122,22 @@ def test_perfect_predictions_score_perfectly(tmp_path):
     assert m["evidence_validity"]["item_validity_rate"] == 1.0
     assert m["evidence_validity"]["gold_passage_hit_rate"] == 1.0
     assert set(m["breakdown"]["stufe"]) == {"1", "2", "3"}
+
+
+@needs_data
+def test_quality_report_and_score_decisions_on_oracle(tmp_path):
+    from pipeline.schemas import QualityReport
+    man = json.loads(ev.EVAL_MANIFEST.read_text(encoding="utf-8"))
+    hold = json.loads(ev.SPLITS_FILE.read_text(encoding="utf-8"))["splits"]["holdout"]["call_ids"]
+    calls = [{"call_id": c, "decision": man["calls"][c]["label"], "risk_score": 0.5, "confidence": 0.9, "findings": [],
+              "narrative": "", "stage_errors": [], "versions": {}} for c in hold]
+    pred = tmp_path / "p.json"
+    pred.write_text(json.dumps({"schema_version": 1, "run_id": "oracle", "mode": "asr", "system": "test",
+                                "provider": "oracle", "created_at": "now", "calls": calls}))
+    rep = ev.quality_report(pred, "holdout", "final_report", n_resamples=50)
+    assert QualityReport.validate(rep) == [] and rep["split"] == "holdout" and rep["overall"]["n"] == len(hold)
+    esc = rep["overall"]["escalation"]["f1"]
+    assert esc["value"] == 1.0 and esc["ci_low"] == 1.0 and rep["bootstrap"]["unit"] == "dialogue group"
+    assert sum(b["n"] for b in rep["reliability"]["bins"]) == len(hold) and set(rep["breakdowns"]) == {"stufe", "variant"}
+    s = ev.score_decisions({c["call_id"]: c["decision"] for c in calls})
+    assert set(s) == {"all", "holdout"} and s["all"]["three_class"]["accuracy"] == 1.0

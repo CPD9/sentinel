@@ -243,6 +243,20 @@ def _call_labels(ev: dict) -> dict[str, dict]:
     return out
 
 
+def score_decisions(decisions: dict[str, str], eval_manifest: Path = EVAL_MANIFEST) -> dict[str, dict]:
+    """Metric blocks for in-memory decisions {call_id: decision}, overall and per split (threshold calibration).
+    Callers pass predictions only; the labels stay inside this module."""
+    labels = _call_labels(_load(eval_manifest))
+    unknown = [c for c in decisions if c not in labels]
+    if unknown:
+        raise ValueError(f"unknown call ids: {unknown[:5]}")
+    out = {"all": metric_block([labels[c]["label"] for c in decisions], list(decisions.values()))}
+    for split in sorted({labels[c]["split"] for c in decisions}):
+        ids = [c for c in decisions if labels[c]["split"] == split]
+        out[split] = metric_block([labels[c]["label"] for c in ids], [decisions[c] for c in ids])
+    return out
+
+
 def evaluate(pred_path: Path, split: str | None = None, eval_manifest: Path = EVAL_MANIFEST) -> dict:
     if not pred_path.is_file():
         raise SystemExit(f"no predictions at {pred_path}")
@@ -332,6 +346,113 @@ def format_report(m: dict) -> str:
               f"  gold passage hit rate: {_f(ev['gold_passage_hit_rate']).strip()}"]
     lines += [f"  skipped: {s}" for s in ev["checks_skipped"]]
     return "\n".join(lines)
+
+
+# --------------------------------------------------------------------------- QualityReport (quality lab input)
+
+def _metric(v, lo=None, hi=None) -> dict:
+    r = lambda x: None if x is None else round(x, 4)
+    return {"value": r(v), "ci_low": r(lo), "ci_high": r(hi)}
+
+
+def _ci(vals: list, level: float) -> tuple:
+    v = sorted(x for x in vals if x is not None)
+    if not v:
+        return None, None
+    a = (1 - level) / 2
+    return v[int(a * (len(v) - 1))], v[int((1 - a) * (len(v) - 1))]
+
+
+def _convention_set(gold: list[str], pred: list[str], samples: list[tuple[list, list]], level: float) -> dict:
+    def binm(pos, boot):
+        b = binary(gold, pred, pos)
+        out = {k: b[k] for k in ("tp", "fp", "fn", "tn")}
+        for k in ("precision", "recall", "f1"):
+            out[k] = _metric(b[k], *_ci([binary(g, p, pos)[k] for g, p in boot], level))
+        return out
+    t = three_class(gold, pred)
+    return {"n": len(gold), "strict_alarm": binm(("alarm",), samples), "escalation": binm(FLAGGED, samples),
+            "three_class": {"labels": t["labels"], "confusion": t["confusion"],
+                            "macro_f1": _metric(t["macro_f1"], *_ci([three_class(g, p)["macro_f1"] for g, p in samples], level)),
+                            "accuracy": _metric(t["accuracy"], *_ci([three_class(g, p)["accuracy"] for g, p in samples], level))}}
+
+
+def quality_report(pred_path: Path, split: str, report_id: str, *, n_resamples: int = 1000, ci_level: float = 0.95,
+                   seed: int = 20261011, notes: list[str] | None = None) -> dict:
+    """A schemas.QualityReport for one split of a predictions file: three conventions with bootstrap CIs (resampling
+    whole dialogue groups, so clean/noisy twins move together), per-Stufe and per-variant breakdowns, a confidence
+    reliability diagram and the evidence validity summary."""
+    import random
+    from datetime import datetime, timezone
+
+    from pipeline.schemas import QualityReport
+    m = evaluate(pred_path, split)
+    run = RunResult.from_dict(_load(pred_path))
+    calls = {c.call_id: c for c in run.calls}
+    pc = m["per_call"]
+    groups = [g["call_ids"] for g in _load(SPLITS_FILE)["splits"][split]["groups"]]
+    idx = {c["call_id"]: i for i, c in enumerate(pc)}
+    groups = [[idx[c] for c in g if c in idx] for g in groups]
+    groups = [g for g in groups if g]
+    rng = random.Random(seed)
+
+    def boot(rows):
+        sel = set(rows)
+        gs = [[i for i in g if i in sel] for g in groups]
+        gs = [g for g in gs if g]
+        out = []
+        for _ in range(n_resamples):
+            ids = [i for _ in gs for i in gs[rng.randrange(len(gs))]]
+            out.append(([pc[i]["gold"] for i in ids], [pc[i]["pred"] for i in ids]))
+        return out
+
+    def cset(rows):
+        return _convention_set([pc[i]["gold"] for i in rows], [pc[i]["pred"] for i in rows], boot(rows), ci_level)
+
+    allrows = list(range(len(pc)))
+    breakdowns = {}
+    for key in ("stufe", "variant"):
+        by = defaultdict(list)
+        for i, c in enumerate(pc):
+            by[str(c[key])].append(i)
+        breakdowns[key] = {g: cset(rows) for g, rows in sorted(by.items())}
+
+    edges = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
+    conf = [(calls[c["call_id"]].confidence, c["gold"] == c["pred"]) for c in pc]
+    bins = []
+    for lo, hi in zip(edges, edges[1:]):
+        inb = [(x, ok) for x, ok in conf if x is not None and (lo <= x < hi or (hi == 1.0 and x == 1.0))]
+        bins.append({"lo": lo, "hi": hi, "n": len(inb),
+                     "mean_confidence": round(sum(x for x, _ in inb) / len(inb), 4) if inb else None,
+                     "accuracy": round(sum(ok for _, ok in inb) / len(inb), 4) if inb else None})
+    scored = sum(b["n"] for b in bins)
+
+    def ece(pairs):
+        tot = sum(1 for x, _ in pairs if x is not None)
+        e = 0.0
+        for lo, hi in zip(edges, edges[1:]):
+            inb = [(x, ok) for x, ok in pairs if x is not None and (lo <= x < hi or (hi == 1.0 and x == 1.0))]
+            if inb:
+                e += len(inb) / tot * abs(sum(x for x, _ in inb) / len(inb) - sum(ok for _, ok in inb) / len(inb))
+        return e if tot else None
+    ece_boot = [ece([conf[rng.randrange(len(conf))] for _ in conf]) for _ in range(n_resamples)]
+
+    ev = m["evidence_validity"]
+    rep = {"report_id": report_id, "created_at": datetime.now(timezone.utc).isoformat(), "run_id": m["run_id"],
+           "system": m["system"], "provider": m["provider"], "mode": m["mode"], "split": split,
+           "bootstrap": {"n_resamples": n_resamples, "ci_level": ci_level, "unit": "dialogue group", "seed": seed},
+           "overall": cset(allrows), "breakdowns": breakdowns,
+           "reliability": {"correctness": "3-class decision == gold label", "bins": bins,
+                           "ece": _metric(ece(conf), *_ci(ece_boot, ci_level))} if scored else None,
+           "evidence_validity": {"n_items": ev["n_items"], "n_valid_items": ev["n_valid_items"],
+                                 "item_validity_rate": ev["item_validity_rate"],
+                                 "per_check_pass_rate": {k: round(v, 4) for k, v in ev["per_check_pass_rate"].items()},
+                                 "checks_skipped": ev["checks_skipped"]},
+           "warnings": m["warnings"], "notes": list(notes or []) + m["run_notes"], "is_mock": False}
+    errs = QualityReport.validate(rep)
+    if errs:
+        raise ValueError(f"QualityReport invalid: {errs[:5]}")
+    return rep
 
 
 def main(argv: list[str] | None = None) -> int:

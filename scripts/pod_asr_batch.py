@@ -1,7 +1,7 @@
 """ASR over the dev + holdout calls on the GPU Pod: one model load, per-call decode time (RTF) and peak VRAM.
 
 Label-free: reads only artifacts/splits/dialogue_splits.json and artifacts/manifests/inference.json. The test split
-is never touched. Transcripts, analysis blocks and the decode cache go where pipeline/asr.py puts them.
+is read only with --allow-test. Transcripts, analysis blocks and the decode cache go where pipeline/asr.py puts them.
 
     python scripts/pod_asr_batch.py --model large-v3-turbo --splits dev holdout [--compute-type float16] [--force]
 
@@ -60,13 +60,16 @@ class VramPeak:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--model", default="large-v3-turbo")
-    ap.add_argument("--splits", nargs="+", choices=("dev", "holdout"), default=["dev", "holdout"],
-                    help="test is deliberately not selectable")
+    ap.add_argument("--splits", nargs="+", choices=("dev", "holdout", "test"), default=["dev", "holdout"],
+                    help="test (Testset_30, cleared by Outcept for tuning) needs --allow-test")
+    ap.add_argument("--allow-test", action="store_true")
     ap.add_argument("--device", choices=("cpu", "cuda"), default="cuda")
     ap.add_argument("--compute-type", default="float16")
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--limit", type=int)
     a = ap.parse_args(argv)
+    if "test" in a.splits and not a.allow_test:
+        ap.error("--splits test needs --allow-test (Testset_30, cleared by Outcept for tuning)")
 
     splits = json.loads((REPO_ROOT / "artifacts/splits/dialogue_splits.json").read_text(encoding="utf-8"))["splits"]
     inf = {c["call_id"]: c for c in json.loads((REPO_ROOT / "artifacts/manifests/inference.json").read_text(encoding="utf-8"))["calls"]}
