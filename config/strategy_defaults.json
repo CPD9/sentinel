@@ -1,0 +1,43 @@
+{
+  "_comment": "Top 3 detection strategies on dev + Testset_30 (run strategy_lab_t4); written by scripts/strategy_lab.py",
+  "ranking": "equal-weight mean of dev and test escalation F1; ties -> strict-alarm precision",
+  "default": "S3",
+  "top3": [
+    {
+      "id": "S3",
+      "strategy": "hybrid",
+      "description": "LLM facts + keyword hits through the rules (the shipped pipeline)",
+      "esc_f1": 0.625,
+      "esc_f1_ci95": [
+        0.475,
+        0.754
+      ],
+      "alarm_p": 0.45,
+      "alarm_r": 0.429
+    },
+    {
+      "id": "S2",
+      "strategy": "context_only",
+      "description": "LLM facts and rules, no keyword hits",
+      "esc_f1": 0.581,
+      "esc_f1_ci95": [
+        0.421,
+        0.719
+      ],
+      "alarm_p": 0.4,
+      "alarm_r": 0.286
+    },
+    {
+      "id": "S8",
+      "strategy": "ensemble",
+      "description": "Majority of S1, S3, S4; disagreement becomes review",
+      "esc_f1": 0.538,
+      "esc_f1_ci95": [
+        0.36,
+        0.689
+      ],
+      "alarm_p": 0.4,
+      "alarm_r": 0.095
+    }
+  ]
+}
