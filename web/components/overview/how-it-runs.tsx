@@ -31,6 +31,7 @@ export function HowItRuns() {
       <div className="space-y-2">
         <Link href="/overview" className="text-sm text-muted-foreground hover:text-foreground">← Overview</Link>
         <h1 className="text-headline font-semibold tracking-tight">How it runs</h1>
+        <p className="text-sm"><Link href="/model-card" className="underline underline-offset-4">Model &amp; data card →</Link></p>
         <p className="max-w-3xl text-lead text-muted-foreground">Perceive with AI, decide with rules. The AI steps find what was said; fixed, editable rules decide. Every step runs on servers we control.</p>
       </div>
 
