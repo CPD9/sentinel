@@ -1,4 +1,4 @@
-"""Milestone 4 driver: extract -> validate -> decide_call -> predictions -> pipeline.evaluate, on the DEV split only.
+"""Milestone 4 driver: extract -> validate -> decide_call -> predictions -> pipeline.evaluate, on the tuning splits.
 
     # self-hosted (default provider apertus_aws, SSH tunnel on 127.0.0.1:8000)
     python scripts/run_extract.py --split dev --source reference
@@ -6,7 +6,8 @@
     SENTINEL_ALLOW_REMOTE_LLM=fictional_data_only python scripts/run_extract.py --split dev --source reference \\
         --provider openrouter --model meta-llama/llama-3.3-70b-instruct
 
-Holdout and test are refused. Rules and thresholds come from config/ untouched (untuned placeholders).
+Holdout is refused. Testset_30 (split `test`) was cleared by Outcept for tuning; it needs --allow-test.
+`--split tune` = dev + test (the full tuning set). --workers N runs N calls in parallel (vLLM batches them). Rules and thresholds come from config/ untouched (untuned placeholders).
 An extraction failure is recorded as StageError("extract") and the call becomes review, never no_alert.
 Writes artifacts/predictions/<run_id>.json, artifacts/metrics/extract_<run_id>.json (extraction stats),
 artifacts/traces_extract/<run_id>/<call_id>.json, then runs pipeline.evaluate on the predictions.
@@ -14,6 +15,7 @@ artifacts/traces_extract/<run_id>/<call_id>.json, then runs pipeline.evaluate on
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import json
 import re
 import statistics
@@ -86,22 +88,33 @@ def summarise(per_call: list[dict]) -> dict:
     }
 
 
-def run(split: str, source: str, provider: str | None, model: str | None, limit: int | None) -> tuple[Path, dict]:
-    call_ids = json.loads(SPLITS_FILE.read_text(encoding="utf-8"))["splits"][split]["call_ids"]
+TUNING_SPLITS = {"dev": ("dev",), "test": ("test",), "tune": ("dev", "test")}   # never holdout
+
+
+def split_call_ids(split: str) -> list[str]:
+    splits = json.loads(SPLITS_FILE.read_text(encoding="utf-8"))["splits"]
+    return [cid for name in TUNING_SPLITS[split] for cid in splits[name]["call_ids"]]
+
+
+def run(split: str, source: str, provider: str | None, model: str | None, limit: int | None,
+        workers: int = 1) -> tuple[Path, dict]:
+    call_ids = split_call_ids(split)
     client = llm.get_client(provider, model)
     client.probe()                           # fails loudly on a dead tunnel; resolves model id + revision
     info = client.version_info()
     config = dec.load_config()
-    results, per_call = [], []
-    selected = 0
+    todo = []
     for cid in call_ids:
-        if limit and selected >= limit:
+        if limit and len(todo) >= limit:
             break
         t = load_transcript(cid, source)
         if t is None:
             print(f"{cid}: no stored {source} transcript, skipped")
             continue
-        selected += 1
+        todo.append((cid, t))
+
+    def one(item):
+        cid, t = item
         report: list[dict] = []
         errors: list[StageError] = []
         try:
@@ -120,18 +133,22 @@ def run(split: str, source: str, provider: str | None, model: str | None, limit:
             res = CallResult(cid, trace.decision, trace.risk_score, trace.confidence,
                              findings=stages.build_findings(trace, t),
                              narrative="(M4 run: no narrative stage)", stage_errors=errors, versions=trace.versions)
-        results.append(res)
         ms = [m for w in report for m in w["metrics"]]
         tok = lambda k: sum(m[k] or 0 for m in ms) if ms and all(m[k] is not None for m in ms) else None
-        per_call.append({
+        row = {
             "call_id": cid, "failed": facts is None, "error": errors[0].message if errors else None,
             "n_facts": len(facts or []), "n_valid": sum(f.valid for f in facts or []),
             "drops": dict(Counter(reason_key(f.drop_reason) for f in facts or [] if not f.valid)),
             "windows": report, "wall_ms": sum(m["wall_ms"] for m in ms),
             "input_tokens": tok("input_tokens"), "output_tokens": tok("output_tokens"),
-            "decision": res.decision, "decision_path": trace.decision_path if trace else None})
-        print(f"{cid}: {res.decision:8s} facts={len(facts or [])} valid={per_call[-1]['n_valid']} "
-              f"windows={len(report)}{' ERROR ' + errors[0].message[:100] if errors else ''}")
+            "decision": res.decision, "decision_path": trace.decision_path if trace else None}
+        print(f"{cid}: {res.decision:8s} facts={len(facts or [])} valid={row['n_valid']} "
+              f"windows={len(report)}{' ERROR ' + errors[0].message[:100] if errors else ''}", flush=True)
+        return res, row
+
+    with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:      # map keeps the split order
+        done = list(pool.map(one, todo))
+    results, per_call = [r for r, _ in done], [row for _, row in done]
 
     rid = run_id(provider, client, source, split)
     label = f"{info['provider']} / {client.model} / self_hosted={info['self_hosted']}"
@@ -157,23 +174,28 @@ def run_id(provider, client, source, split) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--split", choices=("dev",), default="dev", help="dev only; holdout and test are refused")
+    ap.add_argument("--split", choices=sorted(TUNING_SPLITS), default="dev",
+                    help="dev, test (Testset_30, needs --allow-test) or tune (dev+test); holdout is refused")
+    ap.add_argument("--allow-test", action="store_true", help="confirm Testset_30 use (cleared by Outcept for tuning)")
+    ap.add_argument("--workers", type=int, default=1, help="calls in parallel (default 1)")
     ap.add_argument("--source", choices=("reference", "asr"), default="reference")
     ap.add_argument("--provider", help="name from config/providers.yaml (default: registry default)")
     ap.add_argument("--model", help="model id; remote providers need an allowlisted one")
     ap.add_argument("--prompt", choices=sorted(ex.PROMPTS), default="v2", help="prompt generation (default v2)")
     ap.add_argument("--limit", type=int, default=None)
     args = ap.parse_args(argv)
+    if "test" in TUNING_SPLITS[args.split] and not args.allow_test:
+        ap.error(f"--split {args.split} includes Testset_30: pass --allow-test")
     try:
         ex.set_prompt(args.prompt)
-        pred, stats = run(args.split, args.source, args.provider, args.model, args.limit)
+        pred, stats = run(args.split, args.source, args.provider, args.model, args.limit, args.workers)
     except llm.LLMError as e:
         print(f"LLM unavailable or refused: {e}", file=sys.stderr)
         return 2
     print("\n" + json.dumps(stats["summary"], indent=2))
     print(f"\nLabel: {stats['provider']} / {stats['model']} / self_hosted={stats['self_hosted']}, {args.source} "
           f"transcripts, dev n={stats['summary']['calls']}, untuned placeholders\n")
-    return evaluate.main(["--pred", str(pred), "--split", args.split])
+    return evaluate.main(["--pred", str(pred)] + (["--split", args.split] if args.split != "tune" else []))
 
 
 if __name__ == "__main__":
