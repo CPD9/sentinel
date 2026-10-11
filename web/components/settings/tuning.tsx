@@ -24,6 +24,7 @@ import { CurveChart } from "./curve-chart";
 import { SuggestionsCard } from "./suggestions-card";
 import { ThresholdTrack } from "./threshold-track";
 import { WorkloadMeter } from "./workload-meter";
+import { PRESETS } from "@/lib/presets";
 
 const errText = (e: unknown) => (e instanceof ApiError ? (Array.isArray(e.detail) ? e.detail.join("; ") : `${e.code}: ${e.detail}`) : String(e));
 const DECIDED = (c: CallListItem) => (c.status === "done" || c.status === "error") && c.decision != null;
@@ -157,12 +158,6 @@ export function Tuning() {
   );
 }
 
-// Presets only move the alert line; the review line and the gate stay as they are (Advanced).
-const PRESETS = [
-  { label: "Cautious", alarm: 0.5, hint: "catches more, more calls for a person" },
-  { label: "Balanced", alarm: 0.7, hint: "the shipped default" },
-  { label: "Strict", alarm: 0.85, hint: "fewer false alarms, may miss weaker cases" },
-];
 
 /** Nik's design 05, right panel: Outcome | Now | After, one sentence per kind of move, the calls that flip, the workload. */
 function Impact({ calls, known, patch, sim }: { calls: CallListItem[]; known: Set<string>; patch: Patch | null; sim: ReturnType<typeof useSimulate> }) {
