@@ -76,3 +76,39 @@ python scripts/baseline_direct.py --split dev && python scripts/baseline_direct.
 python scripts/strategy_lab.py --facts artifacts/traces_extract/extract_builder_pod_apertus-8b_reference_tune_v2 \
     --direct artifacts/predictions/baseline_direct_builder-pod-apertus-8b_{dev,test}.json --run-id strategy_lab_t4
 ```
+
+## Final system, ASR mode (T5, 11 Oct 2026)
+
+Frozen configuration: faster-whisper large-v3-turbo (GPU decodes from the builder Pod), Apertus v1.5 8B + prompt v2,
+hybrid strategy (S3), `config/rules.yaml` rules-v2, `config/thresholds.json` alarm 0.70 / review 0.30 / gate 0.50.
+One run over all 62 calls (`run.py --split all`, run id `pipeline_asr_final`), real ffprobe-checked snippets,
+zero stage errors. Holdout was scored exactly once, after the freeze. Reports: `artifacts/quality/final_report*.json`
+(bootstrap over dialogue groups, 1000 resamples, 95 % CIs).
+
+| set | n | strict alarm P / R | escalation P / R / F1 [95% CI] | macro F1 | false alarms on gold no_alert |
+|---|---|---|---|---|---|
+| dev (tuned on) | 28 | n/a / 0.00 | 0.50 / 0.38 / 0.43 [0.11, 0.69] | 0.14 | 0 (+6 review) |
+| Testset_30 (tuned on) | 20 | 1.00 / 0.22 | 0.60 / 0.25 / 0.35 [0.00, 0.67] | 0.30 | 0 (+2 review) |
+| **holdout (unseen)** | 14 | n/a / 0.00 | **0.00 / 0.00 / 0.00** | 0.12 | 0 (+5 review) |
+
+What changed before the freeze (tuned on dev + Testset_30 only):
+- **Unknown speakers.** ASR has no diarization, so every segment is `unknown`. Rendered as "(unknown)", Apertus
+  answered `{"facts": []}` for every window (all 28 dev calls). `pipeline/extract.py` now shows them as "(speaker)";
+  the model then attributes speakers from the content.
+- **Counter-evidence (credential false alarms).** 8 of the 10 reference-mode false alarms were a customer reading out
+  digits ("the last four are 4-2-4-2", or right after the advisor said "please don't tell me any number"). A customer
+  credential disclosure is now review-level (0.6); the advisor disclosing it or a third-party recipient stays an alarm.
+  Reference mode: false alarms 10 → 2, strict-alarm precision 0.45 → 0.62, escalation F1 unchanged (0.625), strict-alarm
+  recall 0.43 → 0.24. An opt-in `prior_counter_speakers` (an earlier advisor warning discounts a customer disclosure)
+  made things worse (escalation F1 0.58) and stays off.
+- **Thresholds.** Grid over alarm 0.50–0.90, review 0.20–0.65, gate 0–0.7 (`scripts/calibrate.py`, objective
+  mean(dev, test) escalation F1, ties → strict-alarm precision): review 0.40 → 0.30, others unchanged; tuning-set
+  escalation F1 0.31 → 0.39.
+
+**Honest reading.** The ASR-mode system is precise but nearly blind: it raised no false alarms on any split, but on the
+unseen holdout it missed all 6 calls that needed escalation and sent 5 of 8 harmless calls to review. The gap to
+reference transcripts (escalation F1 0.63 on the same tuning set) is the ASR stage: Whisper merges turns into long
+undiarized segments and normalises Swiss German towards Standard German, and Apertus then finds about a tenth of the
+facts (77 facts on 48 calls vs 673 with reference transcripts). Next levers, in order: speaker diarization
+(`pipeline/diarize.py`, not built), segment splitting at pauses, and rules that do not depend on speaker roles.
+n is small (14 unseen calls, 7 dialogues), so the CIs are wide.

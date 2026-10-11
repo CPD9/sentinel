@@ -214,8 +214,18 @@ def test_failure_is_a_stage_error_not_empty_transcript(env, monkeypatch):
     assert t is None and isinstance(errors[0], StageError) and "audio not found" in errors[0].message
 
 
-def test_missing_model_path(monkeypatch):
+def test_missing_model_path_uses_the_bake_off_default(monkeypatch, tmp_path):
     monkeypatch.delenv("ASR_MODEL_PATH", raising=False)
     monkeypatch.setattr(asr, "load_env", lambda: None)
-    with pytest.raises(asr.AsrError):
-        asr.resolve_model(None)
+    asked = []
+    import faster_whisper.utils
+    monkeypatch.setattr(faster_whisper.utils, "download_model", lambda spec: asked.append(spec) or str(tmp_path))
+    asr.resolve_model(None)                                   # no network: the download is faked
+    assert asked == [asr.DEFAULT_ASR_MODEL] == ["mobiuslabsgmbh/faster-whisper-large-v3-turbo"]
+
+
+def test_gpu_hypothesis_is_reused_on_a_cpu_host(env):
+    asr.transcribe(env.wav, "call_t01", model_spec=env.model, device="cuda", compute_type="float16", **env.dirs)
+    asr.transcribe(env.wav, "call_t01", model_spec=env.model, device="cpu", compute_type="int8", **env.dirs)
+    assert MockWhisper.calls == 1                      # the laptop shows exactly what the GPU decoded
+    assert len(list(env.dirs["cache_dir"].glob("*.json"))) == 1

@@ -19,6 +19,7 @@ import argparse
 import json
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -34,12 +35,16 @@ SPLITS = REPO_ROOT / "artifacts" / "splits" / "dialogue_splits.json"
 PRED_DIR = REPO_ROOT / "artifacts" / "predictions"
 
 
+SPLIT_GROUPS = {"tune": ("dev", "test"), "all": ("dev", "test", "holdout")}   # tune = the tuning set; all = demo out/
+
+
 def plan_jobs(folder: Path | None, split: str | None, allow_test: bool) -> tuple[list[tuple[str, Path]], dict[str, str]]:
     """[(call_id, audio_path)] and the name -> neutral id map for files not in inference.json."""
     index = {c["call_id"]: c for c in json.loads(INFERENCE.read_text(encoding="utf-8"))["calls"]} if INFERENCE.is_file() else {}
     locked = set(json.loads(SPLITS.read_text(encoding="utf-8"))["splits"]["test"]["call_ids"]) if SPLITS.is_file() else set()
     if split:
-        ids = json.loads(SPLITS.read_text(encoding="utf-8"))["splits"][split]["call_ids"]
+        splits = json.loads(SPLITS.read_text(encoding="utf-8"))["splits"]
+        ids = [i for s in SPLIT_GROUPS.get(split, (split,)) for i in splits[s]["call_ids"]]
         jobs = [(i, REPO_ROOT / index[i]["audio_path"]) for i in ids]
         id_map: dict[str, str] = {}
     else:
@@ -62,13 +67,15 @@ def plan_jobs(folder: Path | None, split: str | None, allow_test: bool) -> tuple
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("folder", nargs="?", type=Path, help="folder with .wav files")
-    ap.add_argument("--split", choices=("dev", "holdout", "test"), help="run a split from dialogue_splits.json instead")
+    ap.add_argument("--split", choices=("dev", "holdout", "test", "tune", "all"),
+                    help="run a split from dialogue_splits.json instead (tune = dev+test, all = every call)")
     ap.add_argument("--transcripts", choices=MODES, default="asr")
     ap.add_argument("--no-llm", action="store_true", help="skip extraction deliberately (keywords + rules only)")
     ap.add_argument("--out", type=Path, default=REPO_ROOT / "out")
     ap.add_argument("--run-id")
     ap.add_argument("--predictions", action="store_true", help="also write artifacts/predictions/<run_id>.json")
     ap.add_argument("--allow-test", action="store_true")
+    ap.add_argument("--workers", type=int, default=1, help="calls in parallel (default 1)")
     a = ap.parse_args(argv)
     if bool(a.folder) == bool(a.split):
         ap.error("give exactly one of <wav_folder> or --split")
@@ -85,19 +92,24 @@ def main(argv: list[str] | None = None) -> int:
         write_json_atomic(out / "id_map.json", {"note": "original file name -> neutral call id; never passed to the pipeline",
                                                 "map": id_map})
 
-    calls, t0 = [], time.perf_counter()
-    for cid, wav in jobs:
+    t0 = time.perf_counter()
+
+    def one(job):
+        cid, wav = job
         t1 = time.perf_counter()
-        try:
-            d = process_call(str(wav), cid, transcripts=a.transcripts, no_llm=a.no_llm, out_dir=out)
-        except Exception as exc:     # only an invalid call id / argument can get here; keep the batch going
-            print(f"{cid}: process_call raised {type(exc).__name__}: {exc}", file=sys.stderr)
-            return 2
-        calls.append(d)
+        d = process_call(str(wav), cid, transcripts=a.transcripts, no_llm=a.no_llm, out_dir=out)
         errs = ",".join(e["stage"] for e in d["stage_errors"]) or "-"
         print(f"{cid}: {d['decision']:8s} risk {d['risk_score']:.2f} conf "
               f"{'n/a' if d['confidence'] is None else format(d['confidence'], '.2f')} "
-              f"findings {len(d['findings'])} errors {errs} ({time.perf_counter() - t1:.1f} s)")
+              f"findings {len(d['findings'])} errors {errs} ({time.perf_counter() - t1:.1f} s)", flush=True)
+        return d
+
+    try:          # --workers N: calls in parallel (LLM requests batch on the server); results keep the job order
+        with ThreadPoolExecutor(max_workers=max(1, a.workers)) as pool:
+            calls = list(pool.map(one, jobs))
+    except Exception as exc:     # only an invalid call id / argument can get here
+        print(f"process_call raised {type(exc).__name__}: {exc}", file=sys.stderr)
+        return 2
 
     notes = [f"transcripts: {a.transcripts}"]
     if a.no_llm:

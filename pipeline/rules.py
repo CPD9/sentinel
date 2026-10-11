@@ -7,7 +7,9 @@ A rule returns a `RuleResult` {criterion, risk 0-1, fired, reason, fact_ids + ke
                     `needs_keyword` rules count a fact only with such a hit.
   counter-evidence  valid facts in the rule's scope with act warn / refuse / hypothetical / quote that are AT OR AFTER the
                     supporting fact in transcript order and share no segment with it, plus the fact's own non-empty
-                    `counter_evidence` text. risk *= prod(1 - discount). A warning BEFORE a disclosure does not excuse it.
+                    `counter_evidence` text. risk *= prod(1 - discount). A warning BEFORE a disclosure does not excuse it,
+                    except for speakers in defaults.prior_counter_speakers (e.g. a customer who discloses after the
+                    advisor warned them: the advisor acted correctly).
   rule risk         max over supporting facts, floored by `keyword_only_risk` when the family has hits; capped by max_risk.
   fired             has a supporting fact and risk >= fire_at.
   conflict          a supporting and a counter fact that cite the SAME segment (one utterance read both ways).
@@ -58,6 +60,7 @@ class RulesConfig:
     keyword_only_risk: float
     counter_discount: dict[str, float]
     rules: dict[str, RuleCfg]
+    prior_counter_speakers: tuple[str, ...] = ()   # their facts are also discounted by EARLIER counters of the other side
 
 
 def parse_rules(d: dict) -> RulesConfig:
@@ -79,6 +82,8 @@ def parse_rules(d: dict) -> RulesConfig:
         disc[k] = unit(v, f"defaults.counter_discount.{k}")
     for k in (*COUNTER_ACTS, "self"):
         disc.setdefault(k, 0.0)
+    prior = tuple(df.get("prior_counter_speakers") or ())
+    errs += [f"defaults.prior_counter_speakers: unknown speaker {x!r}" for x in prior if x not in SPEAKERS]
     rules: dict[str, RuleCfg] = {}
     for i, r in enumerate(d.get("rules") or []):
         w = f"rules[{i}]"
@@ -113,7 +118,7 @@ def parse_rules(d: dict) -> RulesConfig:
     errs += [f"rules: missing a rule for criterion {c}" for c in CRITERIA if c not in rules]
     if errs:
         raise ConfigError(errs)
-    return RulesConfig(str(d.get("version", "rules")), fire_at, boost, kw_only, disc, rules)
+    return RulesConfig(str(d.get("version", "rules")), fire_at, boost, kw_only, disc, rules, prior)
 
 
 def load_rules(path: Path = RULES_FILE) -> RulesConfig:
@@ -167,7 +172,8 @@ def evaluate(facts: list[Fact], hits: list[KeywordHit], transcript: Transcript, 
                 continue
             if hit_segs & set(f.segment_ids):
                 b += cfg.keyword_boost
-            applied = [c for c in counters if not set(c.segment_ids) & set(f.segment_ids) and at(c) >= at(f)]
+            applied = [c for c in counters if not set(c.segment_ids) & set(f.segment_ids)
+                       and (at(c) >= at(f) or (f.speaker in cfg.prior_counter_speakers and c.speaker != f.speaker))]
             keep = 1.0
             for c in applied:
                 keep *= 1.0 - cfg.counter_discount[c.act]
