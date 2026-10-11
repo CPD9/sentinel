@@ -8,7 +8,7 @@ import { approxSimulate, patchComponents, samePatch, type WhatifCalls } from "./
 import type {
   AnalysisArtifact, ApiErrorBody, ApplyResponse, AuditEntry, CallListItem, CallResult, DecisionTrace, FeedbackEntry,
   Decision, KeywordsConfig, Patch, PreviewRequest, PreviewResponse, ProcessingEvent, QualityReport, QualityReportSummary,
-  JudgeVerdict, MethodsResponse, QualityEvidence, ReportResponse, Stage, RerunResponse, RulesConfig, SimulationResult, SuggestionsResponse, Thresholds, Transcript, Verdict,
+  JudgeVerdict, MethodsResponse, ThresholdCurveFile, QualityEvidence, ReportResponse, Stage, RerunResponse, RulesConfig, SimulationResult, SuggestionsResponse, Thresholds, Transcript, Verdict,
 } from "./types";
 import { CRITERIA, EVENT_TYPES, verdictAllowed } from "./types";
 
@@ -380,6 +380,13 @@ export async function getQualityEvidence(): Promise<QualityEvidence | null> {
 export async function getJudge(id: string): Promise<JudgeVerdict | null> {
   if (isFixtures) return null;
   try { return (await getJson<JudgeVerdict>(api(`/calls/${encodeURIComponent(id)}/judge`))).data; }
+  catch (e) { if (e instanceof ApiError && (e.status === 404 || e.status === 405)) return null; throw e; }
+}
+
+/** False alarms / missed cases / review load over the adjustable settings (artifacts/metrics/threshold_curve.json). */
+export async function getThresholdCurve(): Promise<ThresholdCurveFile | null> {
+  if (isFixtures) return null;
+  try { return (await getJson<ThresholdCurveFile>(api("/evidence/threshold-curve"))).data; }
   catch (e) { if (e instanceof ApiError && (e.status === 404 || e.status === 405)) return null; throw e; }
 }
 

@@ -23,6 +23,7 @@ const PATH_TEXT: Record<string, string> = {
   judge_alarm: "AI judge: its verdict decides (alert, with at least one cited passage); facts and rules stay as the why",
   judge_review: "AI judge: its verdict decides (review: a person looks); facts and rules stay as the why",
   judge_no_alert: "AI judge: its verdict decides (no violation found); facts and rules stay as the why",
+  keyword_review: "Keyword review: the judge found no criterion, but one keyword family was heard in enough passages to send the call to a person (never an alert)",
 };
 
 /** "apertus-8b@/…/snapshots/a411d83…" → { name: "apertus-8b", rev: "a411d838600b" }. */

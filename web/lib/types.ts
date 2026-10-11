@@ -97,7 +97,9 @@ export type DecisionPath =
   | "stage_error" | "missing_evidence" | "contradictory_evidence" | "low_confidence"
   | "alarm" | "review_band" | "no_alert"
   // decision_source "direct_judge": the AI judge's verdict decides; facts and rules stay as the why (pipeline/schemas.py)
-  | "judge_alarm" | "judge_review" | "judge_no_alert";
+  | "judge_alarm" | "judge_review" | "judge_no_alert"
+  // judge mode with keyword review on: keyword hits alone raised the call to review (never an alarm)
+  | "keyword_review";
 export interface Fact {
   fact_id: string;
   speaker: Speaker;
@@ -129,7 +131,8 @@ export interface RuleResult {
   keyword_hit_ids: string[];
 }
 export interface ConfidenceBreakdown { value: number; gate: number; components: Record<string, number> }
-export interface Thresholds { alarm: number; review: number; confidence_gate: number }
+export interface KeywordReview { enabled: boolean; min_segments: number }
+export interface Thresholds { alarm: number; review: number; confidence_gate: number; keyword_review?: KeywordReview }
 export interface DecisionTrace {
   call_id: string;
   decision: Decision;
@@ -217,6 +220,18 @@ export interface QualityEvidence {
   auc: { value: number; run_id: string | null; note: string } | null;
   judge_eval?: { auc: Record<string, { value: number | null; ci: [number, number] | null; n: number | null }>; citations_valid: number | null; citations_total: number | null; judge_version: string | null } | null;
   methods?: { ship_rule_pass: boolean | null; rows: { name: string; oof: { esc_p?: number | null; esc_r?: number | null; esc_f1?: number | null; bacc?: number | null; review_load?: number | null; false_alarms?: number | null } | null; cv_bacc: number | null; cv_bacc_range: [number, number] | null }[] } | null;
+}
+
+// ---- Threshold curve (artifacts/metrics/threshold_curve.json): false alarms / missed / review load per setting, in-sample
+export interface CurvePointCounts { false_alarms: number; missed: number; review_load: number; alarms: number; reviews: number; esc_p: number | null; esc_r: number | null }
+export interface ThresholdCurveFile {
+  calls: number;
+  current: { alarm: number; review: number; keyword_review: KeywordReview };
+  current_point: CurvePointCounts;
+  review_threshold: (CurvePointCounts & { review: number })[];
+  alarm_threshold: (CurvePointCounts & { alarm: number })[];
+  keyword_review: (CurvePointCounts & { keyword_review: boolean; min_segments?: number })[];
+  note: string;
 }
 
 // ---- The AI judge's verdict on one call (<run>/judge/<call_id>.json): its citations are Fact-shaped, ids j001…

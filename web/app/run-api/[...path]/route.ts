@@ -220,8 +220,8 @@ export async function GET(req: Request, ctx: { params: Promise<{ path: string[] 
   if (a === "feedback") return json([...feedback.values()]);
   if (a === "audit" || a === "events") return a === "audit" ? json([]) : new Response(null, { status: 204 });
   if (a === "settings" && id === "thresholds") {
-    const t = readJson<Record<string, number>>(path.join(REPO, "config", "thresholds.json"));
-    return t ? json({ alarm: t.alarm, review: t.review, confidence_gate: t.confidence_gate }) : err(404, "not_available", "thresholds.json not found");
+    const t = readJson<{ alarm: number; review: number; confidence_gate: number; keyword_review?: { enabled: boolean; min_segments: number } }>(path.join(REPO, "config", "thresholds.json"));
+    return t ? json({ alarm: t.alarm, review: t.review, confidence_gate: t.confidence_gate, ...(t.keyword_review ? { keyword_review: t.keyword_review } : {}) }) : err(404, "not_available", "thresholds.json not found");
   }
   if (a === "settings" && id === "rules") return answer(await ask({ op: "rules" }));
   if (a === "settings" && id === "keywords") {
@@ -229,6 +229,10 @@ export async function GET(req: Request, ctx: { params: Promise<{ path: string[] 
     return k ? json(k) : err(404, "not_available", "keywords.json not found");
   }
   if (a === "evidence" && id === "quality") return json(qualityEvidence());
+  if (a === "evidence" && id === "threshold-curve") {
+    const c = readJsonLenient(path.join(ART, "metrics", "threshold_curve.json"));
+    return c ? json(c) : err(404, "not_available", "No threshold curve for this run yet.");
+  }
   if (a === "quality") {
     const dir = path.join(ART, "quality");
     type Rep = { report_id?: string; run_id?: string; split?: string; mode?: string; system?: string; created_at?: string; is_mock?: boolean };

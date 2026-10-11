@@ -25,7 +25,8 @@ import { SuggestionsCard } from "./suggestions-card";
 import { ThresholdTrack } from "./threshold-track";
 import { WorkloadMeter } from "./workload-meter";
 import { PRESETS } from "@/lib/presets";
-import { OutcomeCounts } from "@/components/quality/outcome-counts";
+import { getThresholdCurve } from "@/lib/data";
+import type { KeywordReview, ThresholdCurveFile } from "@/lib/types";
 
 const errText = (e: unknown) => (e instanceof ApiError ? (Array.isArray(e.detail) ? e.detail.join("; ") : `${e.code}: ${e.detail}`) : String(e));
 const DECIDED = (c: CallListItem) => (c.status === "done" || c.status === "error") && c.decision != null;
@@ -35,7 +36,7 @@ export function Tuning() {
   const calls = useAsync(getCalls, "calls");
   const suggestions = useAsync(() => getSuggestions(), "tuning-suggestions-probe");
   const report = useAsync(async () => { const r = await getQualityReports(); return r.length ? getQualityReport(r[0].report_id) : null; }, "tuning-report");
-  const { draft: d, setThreshold, loadPatch, reset, toPatch } = useSettingsDraft();
+  const { draft: d, setThreshold, setKeywordReview, loadPatch, reset, toPatch } = useSettingsDraft();
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [applied, setApplied] = useState<string | null>(null);   // lives here, not in the keyed card, so a remount cannot clear it
   const [epoch, setEpoch] = useState(0);              // bumps after a save/apply so suggestions and the change log reload
@@ -51,6 +52,16 @@ export function Tuning() {
     const v = Number(wanted);
     if (v > saved.data.review && v <= 1) setThreshold(saved.data, "alarm", v);
   }, [wanted, saved.data, setThreshold]);
+  // Demo path: ?keyword_review=2 opens with keyword review switched on (min 2 segments) as an unsaved draft.
+  const wantedKr = params.get("keyword_review");
+  const appliedKr = useRef(false);
+  useEffect(() => {
+    if (appliedKr.current || !wantedKr || !saved.data) return;
+    appliedKr.current = true;
+    const n = Number(wantedKr);
+    if (n >= 1 && n <= 4) setKeywordReview({ enabled: true, min_segments: n });
+  }, [wantedKr, saved.data, setKeywordReview]);
+  const kr = d.keywordReview ?? saved.data?.keyword_review ?? { enabled: false, min_segments: 2 };
   const patch = toPatch(saved.data);
   const sim = useSimulate(patch);
   const result = sim.data ?? sim.stale;
@@ -59,7 +70,7 @@ export function Tuning() {
   if (saved.status === "error" && !saved.data) return <ErrorCard error={saved.error} onRetry={saved.reload} />;
   if (!draft || !saved.data) return <SkeletonBlock rows={6} />;
 
-  const set = (k: keyof Thresholds, v: number) => { setMsg(null); setApplied(null); setThreshold(saved.data!, k, v); };
+  const set = (k: "alarm" | "review" | "confidence_gate", v: number) => { setMsg(null); setApplied(null); setThreshold(saved.data!, k, v); };
   const save = async () => {
     if (!patch) return;
     try {
@@ -85,6 +96,10 @@ export function Tuning() {
       {(msg || applied) && (
         <p role={msg && !msg.ok ? "alert" : "status"} className={cn("rounded-xl border p-3 text-sm", msg && !msg.ok ? "border-alarm bg-alarm-bg text-alarm" : "border-ok bg-ok-bg text-ok")}>{msg?.text ?? applied}</p>
       )}
+
+      {/* demo moment 2 on the judge run: one switch, live false alarms / missed cases / review load */}
+      <KeywordReviewPanel value={kr} saved={saved.data.keyword_review ?? { enabled: false, min_segments: 2 }} draft={draft}
+        onChange={(v) => { setMsg(null); setApplied(null); setKeywordReview(v); }} />
 
       {/* Nik's design 05: the line on the left, what the change would do on the right */}
       <div className="grid gap-5 lg:grid-cols-2">
@@ -132,7 +147,6 @@ export function Tuning() {
         </section>
       </div>
 
-      <OutcomeCounts />
 
       {/* the trade-off, only when a curve exists: an empty chart is a stagnant control */}
       {curve && <section aria-labelledby="tradeoff-h" className="surface-tint space-y-2 rounded-2xl p-5">
@@ -278,5 +292,73 @@ function Fold({ title, hint, children }: { title: string; hint: string; children
       </summary>
       <div className="border-t border-border p-5">{children}</div>
     </details>
+  );
+}
+
+/** The curve point for a draft: the keyword-review row when that switch differs from the shipped setting, else the alert-
+ *  or review-line row nearest the draft (the curve varies one setting at a time; the label says which). */
+function curvePoint(c: ThresholdCurveFile, draft: Thresholds, kr: KeywordReview) {
+  const near = <T,>(rows: T[], key: (r: T) => number, v: number) => rows.reduce((b, r) => (Math.abs(key(r) - v) < Math.abs(key(b) - v) ? r : b), rows[0]);
+  if (kr.enabled !== c.current.keyword_review.enabled || (kr.enabled && kr.min_segments !== c.current.keyword_review.min_segments)) {
+    const row = c.keyword_review.find((r) => r.keyword_review === kr.enabled && (!kr.enabled || r.min_segments === kr.min_segments));
+    return row ? { row, label: kr.enabled ? `keyword review on, min ${kr.min_segments} passages` : "keyword review off" } : null;
+  }
+  if (Math.abs(draft.alarm - c.current.alarm) > 0.001 && c.alarm_threshold.length) return { row: near(c.alarm_threshold, (r) => r.alarm, draft.alarm), label: `alert line ${Math.round(draft.alarm * 100)}` };
+  if (Math.abs(draft.review - c.current.review) > 0.001 && c.review_threshold.length) return { row: near(c.review_threshold, (r) => r.review, draft.review), label: `review line ${Math.round(draft.review * 100)}` };
+  return { row: c.current_point, label: "shipped setting" };
+}
+
+function KeywordReviewPanel({ value, saved, draft, onChange }: { value: KeywordReview; saved: KeywordReview; draft: Thresholds; onChange: (v: KeywordReview) => void }) {
+  const curve = useAsync(getThresholdCurve, "threshold-curve");
+  const c = curve.data;
+  const now = c?.current_point ?? null;
+  const p = c ? curvePoint(c, draft, value) : null;
+  const cell = (label: string, a: number | null | undefined, b: number | null | undefined, fmt: (x: number) => string, good: "down" | "up") => {
+    const moved = a != null && b != null && Math.abs(a - b) > 1e-9;
+    const better = moved && (good === "down" ? b! < a! : b! > a!);
+    return (
+      <div>
+        <dt className="text-sm text-muted-foreground">{label}</dt>
+        <dd className="tabular flex items-baseline gap-2">
+          {moved && <span className="text-lead text-muted-foreground line-through decoration-1">{fmt(a!)}</span>}
+          <span className={cn("text-headline font-semibold", moved && (better ? "text-ok" : "text-review"))}>{b == null ? "–" : <Tween value={b} format={fmt} />}</span>
+        </dd>
+      </div>
+    );
+  };
+  return (
+    <section aria-labelledby="kr-h" className="elevated stage-in grid gap-6 rounded-[var(--radius-panel)] p-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+      <div className="space-y-3">
+        <h3 id="kr-h" className="eyebrow">Keyword review</h3>
+        <p className="text-body">When the AI judge finds nothing, keywords heard in several passages can still send a call to a person. Never an alert.</p>
+        <div className="flex flex-wrap items-center gap-3">
+          <button type="button" role="switch" aria-checked={value.enabled} onClick={() => onChange({ ...value, enabled: !value.enabled })}
+            className={cn("inline-flex h-11 items-center gap-3 rounded-full border px-5 font-semibold transition-colors duration-[var(--dur-fast)]", value.enabled ? "border-primary bg-primary text-primary-foreground" : "border-foreground/60 hover:bg-muted")}>
+            <span aria-hidden className={cn("relative h-5 w-9 rounded-full transition-colors", value.enabled ? "bg-primary-foreground/30" : "bg-muted")}>
+              <span className={cn("absolute top-0.5 size-4 rounded-full bg-current transition-[left] duration-[var(--dur-fast)] motion-reduce:transition-none", value.enabled ? "left-[1.1rem]" : "left-0.5")} />
+            </span>
+            Keyword review {value.enabled ? "on" : "off"}
+          </button>
+          <label className={cn("flex items-center gap-2 text-sm", !value.enabled && "opacity-50")}>min passages
+            <select value={value.min_segments} disabled={!value.enabled} onChange={(e) => onChange({ ...value, min_segments: Number(e.target.value) })}
+              className="h-9 rounded-xl border border-border bg-background px-2 text-body">
+              {[1, 2, 3, 4].map((n) => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </label>
+        </div>
+        <p className="text-xs text-muted-foreground">Shipped: {saved.enabled ? `on, min ${saved.min_segments}` : "off"}. Nothing is saved here.</p>
+      </div>
+      <div className="space-y-3" aria-live="polite">
+        <p className="eyebrow">On the {c?.calls ?? "–"} case calls{p ? ` · ${p.label}` : ""}</p>
+        {!c ? <p className="text-sm text-muted-foreground">{curve.status === "loading" ? "Loading the measured curve…" : "No threshold curve for this run: these counts appear when it is published."}</p> : (
+          <dl className="grid gap-4 sm:grid-cols-3">
+            {cell("False alarms", now?.false_alarms, p?.row.false_alarms, (x) => String(Math.round(x)), "down")}
+            {cell("Missed cases", now?.missed, p?.row.missed, (x) => String(Math.round(x)), "down")}
+            {cell("Calls a person looks at", now?.review_load, p?.row.review_load, (x) => `${Math.round(x * 100)}%`, "down")}
+          </dl>
+        )}
+        {c && <p className="text-xs text-muted-foreground">Measured, not estimated: every call re-decided by the pipeline at each setting and counted against the case answers (in-sample; nothing was tuned on them). Alerts {p?.row.alarms ?? "–"} · reviews {p?.row.reviews ?? "–"}.</p>}
+      </div>
+    </section>
   );
 }
