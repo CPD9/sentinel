@@ -15,6 +15,13 @@ providers:
     model: apertus-8b
     self_hosted: true
 
+  # Same Pod, second vLLM: Qwen2.5-32B-Instruct-AWQ (open weights, Apache-2.0) on Pod 127.0.0.1:8010, tunnelled to
+  # laptop 127.0.0.1:8002 (laptop 8001 is the API). scripts/pod_serve_qwen.sh, scripts/pod_tunnel.sh.
+  builder_pod_qwen:
+    base_url: http://127.0.0.1:8002/v1
+    model: qwen-32b
+    self_hosted: true
+
   # Our GPU VM, vLLM through the SSH tunnel on 127.0.0.1:8000 (value of LLM_BASE_URL in .env).
   apertus_aws:
     base_url_env: LLM_BASE_URL
