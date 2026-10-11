@@ -2,8 +2,8 @@
 // Wording follows what the pipeline actually does (pipeline/rules.py, confidence.py, decide.py; CLAUDE.md steps 6-8).
 export const GLOSSARY = {
   alarm: {
-    title: "Alarm",
-    text: "A check found a verified passage that breaks a rule, the risk is at or above the alarm threshold and nothing makes the system unsure. Without a verified supporting passage there is never an alarm, whatever the thresholds.",
+    title: "Alert",
+    text: "A check found a verified passage that breaks a rule, the risk is at or above the alarm threshold and nothing makes the system unsure. Without a verified supporting passage there is never an alert, whatever the thresholds.",
   },
   review: {
     title: "Review",

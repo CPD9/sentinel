@@ -236,7 +236,7 @@ function CallsTable({ calls, gate, stages }: { calls: CallListItem[] | null; gat
       <div className="flex flex-wrap items-center gap-3">
         <Select label="Decision" value={decision} onChange={(e) => setDecision(e.target.value)}>
           <option value="">all</option>
-          <option value="alarm">alarm</option><option value="review">review</option><option value="no_alert">no alert</option>
+          <option value="alarm">alert</option><option value="review">review</option><option value="no_alert">no alert</option>
         </Select>
         <Select label="Status" value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="">all</option>

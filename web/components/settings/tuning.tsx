@@ -1,14 +1,15 @@
 "use client";
 // Sensitivity: one focal panel (the alarm threshold, every call as a dot on it, and what changes if you save), then the
-// test-set trade-off, then three one-line folds (advanced thresholds, suggestions from feedback, change log).
+// context card with tabs (test-set trade-off, suggestions from feedback, change log).
 // The unsaved draft is shared with the suggestions' Preview via SettingsDraftProvider; nothing is saved until "Save changes".
-import { AlertTriangle, ArrowRight, Check, CheckCircle2, ChevronRight, Eye, OctagonAlert, Save, UserRound } from "lucide-react";
+import { AlertTriangle, ArrowRight, Check, CheckCircle2, Eye, History, Lightbulb, LineChart, OctagonAlert, Save, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { DecisionBadge } from "@/components/shell/badges";
 import { ErrorCard, SkeletonBlock } from "@/components/shell/states";
 import { Button } from "@/components/ui/button";
 import { InfoTip } from "@/components/ui/info-tip";
+import { Segmented } from "@/components/ui/segmented";
 import { Tween } from "@/components/ui/tween";
 import { ApiError, getCalls, getQualityReport, getQualityReports, getThresholds, isFixtures, saveDraft } from "@/lib/data";
 import { componentLabel, pct } from "@/lib/format";
@@ -34,6 +35,7 @@ export function Tuning() {
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [applied, setApplied] = useState<string | null>(null);   // lives here, not in the keyed card, so a remount cannot clear it
   const [epoch, setEpoch] = useState(0);              // bumps after a save/apply so suggestions and the change log reload
+  const [more, setMore] = useState<"tradeoff" | "suggestions" | "log">("tradeoff");   // the context card's tab
 
   const draft = d.thresholds ?? saved.data;
   const patch = toPatch(saved.data);
@@ -78,46 +80,62 @@ export function Tuning() {
         <p role={msg && !msg.ok ? "alert" : "status"} className={cn("rounded-xl border p-3 text-sm", msg && !msg.ok ? "border-alarm bg-alarm-bg text-alarm" : "border-ok bg-ok-bg text-ok")}>{msg?.text ?? applied}</p>
       )}
 
-      {/* the focal panel: the slider on the left, its effect on the right (stacked on narrow screens) */}
+      {/* the focal panel: all three thresholds on the left (alarm big, the other two compact underneath), their effect
+          on the right (stacked on narrow screens). No folds: everything that changes a decision is in view. */}
       <section aria-labelledby="alarm-h" className="elevated grid gap-6 rounded-2xl p-5 lg:grid-cols-[minmax(0,36rem)_minmax(0,1fr)] lg:gap-8">
-        <div className="min-w-0 space-y-3">
-          <div className="flex items-baseline justify-between gap-4">
-            <h2 id="alarm-h" className="flex items-center gap-1 text-base font-semibold"><label htmlFor="th-alarm">Alarm threshold</label><InfoTip term="alarm_threshold" /></h2>
-            <p className="tabular text-3xl font-semibold tracking-tight">{pct(draft.alarm)}<span className={cn("ml-2 text-xs font-normal", patch?.thresholds?.alarm != null ? "text-link" : "text-muted-foreground")}>saved {pct(saved.data.alarm)}</span></p>
+        <div className="min-w-0 space-y-5">
+          <div className="space-y-3">
+            <div className="flex items-baseline justify-between gap-4">
+              <h2 id="alarm-h" className="flex items-center gap-1 text-base font-semibold"><label htmlFor="th-alarm">Alarm threshold</label><InfoTip term="alarm_threshold" /></h2>
+              <p className="tabular text-3xl font-semibold tracking-tight">{pct(draft.alarm)}<span className={cn("ml-2 text-xs font-normal", patch?.thresholds?.alarm != null ? "text-link" : "text-muted-foreground")}>saved {pct(saved.data.alarm)}</span></p>
+            </div>
+            {calls.status === "loading" && !calls.data ? <SkeletonBlock rows={1} /> : (
+              <ThresholdTrack id="th-alarm" value={draft.alarm} saved={saved.data.alarm} review={draft.review} calls={decided} after={after} onChange={(v) => set("alarm", v)} />
+            )}
           </div>
-          {calls.status === "loading" && !calls.data ? <SkeletonBlock rows={1} /> : (
-            <ThresholdTrack id="th-alarm" value={draft.alarm} saved={saved.data.alarm} review={draft.review} calls={decided} after={after} onChange={(v) => set("alarm", v)} />
-          )}
+          <div className="grid gap-5 border-t border-border pt-5 sm:grid-cols-2">
+            <SmallSlider k="review" term="review_threshold" title="Review threshold" value={draft.review} saved={saved.data.review} onChange={(v) => set("review", v)} />
+            <SmallSlider k="confidence_gate" term="confidence_gate" title="Confidence gate" value={draft.confidence_gate} saved={saved.data.confidence_gate} onChange={(v) => set("confidence_gate", v)} />
+          </div>
         </div>
         <div className="min-w-0 lg:border-l lg:border-border lg:pl-8">
           <Impact calls={decided} known={new Set((calls.data ?? []).map((c) => c.call_id))} patch={patch} sim={sim} />
         </div>
       </section>
 
-      {/* the trade-off, quieter */}
-      <section aria-labelledby="tradeoff-h" className="surface-tint space-y-2 rounded-2xl p-5">
-        <h3 id="tradeoff-h" className="text-sm font-semibold">How strictness trades off on the test set</h3>
-        <p className="flex flex-wrap items-center gap-x-1 text-xs text-muted-foreground">
-          Precision<InfoTip term="precision" /> and recall<InfoTip term="recall" /> at every alarm threshold
-          {report.data ? `, measured on ${report.data.overall.n} ${report.data.split} calls${report.data.is_mock ? " (MOCK curve)" : ""}` : ""}. The solid line is your draft.
-        </p>
-        {curve ? <CurveChart curve={curve} dragged={draft.alarm} />
-          : report.status === "loading" ? <div className="skeleton h-24" /> : <p className="text-sm text-muted-foreground">No curve yet: it appears after the first evaluation run.</p>}
-      </section>
-
-      <Fold title="Advanced" hint={`review threshold ${pct(draft.review)}, confidence gate ${pct(draft.confidence_gate)}`}>
-        <div className="grid gap-6 md:grid-cols-2">
-          <SmallSlider k="review" term="review_threshold" title="Review threshold" help="From this risk up to the alarm threshold, a person decides." value={draft.review} saved={saved.data.review} onChange={(v) => set("review", v)} />
-          <SmallSlider k="confidence_gate" term="confidence_gate" title="Confidence gate" help="Below this confidence, a call with some risk always goes to a person." value={draft.confidence_gate} saved={saved.data.confidence_gate} onChange={(v) => set("confidence_gate", v)} />
+      {/* the context, one card with tabs instead of three folds at the bottom of the page */}
+      <section aria-label="Context" className="surface-tint space-y-4 rounded-2xl p-5">
+        <Segmented label="Context" size="sm" value={more} onChange={setMore} options={[
+          { key: "tradeoff", label: "Trade-off on the test set", icon: <LineChart className="size-4" aria-hidden /> },
+          { key: "suggestions", label: "Suggestions from your feedback", icon: <Lightbulb className="size-4" aria-hidden /> },
+          { key: "log", label: "Change log", icon: <History className="size-4" aria-hidden /> },
+        ]} />
+        <div key={more} className="view-in">
+          {more === "tradeoff" && (
+            <div className="space-y-2">
+              <p className="flex flex-wrap items-center gap-x-1 text-xs text-muted-foreground">
+                Precision<InfoTip term="precision" /> and recall<InfoTip term="recall" /> at every alarm threshold
+                {report.data ? `, measured on ${report.data.overall.n} ${report.data.split} calls${report.data.is_mock ? " (MOCK curve)" : ""}` : ""}. The solid line is your draft.
+              </p>
+              {curve ? <CurveChart curve={curve} dragged={draft.alarm} />
+                : report.status === "loading" ? <div className="skeleton h-24" /> : <p className="text-sm text-muted-foreground">No curve yet: it appears after the first evaluation run.</p>}
+            </div>
+          )}
+          {more === "suggestions" && (
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground">Built from calls you marked as false alarm, missed or correct. Preview one to see its effect above before you apply it.</p>
+              <SuggestionsCard bare key={epoch} activePatch={patch} onPreview={(p: Patch) => { setMsg(null); setApplied(null); loadPatch(saved.data!, p); }}
+                onApplied={(message) => { setApplied(message); setMsg(null); reset(); saved.reload(); calls.reload(); setEpoch((e) => e + 1); }} />
+            </div>
+          )}
+          {more === "log" && (
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground">Who changed the settings, when, and what.</p>
+              <AuditLog bare refreshKey={epoch} />
+            </div>
+          )}
         </div>
-      </Fold>
-      <Fold title="Suggested changes from your feedback" hint="built from calls you marked as false alarm, missed or correct">
-        <SuggestionsCard bare key={epoch} activePatch={patch} onPreview={(p: Patch) => { setMsg(null); setApplied(null); loadPatch(saved.data!, p); }}
-          onApplied={(message) => { setApplied(message); setMsg(null); reset(); saved.reload(); calls.reload(); setEpoch((e) => e + 1); }} />
-      </Fold>
-      <Fold title="Change log" hint="who changed the settings, when, and what">
-        <AuditLog bare refreshKey={epoch} />
-      </Fold>
+      </section>
     </div>
   );
 }
@@ -137,7 +155,7 @@ function Impact({ calls, known, patch, sim }: { calls: CallListItem[]; known: Se
   const wAfter = drafting ? data!.workload.after.flagged_per_100 : wBefore;
   // same icons and colours as the decisions on the Overview; "Need a person" = alarms + reviews as a share of all calls
   const items: { key: string; label: string; before: number; after: number; tone: string; icon: typeof Check; iconTone: string; unit?: string }[] = [
-    { key: "alarm", label: "Alarms", before: before.alarm, after: after.alarm, tone: "text-alarm", icon: OctagonAlert, iconTone: "text-alarm" },
+    { key: "alarm", label: "Alerts", before: before.alarm, after: after.alarm, tone: "text-alarm", icon: OctagonAlert, iconTone: "text-alarm" },
     { key: "review", label: "To review", before: before.review, after: after.review, tone: "text-review", icon: Eye, iconTone: "text-review" },
     { key: "no_alert", label: "No alert", before: before.no_alert, after: after.no_alert, tone: "", icon: Check, iconTone: "text-noalert" },
     { key: "workload", label: "Need a person", before: Math.round(wBefore), after: wAfter, tone: "", icon: UserRound, iconTone: "text-muted-foreground", unit: " %" },
@@ -201,8 +219,8 @@ function Impact({ calls, known, patch, sim }: { calls: CallListItem[]; known: Se
   );
 }
 
-function SmallSlider({ k, term, title, help, value, saved, onChange }: {
-  k: string; term: Term; title: string; help: string; value: number; saved: number; onChange: (v: number) => void;
+function SmallSlider({ k, term, title, value, saved, onChange }: {
+  k: string; term: Term; title: string; value: number; saved: number; onChange: (v: number) => void;
 }) {
   return (
     <div className="space-y-2">
@@ -210,20 +228,12 @@ function SmallSlider({ k, term, title, help, value, saved, onChange }: {
         <label htmlFor={`th-${k}`} className="flex items-center gap-1 text-sm font-semibold">{title}<InfoTip term={term} /></label>
         <span className="tabular text-lg font-semibold">{pct(value)}<span className={cn("ml-1.5 text-xs font-normal", value !== saved ? "text-link" : "text-muted-foreground")}>saved {pct(saved)}</span></span>
       </div>
-      <input id={`th-${k}`} type="range" min={0} max={1} step={0.01} value={value} onChange={(e) => onChange(+e.target.value)} className="w-full" aria-valuetext={pct(value)} />
-      <p className="text-xs text-muted-foreground">{help}</p>
+      {/* same look as the alarm slider: a thin track filled up to the value, the round violet thumb on top */}
+      <div className="relative">
+        <div aria-hidden className="absolute top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-muted" style={{ left: 9, right: 9 }} />
+        <div aria-hidden className="absolute top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-primary/70" style={{ left: 9, width: `calc(${value} * (100% - 18px))` }} />
+        <input id={`th-${k}`} type="range" min={0} max={1} step={0.01} value={value} onChange={(e) => onChange(+e.target.value)} className="sens-range" aria-valuetext={pct(value)} />
+      </div>
     </div>
-  );
-}
-
-function Fold({ title, hint, children }: { title: string; hint: string; children: React.ReactNode }) {
-  return (
-    <details className="group rounded-2xl border border-border">
-      <summary className="flex cursor-pointer list-none flex-wrap items-center gap-x-2 gap-y-1 px-5 py-3.5 text-sm font-semibold [&::-webkit-details-marker]:hidden">
-        <ChevronRight className="size-4 transition-transform group-open:rotate-90 motion-reduce:transition-none" aria-hidden />
-        {title}<span className="font-normal text-muted-foreground">{hint}</span>
-      </summary>
-      <div className="border-t border-border p-5">{children}</div>
-    </details>
   );
 }

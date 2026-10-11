@@ -7,7 +7,7 @@ export default function Page() {
     <div className="space-y-5">
       <SettingsTabs />
       <SettingsPage
-        description="What the system looks for: keyword families with their Swiss German variants, and one check per kind of fraud. Hit counts update live. No code needed.">
+        description="Keywords point to passages, the checks decide. Hit counts update live as you edit.">
         <Configuration />
       </SettingsPage>
     </div>

@@ -37,10 +37,16 @@ function Keywords() {
   const mutate = (fn: (d: KeywordsConfig) => void) => { setMsg(null); setDraft((prev) => { const n = structuredClone(prev ?? saved.data!); fn(n); return n; }); };
 
   return (
-    <section aria-labelledby="kw" className="space-y-3">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div><h2 id="kw" className="text-lg font-semibold">Keywords</h2>
-          <p className="max-w-prose text-sm text-muted-foreground">The words the system listens for, grouped by kind of fraud, each with its Swiss German variants. The number next to a word is how many transcript passages match it across all processed calls, live while you edit. Keywords only point to passages; they are never shown to the language model.</p></div>
+    <section aria-label="Keywords" className="space-y-3">
+      {/* no section title: the "Keywords & checks" sub-tab names the page; one row with strictness and the actions */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="space-y-0.5">
+          <label className="flex flex-wrap items-center gap-3 text-sm font-medium">Match strictness
+            <input type="range" min={0.5} max={1} step={0.01} value={draft.fuzzy_threshold} onChange={(e) => mutate((d) => { d.fuzzy_threshold = +e.target.value; })} />
+            <span className="tabular font-semibold">{draft.fuzzy_threshold.toFixed(2)}</span>
+          </label>
+          <p className="text-xs text-muted-foreground">1.00 = exact spelling; lower also catches dialect spellings and transcription slips.</p>
+        </div>
         <div className="flex gap-2">
           <Button size="sm" disabled={!dirty} onClick={async () => { try { const r = await putKeywords(draft); setMsg({ ok: true, text: `Saved. Re-running keywords, rules, confidence, decide for ${r.rerun.n_calls} calls.` }); setDraft(null); saved.reload(); } catch (e) { setMsg(fail(e)); } }}><Save className="size-4" />Save keywords</Button>
           <Button size="sm" variant="outline" disabled={!dirty} onClick={() => setDraft(null)}>Reset</Button>
@@ -48,16 +54,10 @@ function Keywords() {
       </div>
       <MsgBox m={msg} />
       {preview.error && <p className="text-xs text-muted-foreground">Live counts unavailable — {preview.error}</p>}
-      <div className="space-y-1">
-        <label className="flex flex-wrap items-center gap-3 text-sm font-medium">Match strictness
-          <input type="range" min={0.5} max={1} step={0.01} value={draft.fuzzy_threshold} onChange={(e) => mutate((d) => { d.fuzzy_threshold = +e.target.value; })} />
-          <span className="tabular font-semibold">{draft.fuzzy_threshold.toFixed(2)}</span>
-        </label>
-        <p className="text-xs text-muted-foreground">How exactly a transcribed word must match a keyword to count. 1.00 = exact spelling only; lower values also catch dialect spellings and small transcription errors.</p>
-      </div>
-      <div className="grid gap-3 lg:grid-cols-2">
+      {/* two independent columns (not a grid): each family card is only as tall as its own words */}
+      <div className="gap-3 lg:columns-2">
         {Object.entries(draft.families).map(([name, f]) => (
-          <Card key={name}>
+          <Card key={name} className="mb-3 break-inside-avoid">
             <CardHeader><div>
               <CardTitle className="flex items-center gap-2 text-base"><span aria-hidden className="inline-block size-2.5 rounded-full" style={{ background: criterionColor(f.criterion) }} />{CRITERION_LABEL[f.criterion] ?? f.criterion}</CardTitle>
               <CardDescription>family <span className="font-mono">{name}</span> · words and their Swiss German variants</CardDescription>
@@ -118,7 +118,7 @@ function Rules() {
     <section aria-labelledby="rl" className="space-y-3">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div><h2 id="rl" className="text-lg font-semibold">Checks <span className="text-sm font-normal text-muted-foreground">one per kind of fraud · rules version {draft.version}</span></h2>
-          <p className="max-w-prose text-sm text-muted-foreground">Each check decides one kind of fraud from the facts found in the call. The count shows on how many processed calls it would fire with your edits. Saving re-runs only the checks, the confidence and the decision; nothing is re-transcribed and the language model is not re-run.</p></div>
+          <p className="max-w-prose text-sm text-muted-foreground">Each check decides one kind of fraud. Saving re-runs only the decision; nothing is re-transcribed.</p></div>
         <div className="flex gap-2">
           <Button size="sm" disabled={!dirty} onClick={async () => { try { const r = await putRules(draft); setMsg({ ok: true, text: `Saved. Re-running for ${r.rerun.n_calls} calls.` }); setDraft(null); saved.reload(); } catch (e) { setMsg(fail(e)); } }}><Save className="size-4" />Save checks</Button>
           <Button size="sm" variant="outline" disabled={!dirty} onClick={() => setDraft(null)}>Reset</Button>

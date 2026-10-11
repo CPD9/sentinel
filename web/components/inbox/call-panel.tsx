@@ -32,7 +32,7 @@ const WHY_REVIEW: Partial<Record<DecisionPath, string>> = {
 };
 
 const DECISION_UI: Record<Decision, { label: string; icon: typeof Check; color: string }> = {
-  alarm: { label: "Alarm", icon: OctagonAlert, color: "text-alarm" },
+  alarm: { label: "Alert", icon: OctagonAlert, color: "text-alarm" },
   review: { label: "Review", icon: Eye, color: "text-review" },
   no_alert: { label: "No alert", icon: Check, color: "text-noalert" },
 };
