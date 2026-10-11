@@ -124,3 +124,22 @@ def test_research_cv_is_grouped_and_reports_chance():
     assert noise["chance"] == 0.125 and noise["ci95"][0] <= 0.125 + 0.1     # pure noise is not shown as skill
     sep = dr.cv(np.eye(8)[np.searchsorted(sorted(set(y)), y)] * 5 + rng.normal(scale=0.1, size=(160, 8)), y, g)
     assert sep["accuracy"] > 0.95 and sep["ci95"][0] > sep["chance"]
+
+
+def test_langid_validation_accuracy_and_wilson(tmp_path):
+    import langid_validation as lv
+    assert lv.wilson(0, 0) == [0.0, 0.0]
+    lo, hi = lv.wilson(48, 50)
+    assert 0.85 < lo < 0.96 < hi <= 1.0
+    clips = {"clips": [{"set": "FLEURS test", "lang": "fr", "pred": p, "p_gold": 0.9, "duration_s": 10.0}
+                       for p in ("fr", "fr", "fr", "it")]}
+    f = tmp_path / "fleurs.json"
+    f.write_text(json.dumps(clips))
+    s = lv.clip_set(f)["FLEURS test"]["fr"]
+    assert (s["n"], s["correct"], s["accuracy"]) == (4, 3, 0.75) and s["predicted"] == {"fr": 3, "it": 1}
+    calls = tmp_path / "calls"
+    calls.mkdir()
+    (calls / "call_001.json").write_text(json.dumps({"speakers": {"advisor": {"probs": {"de": 0.9, "en": 0.1}},
+                                                                   "customer": {"probs": {"nl": 0.6, "de": 0.4}}}}))
+    c = lv.calls(calls)
+    assert (c["speakers"], c["de_on_top"], c["top_language"]) == (2, 1, {"de": 1, "nl": 1})
