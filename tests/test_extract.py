@@ -355,3 +355,17 @@ def test_unknown_speakers_are_shown_neutrally(tmp_path):
     user = c.calls[0]["messages"][-1]["content"]
     assert "(unknown)" not in user and "[T004] (speaker) Mis Passwort" in user
     assert f.valid and f.speaker == "customer"              # no speaker mismatch against an unknown segment
+
+
+def test_asr_transcripts_get_the_asr_prompt_reference_keeps_v2(tmp_path):
+    from pipeline.prompts import extract_v2_asr
+    asr_t = tr([(sid, "unknown", text) for sid, _, text in SEGS])
+    assert ex.prompt_for(asr_t) is extract_v2_asr and ex.prompt_for(tr()) is ex.prompt
+    c = FakeClient([reply(raw_fact(speaker="customer"))])
+    run(c, asr_t, tmp=tmp_path)
+    assert c.calls[0]["messages"][0]["content"] == extract_v2_asr.SYSTEM_PROMPT
+    assert "Who spoke is NOT known" in extract_v2_asr.SYSTEM_PROMPT and "säged" not in extract_v2_asr.SYSTEM_PROMPT
+    assert ex.VERSIONS["prompt"].startswith("extract-v2-asr+")
+    c2 = FakeClient([reply(raw_fact())])
+    run(c2, tr(), tmp=tmp_path)
+    assert c2.calls[0]["messages"][0]["content"] == ex.prompt.SYSTEM_PROMPT and ex.VERSIONS["prompt"] == ex.PROMPT_VERSION_FULL

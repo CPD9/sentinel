@@ -22,7 +22,7 @@ from pathlib import Path
 
 from pipeline import llm
 from pipeline.llm import DiskCache, extraction_cache_key
-from pipeline.prompts import extract_v1, extract_v2
+from pipeline.prompts import extract_v1, extract_v2, extract_v2_asr
 from pipeline.schemas import FACT_ACTS, INFO_TYPES, SPEAKERS, Fact, Transcript, TranscriptSegment
 from pipeline.validate import NO_CITATION, R_FIELD, norm, resolver, validate_facts
 
@@ -36,6 +36,8 @@ CHARS_PER_TOKEN = 2.5        # deliberately pessimistic for Swiss German (real u
 OVERLAP_SEGMENTS = 4
 
 PROMPTS = {"v1": extract_v1, "v2": extract_v2}
+# Speech-recognition transcripts without speaker roles get the ASR variant of the active prompt (reference keeps v2).
+ASR_VARIANTS = {extract_v2: extract_v2_asr}
 
 
 def max_output_tokens(p=None) -> int:
@@ -139,9 +141,20 @@ def parse_reply(text: str) -> list:
 
 # --------------------------------------------------------------------------- one window
 
-def _call(client, messages: list[dict], metrics: list[dict]) -> str:
-    text, m = client.chat_with_metrics(messages, temperature=0.0, max_tokens=max_output_tokens(),
-                                       json_schema=prompt.FACT_SCHEMA)
+def full_version(p) -> str:
+    return p.PROMPT_VERSION + "+" + _prompt_hash(p)
+
+
+def prompt_for(transcript: Transcript):
+    """The active prompt, or its ASR variant when no segment has a known speaker role."""
+    roles_unknown = bool(transcript.segments) and all(s.speaker == "unknown" for s in transcript.segments)
+    return ASR_VARIANTS.get(prompt, prompt) if roles_unknown else prompt
+
+
+def _call(client, messages: list[dict], metrics: list[dict], p=None) -> str:
+    p = p or prompt
+    text, m = client.chat_with_metrics(messages, temperature=0.0, max_tokens=max_output_tokens(p),
+                                       json_schema=p.FACT_SCHEMA)
     metrics.append(m.to_dict())
     return text
 
@@ -152,36 +165,38 @@ def _call(client, messages: list[dict], metrics: list[dict]) -> str:
 PROMPT_SPEAKER = {"unknown": "speaker"}
 
 
-def _window_raw(client, cache: DiskCache, window: list[TranscriptSegment]) -> dict:
+def _window_raw(client, cache: DiskCache, window: list[TranscriptSegment], p=None) -> dict:
     """{facts: [raw dicts], repaired, cached, metrics: [...]} for one window."""
+    p = p or prompt
+    version = full_version(p)
     segs = [{"id": s.id, "speaker": PROMPT_SPEAKER.get(s.speaker, s.speaker), "text": s.text} for s in window]
-    key = extraction_cache_key(segs, client.model, client.model_revision, PROMPT_VERSION_FULL, provider=client.spec.name)
+    key = extraction_cache_key(segs, client.model, client.model_revision, version, provider=client.spec.name)
     hit = cache.get(key)
     if hit is not None:
         return {"facts": parse_reply(hit["response"]), "repaired": hit["repaired"], "cached": True,
                 "metrics": hit["metrics"]}
-    messages = [{"role": "system", "content": prompt.SYSTEM_PROMPT},
-                {"role": "user", "content": prompt.user_message(segs)}]
+    messages = [{"role": "system", "content": p.SYSTEM_PROMPT},
+                {"role": "user", "content": p.user_message(segs)}]
     metrics: list[dict] = []
-    text, repaired = _call(client, messages, metrics), False
+    text, repaired = _call(client, messages, metrics, p), False
     try:
         facts = parse_reply(text)
     except ValueError as first:
-        if metrics[-1].get("output_tokens") is not None and metrics[-1]["output_tokens"] >= max_output_tokens():
+        if metrics[-1].get("output_tokens") is not None and metrics[-1]["output_tokens"] >= max_output_tokens(p):
             # cut off at the token limit: a repair call would have to carry the whole reply and cannot fit the context
             raise TruncatedReply(f"model reply is not valid JSON: {first} (reply hit the max_tokens limit: truncated)") from None
         repaired = True
         messages += [{"role": "assistant", "content": text},
                      {"role": "user", "content": f"That answer was not usable ({first}). Answer again with ONLY the "
                                                  'JSON object {"facts": [...]} in the format described.'}]
-        text = _call(client, messages, metrics)
+        text = _call(client, messages, metrics, p)
         try:
             facts = parse_reply(text)
         except ValueError as second:
-            cut = metrics[-1].get("output_tokens") is not None and metrics[-1]["output_tokens"] >= max_output_tokens()
+            cut = metrics[-1].get("output_tokens") is not None and metrics[-1]["output_tokens"] >= max_output_tokens(p)
             raise ExtractionError(f"model reply is not valid JSON after one repair attempt: {second}"
                                   f"{' (reply hit the max_tokens limit: truncated)' if cut else ''}") from None
-    cache.put(key, {"response": text, "repaired": repaired, "metrics": metrics, "prompt_version": PROMPT_VERSION_FULL,
+    cache.put(key, {"response": text, "repaired": repaired, "metrics": metrics, "prompt_version": version,
                     "provider": client.spec.name, "model": client.model, "revision": client.model_revision})
     return {"facts": facts, "repaired": repaired, "cached": False, "metrics": metrics}
 
@@ -280,13 +295,14 @@ def extract_facts(transcript: Transcript, *, client=None, cache: DiskCache | Non
     if client.model_revision is None:
         client.probe()
     cache = cache or DiskCache(CACHE_DIR)
-    VERSIONS.update(llm=f"{client.model}@{client.model_revision}", prompt=PROMPT_VERSION_FULL,
+    p = prompt_for(transcript)
+    VERSIONS.update(llm=f"{client.model}@{client.model_revision}", prompt=full_version(p),
                     provider=client.spec.name, self_hosted=client.spec.self_hosted)
     resolve = resolver(transcript)
     pos = {s.id: i for i, s in enumerate(transcript.segments)}
     raw: list[Fact] = []
     for w, window in enumerate(make_windows(transcript.segments)):
-        for res in _window_or_halves(client, cache, window):
+        for res in _window_or_halves(client, cache, window, p):
             if report is not None:
                 report.append({"window": w, "n_segments": res["n_segments"], "n_facts_raw": len(res["facts"]),
                                "cached": res["cached"], "repaired": res["repaired"], "split": res["split"],
@@ -295,15 +311,15 @@ def extract_facts(transcript: Transcript, *, client=None, cache: DiskCache | Non
     return validate_facts(merge_facts(raw, transcript), transcript)
 
 
-def _window_or_halves(client, cache: DiskCache, window: list[TranscriptSegment], depth: int = 0) -> list[dict]:
+def _window_or_halves(client, cache: DiskCache, window: list[TranscriptSegment], p=None, depth: int = 0) -> list[dict]:
     """A window whose reply hits max_tokens (a model listing more facts than fit) is split in two halves and each
     is extracted on its own, recursively; a single segment that still truncates is an ExtractionError. Windows
     that fit are untouched, so their cache keys (and cached runs) stay valid."""
     try:
-        return [{**_window_raw(client, cache, window), "n_segments": len(window), "split": depth > 0}]
+        return [{**_window_raw(client, cache, window, p), "n_segments": len(window), "split": depth > 0}]
     except TruncatedReply as e:
         if len(window) < 2:
             raise ExtractionError(str(e)) from None
         mid = len(window) // 2
-        return (_window_or_halves(client, cache, window[:mid], depth + 1)
-                + _window_or_halves(client, cache, window[mid:], depth + 1))
+        return (_window_or_halves(client, cache, window[:mid], p, depth + 1)
+                + _window_or_halves(client, cache, window[mid:], p, depth + 1))

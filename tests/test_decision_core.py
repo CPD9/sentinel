@@ -343,3 +343,20 @@ def test_rules_version_changes_with_any_threshold_or_confidence_edit():
         edit(th2)
         assert config_from_dicts(kws, rules, th2).rules_version != base
     assert config_from_dicts(kws, rules, copy.deepcopy(th)).rules_version == base
+
+
+@pytest.mark.parametrize("floor", [0.35, 0.69, 0.95, 1.0])
+def test_asr_keyword_floor_reaches_review_never_alarm(floor):
+    kwd, rules, th = raw()
+    rules = copy.deepcopy(rules)
+    rules["defaults"]["keyword_only_risk_asr"] = floor
+    cfg = config_from_dicts(kwd, rules, th)
+    t = transcript()
+    hits = find_hits(t, cfg.keywords)
+    assert hits, "the test transcript must contain keyword hits"
+    tr = decide_call(t, [], None, cfg)                       # keywords only, no supporting fact
+    assert tr.decision == "review" and tr.decision != "alarm"
+    off = decide_call(t, [], None, CFG)                      # shipped config: floor off -> keyword_only_risk only
+    assert off.risk_score < tr.risk_score
+    ref = Transcript(call_id="call_T", mode="reference", segments=[*t.segments])
+    assert decide_call(ref, [], None, cfg).risk_score == off.risk_score    # reference mode ignores the ASR floor
