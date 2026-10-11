@@ -15,7 +15,7 @@ export const GLOSSARY = {
   },
   calls_checked: {
     title: "Calls checked",
-    text: "Every call that has finished processing. Sentinel checks each call completely, not a sample.",
+    text: "Every call that has finished processing. Each call is checked completely, not sampled.",
   },
   processing: {
     title: "Processing",
@@ -83,11 +83,11 @@ export const GLOSSARY = {
   },
   precision: {
     title: "Precision",
-    text: "Of all the calls Sentinel flagged, the share that really needed it. Low precision means many false alarms.",
+    text: "Of all the flagged calls, the share that really needed it. Low precision means many false alarms.",
   },
   recall: {
     title: "Recall",
-    text: "Of all the calls that really needed attention, the share Sentinel flagged. Low recall means missed cases.",
+    text: "Of all the calls that really needed attention, the share that was flagged. Low recall means missed cases.",
   },
   ci: {
     title: "Confidence interval",

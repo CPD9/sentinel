@@ -2,7 +2,8 @@
 // The alarm-threshold slider with every decided call as a pin hanging from the track at its risk, like the marks of a
 // ruler. A pin takes the colour of the decision the call would get with the current draft (from the simulation's flipped
 // list) and gets a violet outline when that decision would change. Calls at (almost) the same risk stack into a taller pin,
-// one coloured segment per call, so the lane reads like a tiny bar chart. The track uses the same grey → amber → red
+// one coloured segment per call, so the lane reads like a tiny bar chart. A pin shows at most MAX_SEGS segments; a bigger
+// stack shrinks its segments to fit and shows its count underneath, so a cluster of many calls stays compact. The track uses the same grey → amber → red
 // gradient as the Overview gauges, with the stops on the draft thresholds.
 import { pct } from "@/lib/format";
 import type { CallListItem, Decision } from "@/lib/types";
@@ -15,7 +16,7 @@ const LABEL: Record<Decision, string> = { alarm: "alarm", review: "review", no_a
 const at = (x: number) => `calc(9px + ${Math.min(1, Math.max(0, x))} * (100% - 18px))`;
 const clampPct = (x: number) => Math.min(100, Math.max(0, x));
 // geometry: the input is 24 px tall with the 6 px track centred, so the track's lower edge is 15 px from the top
-const TRACK_BOTTOM = 15, SEG = 10, GAP = 1;
+const TRACK_BOTTOM = 15, SEG = 10, GAP = 1, MAX_SEGS = 4, COUNT_H = 14;
 
 export function ThresholdTrack({ id, value, saved, review, calls, after, onChange }: {
   id: string; value: number; saved: number; review: number; calls: CallListItem[];
@@ -35,7 +36,8 @@ export function ThresholdTrack({ id, value, saved, review, calls, after, onChang
     pins.set(bucket, pin);
   }
   const tallest = Math.max(1, ...[...pins.values()].map((p) => p.segs.length));
-  const laneH = 4 + tallest * (SEG + GAP);
+  const pinH = (n: number) => Math.min(n, MAX_SEGS) * (SEG + GAP) - GAP;   // a pin never grows past MAX_SEGS segments
+  const laneH = 4 + pinH(tallest) + (tallest > MAX_SEGS ? COUNT_H : 0);
 
   return (
     <div>
@@ -47,8 +49,9 @@ export function ThresholdTrack({ id, value, saved, review, calls, after, onChang
             title={p.segs.map((s) => `${s.c.call_id}: risk ${pct(s.c.risk_score)}, ${s.changed ? `would become ${LABEL[s.d]}` : LABEL[s.d]}`).join("\n")}>
             {p.segs.map((s) => (
               <span key={s.c.call_id} className="call-dot block w-1.5 rounded-sm"
-                style={{ height: SEG, background: COLOUR[s.d], boxShadow: s.changed ? "0 0 0 1.5px var(--primary)" : undefined }} />
+                style={{ height: (pinH(p.segs.length) - (p.segs.length - 1) * GAP) / p.segs.length, background: COLOUR[s.d], boxShadow: s.changed ? "0 0 0 1.5px var(--primary)" : undefined }} />
             ))}
+            {p.segs.length > MAX_SEGS && <span className="tabular text-[10px] font-semibold leading-3 text-muted-foreground">{p.segs.length}</span>}
           </div>
         ))}
         <span aria-hidden title={`saved ${pct(saved)}`} className="absolute top-1/2 h-3 w-0.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-foreground/50" style={{ left: at(saved) }} />

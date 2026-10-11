@@ -1,10 +1,10 @@
 "use client";
-// Left panel of the Overview: every call, grouped by what the officer has to do with it.
-//   Alarms → To review → No alert (folded, it is the bulk) → Processing (only when something is running).
-// Each row is a link to /?call=<id>, so the selection lives in the URL (back button, reload and sharing work).
-import { Check, ChevronRight, Eye, Loader2, OctagonAlert } from "lucide-react";
+// Left panel of the Overview: the calls of one group, picked with the tabs above (Alerts → To review → No alert →
+// Processing, the last only while something runs). Each row is a link to /?call=<id>, so the selection lives in the URL
+// (back button, reload and sharing work).
+import { Check, Eye, Loader2, OctagonAlert } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useRef } from "react";
 import { StageErrorChip } from "@/components/shell/badges";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CRITERION_LABEL } from "@/lib/colors";
@@ -13,8 +13,8 @@ import { cn } from "@/lib/utils";
 
 export type Group = "alarm" | "review" | "no_alert" | "processing";
 
-const GROUPS: { key: Group; title: string; icon: typeof Check; color: string; empty: string }[] = [
-  { key: "alarm", title: "Alarms", icon: OctagonAlert, color: "text-alarm", empty: "No alarm right now." },
+export const GROUPS: { key: Group; title: string; icon: typeof Check; color: string; empty: string }[] = [
+  { key: "alarm", title: "Alerts", icon: OctagonAlert, color: "text-alarm", empty: "No alerts right now." },
   { key: "review", title: "To review", icon: Eye, color: "text-review", empty: "Nothing waits for a person." },
   { key: "no_alert", title: "No alert", icon: Check, color: "text-noalert", empty: "No call has been cleared yet." },
   { key: "processing", title: "Processing", icon: Loader2, color: "text-info", empty: "" },
@@ -42,59 +42,39 @@ const shortTime = (iso: string | null) => {
     : "–";
 };
 
-export function CallList({ calls, selected, stages }: { calls: CallListItem[] | null; selected: string | null; stages: Record<string, string> }) {
-  // No alert starts folded. When a call gets selected (also via a shared link), its group opens once; after that the
-  // officer can still fold it. (Adjusting state while rendering, the React pattern for "react to a prop change".)
-  const [open, setOpen] = useState<Record<Group, boolean>>({ alarm: true, review: true, no_alert: false, processing: true });
-  const [revealed, setRevealed] = useState<string | null>(null);
-  const selectedRow = calls?.find((c) => c.call_id === selected);
-  if (selectedRow && revealed !== selectedRow.call_id) {
-    setRevealed(selectedRow.call_id);
-    const g = groupOf(selectedRow);
-    if (!open[g]) setOpen({ ...open, [g]: true });
-  }
-  const isOpen = (g: Group) => open[g];
-
+/** Rows of one group (the tab above the list). `dir` is the direction of the last tab change: rows slide in from that side. */
+export function CallList({ calls, group, selected, stages, dir }: {
+  calls: CallListItem[] | null; group: Group; selected: string | null; stages: Record<string, string>; dir: 1 | -1;
+}) {
   if (!calls) {
     return (
-      <div className="space-y-2" aria-busy="true">
+      <div className="space-y-2 p-1" aria-busy="true">
         {Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="h-12 rounded-lg" />)}
       </div>
     );
   }
-
+  const meta = GROUPS.find((g) => g.key === group)!;
+  const rows = callsIn(calls, group);
+  if (rows.length === 0) {
+    return (
+      <div key={group} className="row-in flex h-full min-h-48 flex-col items-center justify-center gap-2 text-center" style={{ "--dir": dir } as React.CSSProperties}>
+        <meta.icon className={cn("size-6", meta.color)} aria-hidden />
+        <p className="text-sm text-muted-foreground">{meta.empty}</p>
+      </div>
+    );
+  }
+  // keyed by the group: a tab change re-mounts the list, so the rows play their entrance again
   return (
-    <nav aria-label="Calls" className="space-y-5">
-      {GROUPS.map(({ key, title, icon: Icon, color, empty }) => {
-        const rows = callsIn(calls, key);
-        if (key === "processing" && rows.length === 0) return null;
-        const expanded = isOpen(key);
-        return (
-          <section key={key} aria-labelledby={`grp-${key}`}>
-            <h2 id={`grp-${key}`}>
-              <button type="button" aria-expanded={expanded} onClick={() => setOpen((o) => ({ ...o, [key]: !expanded }))}
-                className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left hover:bg-muted">
-                <Icon className={cn("size-6 shrink-0", color, key === "processing" && "animate-spin motion-reduce:animate-none")} aria-hidden />
-                <span className="text-2xl font-semibold tracking-tight">{title}</span>
-                <ChevronRight className={cn("size-4 text-muted-foreground transition-transform motion-reduce:transition-none", expanded && "rotate-90")} aria-hidden />
-                <span className="tabular ml-auto text-2xl font-semibold" aria-label={`${rows.length} calls`}>{rows.length}</span>
-              </button>
-            </h2>
-            {expanded && (rows.length === 0 ? (
-              <p className="px-3 py-2 text-sm text-muted-foreground">{empty}</p>
-            ) : (
-              <ul className="mt-1 divide-y divide-border/60">
-                {rows.map((c) => <Row key={c.call_id} c={c} active={c.call_id === selected} stage={stages[c.call_id]} />)}
-              </ul>
-            ))}
-          </section>
-        );
-      })}
-    </nav>
+    <ul key={group} aria-label={meta.title} className="space-y-0.5">
+      {rows.map((c, i) => (
+        <Row key={c.call_id} c={c} active={c.call_id === selected} stage={stages[c.call_id]}
+          style={{ "--dir": dir, animationDelay: `${Math.min(i, 12) * 28}ms` } as React.CSSProperties} />
+      ))}
+    </ul>
   );
 }
 
-function Row({ c, active, stage }: { c: CallListItem; active: boolean; stage?: string }) {
+function Row({ c, active, stage, style }: { c: CallListItem; active: boolean; stage?: string; style?: React.CSSProperties }) {
   const g = groupOf(c);
   const criterion = c.criteria[0] as Criterion | undefined;
   const sub = g === "processing" ? (c.status === "queued" ? "queued" : `processing${stage ? ` · ${stage}` : ""}`)
@@ -103,12 +83,19 @@ function Row({ c, active, stage }: { c: CallListItem; active: boolean; stage?: s
   const unchecked = c.n_stage_errors > 0 && !c.risk_score;
   const risk = c.risk_score == null || g === "processing" || unchecked ? null : `${Math.round(c.risk_score * 100)}%`;
   const riskColor = g === "alarm" ? "text-alarm" : g === "review" ? "text-review" : "text-muted-foreground";
+  // keep the open call in view inside the scrolling list (also when moving with the arrow keys). Wide screens only:
+  // on a phone the list does not scroll on its own, and the page glides down to the panel instead.
+  const ref = useRef<HTMLAnchorElement>(null);
+  useEffect(() => {
+    if (active && window.matchMedia("(min-width: 1024px)").matches) ref.current?.scrollIntoView({ block: "nearest" });
+  }, [active]);
 
   return (
-    <li>
-      <Link href={`/?call=${encodeURIComponent(c.call_id)}`} replace scroll={false} aria-current={active ? "true" : undefined}
-        className={cn("relative grid grid-cols-[minmax(0,1fr)_3.5rem_6.5rem] items-center gap-4 rounded-lg px-3 py-2.5 transition-colors",
-          active ? "bg-primary/12 before:absolute before:inset-y-2 before:left-0 before:w-[3px] before:rounded-full before:bg-primary" : "hover:bg-muted")}>
+    <li className="row-in" style={style}>
+      <Link ref={ref} href={`/?call=${encodeURIComponent(c.call_id)}`} replace scroll={false} aria-current={active ? "true" : undefined}
+        className={cn("group/row relative grid grid-cols-[minmax(0,1fr)_3.5rem_6.5rem] items-center gap-4 rounded-lg px-3 py-2.5 transition-[background-color,transform] duration-200 active:scale-[0.99] motion-reduce:transition-none",
+          active ? "bg-primary/12" : "hover:bg-muted hover:translate-x-0.5")}>
+        <span aria-hidden className={cn("row-bar absolute inset-y-2 left-0 w-[3px] rounded-full bg-primary", active ? "row-bar-on" : "")} />
         <div className="min-w-0">
           <p className={cn("truncate font-mono text-sm", active && "font-semibold")}>{c.call_id}</p>
           <p className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">

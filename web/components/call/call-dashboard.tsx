@@ -1,7 +1,7 @@
 "use client";
 // Dashboard shell: shared header + URL-driven tabs. Structure after Leadership-Demo's project detail page
 // (header, status handling, tab list with per-tab error marker, processing flow shown inline while running).
-import { AlertTriangle, ArrowLeft } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import Link from "next/link";
 import { useCallback } from "react";
 import { CallAudioProvider } from "./audio-context";
@@ -16,6 +16,7 @@ import { DecisionBadge, StageErrorChip } from "@/components/shell/badges";
 import { RiskConfidence } from "@/components/shell/score";
 import { ErrorCard, SkeletonBlock } from "@/components/shell/states";
 import { ProcessingView } from "@/components/processing/processing-view";
+import { ActionLink } from "@/components/ui/action-link";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ApiError, audioUrl, getAnalysis, getCall, getTrace, getTranscript } from "@/lib/data";
 import { useReportMock } from "@/lib/mock-store";
@@ -36,16 +37,16 @@ export function CallDashboard({ id, tab, sel }: { id: string; tab: TabValue; sel
   }
   if (call.status === "error" && !call.data) {
     return call.error.status === 404 && call.error.code !== "not_available" ? (
-      <div className="space-y-3"><BackLink /><ErrorCard error={call.error} title="Unknown call" /></div>
+      <div className="space-y-3"><BackLink id={id} /><ErrorCard error={call.error} title="Unknown call" /></div>
     ) : (
-      <div className="space-y-3"><BackLink /><ErrorCard error={call.error} onRetry={call.reload} /></div>
+      <div className="space-y-3"><BackLink id={id} /><ErrorCard error={call.error} onRetry={call.reload} /></div>
     );
   }
   const detail = call.data!;
   if (detail.kind === "pending") {
     return (
       <div className="space-y-4">
-        <BackLink />
+        <BackLink id={id} />
         <h1 className="text-xl font-semibold tracking-tight"><span className="font-mono">{id}</span> <span className="text-sm font-normal text-muted-foreground">still processing</span></h1>
         <ProcessingView callId={id} inline onFinished={() => setTimeout(call.reload, 600)} />
       </div>
@@ -54,8 +55,9 @@ export function CallDashboard({ id, tab, sel }: { id: string; tab: TabValue; sel
   return <Loaded result={detail.data} tab={tab} sel={sel} />;
 }
 
-function BackLink() {
-  return <Link href="/" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="size-3.5" />Overview</Link>;
+/** Back to the Overview, with this call open again in the right panel. */
+function BackLink({ id }: { id: string }) {
+  return <ActionLink back href={`/?call=${encodeURIComponent(id)}`}>Overview</ActionLink>;
 }
 
 function Loaded({ result, tab, sel }: { result: CallResult; tab: TabValue; sel: { win?: string; seg?: string } }) {
@@ -77,7 +79,7 @@ function Loaded({ result, tab, sel }: { result: CallResult; tab: TabValue; sel: 
   return (
     <CallAudioProvider src={audioUrl(id)}>
       <div className="space-y-5">
-        <BackLink />
+        <BackLink id={id} />
         <header className="space-y-3">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
             <h1 className="font-mono text-xl font-semibold tracking-tight">{id}</h1>

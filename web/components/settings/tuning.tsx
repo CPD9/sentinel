@@ -2,7 +2,7 @@
 // Sensitivity: one focal panel (the alarm threshold, every call as a dot on it, and what changes if you save), then the
 // test-set trade-off, then three one-line folds (advanced thresholds, suggestions from feedback, change log).
 // The unsaved draft is shared with the suggestions' Preview via SettingsDraftProvider; nothing is saved until "Save changes".
-import { AlertTriangle, ArrowRight, CheckCircle2, ChevronRight, Save } from "lucide-react";
+import { AlertTriangle, ArrowRight, Check, CheckCircle2, ChevronRight, Eye, OctagonAlert, Save, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { DecisionBadge } from "@/components/shell/badges";
@@ -59,10 +59,9 @@ export function Tuning() {
   return (
     <div className="space-y-5">
       {/* title row with the actions, always in the same place */}
-      <div className="flex flex-wrap items-end justify-between gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">Sensitivity</h1>
-          <p className="text-sm text-muted-foreground">How strict Sentinel is. Drag, see which calls change, then save.</p>
+          <p className="text-sm text-muted-foreground">How strict detection is. Drag, see which calls change, then save.</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           {patch && <span className="flex items-center gap-1.5 text-sm font-medium text-link"><span className="size-2 rounded-full bg-primary" aria-hidden />Unsaved changes</span>}
@@ -136,11 +135,12 @@ function Impact({ calls, known, patch, sim }: { calls: CallListItem[]; known: Se
   const share = (r: Record<Decision, number>) => { const n = r.alarm + r.review + r.no_alert; return n ? ((r.alarm + r.review) / n) * 100 : 0; };
   const wBefore = drafting ? data!.workload.before.flagged_per_100 : share(base);
   const wAfter = drafting ? data!.workload.after.flagged_per_100 : wBefore;
-  const items: { key: string; label: string; before: number; after: number; tone: string; unit?: string }[] = [
-    { key: "alarm", label: "Alarms", before: before.alarm, after: after.alarm, tone: "text-alarm" },
-    { key: "review", label: "To review", before: before.review, after: after.review, tone: "text-review" },
-    { key: "no_alert", label: "No alert", before: before.no_alert, after: after.no_alert, tone: "" },
-    { key: "workload", label: "Need a person", before: Math.round(wBefore), after: wAfter, tone: "", unit: " %" },
+  // same icons and colours as the decisions on the Overview; "Need a person" = alarms + reviews as a share of all calls
+  const items: { key: string; label: string; before: number; after: number; tone: string; icon: typeof Check; iconTone: string; unit?: string }[] = [
+    { key: "alarm", label: "Alarms", before: before.alarm, after: after.alarm, tone: "text-alarm", icon: OctagonAlert, iconTone: "text-alarm" },
+    { key: "review", label: "To review", before: before.review, after: after.review, tone: "text-review", icon: Eye, iconTone: "text-review" },
+    { key: "no_alert", label: "No alert", before: before.no_alert, after: after.no_alert, tone: "", icon: Check, iconTone: "text-noalert" },
+    { key: "workload", label: "Need a person", before: Math.round(wBefore), after: wAfter, tone: "", icon: UserRound, iconTone: "text-muted-foreground", unit: " %" },
   ];
   const fc = patch ? data?.feedback_check : null;
 
@@ -151,13 +151,14 @@ function Impact({ calls, known, patch, sim }: { calls: CallListItem[]; known: Se
         {patch && sim.loading && <span className="text-xs text-muted-foreground">updating…</span>}
       </div>
       {patch && sim.error && !data ? <p role="alert" className="text-sm text-alarm">The effect could not be computed: {sim.error}</p> : (
-        <dl className="grid grid-cols-2 gap-x-6 gap-y-3">
+        <dl className="grid grid-cols-2 gap-3">
           {items.map((it) => {
             const changed = drafting && Math.round(it.after) !== Math.round(it.before);
             return (
-              <div key={it.key}>
-                <dt className="text-xs text-muted-foreground">{it.label}</dt>
-                <dd className="tabular text-xl font-semibold tracking-tight">
+              <div key={it.key} className={cn("rounded-xl border bg-background/50 px-4 py-3 transition-colors duration-300",
+                changed ? "border-primary/50" : "border-border")}>
+                <dt className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><it.icon className={cn("size-3.5", it.iconTone)} aria-hidden />{it.label}</dt>
+                <dd className="tabular mt-1 text-2xl font-semibold tracking-tight">
                   {drafting && (
                     <><span className="text-muted-foreground">{it.before}{it.unit}</span><ArrowRight className="mx-1 inline size-3.5 text-muted-foreground" aria-label="becomes" /></>
                   )}

@@ -24,10 +24,9 @@ export function QualityView() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">Detection quality</h1>
-          <p className="text-sm text-muted-foreground">How well Sentinel detects fraud: false alarms and missed cases on calls it was never tuned on. The three ways of counting “review” are always shown together, each with a confidence interval.</p>
+          <p className="text-sm text-muted-foreground">How well fraud is detected: false alarms and missed cases on calls it was never tuned on. The three ways of counting “review” are always shown together, each with a confidence interval.</p>
         </div>
         {list.data && list.data.length > 0 && (
           <Select label="Report" value={id ?? ""} onChange={(e) => setId(e.target.value)} className="max-w-xs">

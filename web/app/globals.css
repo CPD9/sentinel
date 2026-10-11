@@ -142,6 +142,9 @@ body { background: var(--background); color: var(--foreground); font-family: var
 .gauge-fill { animation: gauge-grow 700ms cubic-bezier(0.2, 0.8, 0.2, 1) 120ms both; }
 .player-progress { transition: width 250ms linear; }
 @media (prefers-reduced-motion: reduce) { .hit-card, .gauge-fill { animation: none; } .player-progress { transition: none; } }
+/* Overview right panel: slides in when a call opens; the placeholder after closing does the same. */
+.panel-in { animation: rise 280ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+@media (prefers-reduced-motion: reduce) { .panel-in { animation: none; } }
 
 /* Surfaces (after Proton Drive): tinted boxes without a border; elevated cards stand off the page by shadow, not outline. */
 .surface-tint { background: var(--tint); }
@@ -164,3 +167,39 @@ body { background: var(--background); color: var(--foreground); font-family: var
 .sens-range:focus-visible::-moz-range-thumb { outline: 2px solid var(--ring); outline-offset: 2px; }
 .call-dot { transition: background-color 200ms ease-out, border-color 200ms ease-out; }
 @media (prefers-reduced-motion: reduce) { .sens-range::-webkit-slider-thumb, .call-dot { transition: none; } }
+
+/* Overview: tab pill, list rows and the List / Table switch.
+   The pill slides with a slight overshoot and fades between the group colours; the active tab's icon pops once;
+   rows slide in one after another from the side the officer moved to (--dir: 1 = from the right, -1 = from the left);
+   the selected row's violet bar grows from its middle; a view switch fades and settles in. */
+.seg-pill { transition: transform 460ms cubic-bezier(0.34, 1.36, 0.64, 1), width 460ms cubic-bezier(0.34, 1.36, 0.64, 1), background-color 320ms ease, border-color 320ms ease, opacity 200ms ease; }
+@keyframes icon-pop { 0% { transform: scale(1); } 40% { transform: scale(1.28) rotate(-6deg); } 100% { transform: scale(1); } }
+.seg-icon-on { animation: icon-pop 420ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+@keyframes row-in { from { opacity: 0; transform: translateX(calc(var(--dir, 1) * 14px)); } }
+.row-in { animation: row-in 340ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.row-bar { transform: scaleY(0); opacity: 0; transition: transform 260ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity 160ms ease; }
+.row-bar-on { transform: scaleY(1); opacity: 1; }
+@keyframes view-in { from { opacity: 0; transform: translateY(8px) scale(0.985); } }
+.view-in { animation: view-in 360ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+@media (prefers-reduced-motion: reduce) {
+  .seg-pill, .row-bar { transition: none; }
+  .seg-icon-on, .row-in, .view-in { animation: none; }
+}
+
+/* Main nav tabs: the tab lifts a hair on hover and each icon does its own move.
+   Overview (dashboard) pops with a small tilt, Detection quality (gauge) swings its needle, Settings (gear) turns. */
+.nav-tab { transition: background-color 180ms ease, color 180ms ease, transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+.nav-tab:hover { transform: translateY(-1px); }
+.nav-tab:active { transform: translateY(0) scale(0.97); }
+.nav-ic-turn { transition: transform 600ms cubic-bezier(0.34, 1.4, 0.64, 1); }
+.nav-tab:hover .nav-ic-turn { transform: rotate(120deg); }
+@keyframes nav-pop { 0% { transform: scale(1); } 45% { transform: scale(1.22) rotate(-8deg); } 100% { transform: scale(1); } }
+.nav-tab:hover .nav-ic-pop { animation: nav-pop 450ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+@keyframes nav-swing { 0% { transform: rotate(0); } 30% { transform: rotate(-22deg); } 60% { transform: rotate(14deg); } 80% { transform: rotate(-5deg); } 100% { transform: rotate(0); } }
+.nav-ic-swing { transform-origin: 50% 60%; }
+.nav-tab:hover .nav-ic-swing { animation: nav-swing 650ms ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .nav-tab, .nav-ic-turn { transition: none; }
+  .nav-tab:hover, .nav-tab:active, .nav-tab:hover .nav-ic-turn { transform: none; }
+  .nav-tab:hover .nav-ic-pop, .nav-tab:hover .nav-ic-swing { animation: none; }
+}

@@ -1,14 +1,17 @@
 "use client";
 // Right panel of the Overview (layout after Jules's wireframe): everything an officer needs to judge one call.
-//   header        decision │ call id · date, quiet link to the full call page
+//   header        decision │ call id · date, "Open full call" button, close ✕ (also Esc; the Overview then shows a placeholder)
 //   what was said transcript excerpt around the cited passages + one player with the waveform (excerpt-player.tsx)
 //   two columns   risk and threshold + why | evidence (keywords) + reliability
 //   (actions)     the verdict buttons come in step 2b
 // Data: the list row, GET /calls/{id} (reason, passages), /trace (keywords, why review / not flagged, transcript
 // certainty), /analysis (waveform, audio quality), /transcript (context lines). Trace, analysis and transcript may be
 // missing (404, e.g. a call whose ASR failed): their parts then say "not available" instead of breaking.
-import { AlertTriangle, ArrowUpRight, Check, Eye, Loader2, OctagonAlert, RefreshCw } from "lucide-react";
+import { AlertTriangle, Check, Eye, Loader2, OctagonAlert, RefreshCw, X } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
+import { ActionLink } from "@/components/ui/action-link";
 import { InfoTip } from "@/components/ui/info-tip";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CRITERION_LABEL } from "@/lib/colors";
@@ -52,29 +55,40 @@ export function CallPanel({ item, thresholds }: { item: CallListItem; thresholds
   const result: CallResult | null = detail.data?.kind === "result" ? detail.data.data : null;
   const th = thresholds ?? trace.data?.thresholds ?? null;
   const d = item.decision && !pending ? DECISION_UI[item.decision] : null;
+  const router = useRouter();
+
+  // Esc closes the panel (`?call=` with an empty id = no call open), unless something else already used the key.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !e.defaultPrevented) router.replace("/?call=", { scroll: false }); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [router]);
 
   return (
-    <article aria-labelledby="panel-title" className="elevated rounded-2xl">
+    <article aria-labelledby="panel-title" className="panel-in elevated rounded-2xl lg:min-h-full">
       {/* header: decision │ call id · date */}
       <header className="flex items-start justify-between gap-3 border-b border-border px-6 py-4">
         <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
           {d ? (
-            <span className={cn("flex items-center gap-2 text-2xl font-semibold tracking-tight", d.color)}>
-              <d.icon className="size-6" aria-hidden />{d.label}
+            <span className={cn("flex items-center gap-2 text-xl font-semibold tracking-tight", d.color)}>
+              <d.icon className="size-5" aria-hidden />{d.label}
             </span>
           ) : (
-            <span className="flex items-center gap-2 text-2xl font-semibold tracking-tight text-info">
-              <Loader2 className="size-6 animate-spin motion-reduce:animate-none" aria-hidden />Processing
+            <span className="flex items-center gap-2 text-xl font-semibold tracking-tight text-info">
+              <Loader2 className="size-5 animate-spin motion-reduce:animate-none" aria-hidden />Processing
             </span>
           )}
-          <span aria-hidden className="h-7 w-px bg-border" />
-          <h2 id="panel-title" className="font-mono text-xl">{id}</h2>
+          <span aria-hidden className="h-6 w-px bg-border" />
+          <h2 id="panel-title" className="font-mono text-lg">{id}</h2>
           <span className="text-sm text-muted-foreground">{fmtDateTime(item.updated_at)} · {duration(item.duration_s)}</span>
         </div>
-        <Link href={pending ? `/calls/${id}/processing` : `/calls/${id}`}
-          className="inline-flex shrink-0 items-center gap-1 pt-1.5 text-sm text-link underline-offset-2 hover:underline">
-          {pending ? "Watch progress" : "Open full call"}<ArrowUpRight className="size-3.5" aria-hidden />
-        </Link>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <ActionLink href={pending ? `/calls/${id}/processing` : `/calls/${id}`}>{pending ? "Watch progress" : "Open full call"}</ActionLink>
+          <Link href="/?call=" replace scroll={false} aria-label="Close this call" title="Close (Esc)"
+            className="group inline-flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
+            <X className="size-4 transition-transform duration-200 group-hover:rotate-90 motion-reduce:transition-none" aria-hidden />
+          </Link>
+        </div>
       </header>
 
       <div className="space-y-6 px-6 py-5">
@@ -149,7 +163,7 @@ function Body({ item, result, trace, analysis, transcript, th }: {
           <RiskBlock risk={broken && findings.length === 0 ? null : result.risk_score} confidence={result.confidence} th={th} decision={decision} />
           <section aria-labelledby="why" className="space-y-1.5">
             <Label><span id="why">{heading}</span></Label>
-            {why && <p className="text-base font-medium leading-snug">{why}</p>}
+            {why && <p className="text-[15px] font-medium leading-snug">{why}</p>}
             {unsure && <p className="text-sm leading-relaxed text-muted-foreground">{unsure}</p>}
           </section>
         </div>
@@ -176,7 +190,7 @@ function RiskBlock({ risk, confidence, th, decision }: { risk: number | null; co
   return (
     <section aria-labelledby="risk" className="space-y-2">
       <Label><span id="risk">Risk and threshold</span><InfoTip term="risk" /></Label>
-      <p className="tabular text-5xl font-semibold tracking-tight">{risk == null ? "n/a" : `${Math.round(risk * 100)}%`}</p>
+      <p className="tabular text-4xl font-semibold tracking-tight">{risk == null ? "n/a" : `${Math.round(risk * 100)}%`}</p>
       <div className="relative pt-1" role="meter" aria-label="Risk" aria-valuemin={0} aria-valuemax={1} aria-valuenow={risk ?? undefined}
         aria-valuetext={risk == null ? "not available" : `${pct(risk)}, alarm threshold ${th ? pct(th.alarm) : "unknown"}`}>
         <div className="relative h-2.5 rounded-full bg-muted">

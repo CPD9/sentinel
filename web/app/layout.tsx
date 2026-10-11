@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import { ThemeProvider } from "next-themes";
+import { UploadProvider } from "@/components/inbox/upload";
 import { TopNav } from "@/components/shell/nav";
 import "./globals.css";
 
@@ -8,7 +9,7 @@ import "./globals.css";
 const sans = localFont({ src: "./fonts/instrument-sans-latin-wght.woff2", weight: "400 700", variable: "--font-instrument", display: "swap" });
 
 export const metadata: Metadata = {
-  title: "Sentinel",
+  title: "Call compliance",
   description: "Self-hosted compliance review of bank phone calls.",
 };
 
@@ -17,8 +18,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className={sans.variable} suppressHydrationWarning>
       <body>
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
-          <TopNav />
-          <main className="mx-auto max-w-[1400px] px-4 py-6">{children}</main>
+          <UploadProvider>
+            <TopNav />
+            <main className="mx-auto max-w-[1400px] px-4 py-6">{children}</main>
+          </UploadProvider>
         </ThemeProvider>
       </body>
     </html>

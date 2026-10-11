@@ -27,7 +27,7 @@ export function Headline({ r }: { r: QualityReport }) {
   return (
     <section aria-labelledby="headline" className="space-y-3">
       <p id="headline" className="max-w-3xl text-base leading-relaxed">
-        On <b>{r.overall.n} {WHERE[r.split]}</b>, Sentinel flagged <b>{esc.tp} of {needed}</b> calls that needed attention,
+        On <b>{r.overall.n} {WHERE[r.split]}</b>, the system flagged <b>{esc.tp} of {needed}</b> calls that needed attention,
         missed <b>{esc.fn}</b> and raised <b>{strict.fp}</b> false alarm{strict.fp === 1 ? "" : "s"}.
       </p>
       <dl className="grid gap-3 sm:grid-cols-3">
