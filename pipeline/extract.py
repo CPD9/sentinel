@@ -146,9 +146,15 @@ def _call(client, messages: list[dict], metrics: list[dict]) -> str:
     return text
 
 
+# ASR without diarization labels every segment "unknown"; shown as "(unknown)" Apertus answered {"facts": []} for every
+# window (28 dev calls, 11 Oct 2026). A neutral label lets the model attribute speakers from the content; the validator
+# never calls that a speaker mismatch on an "unknown" segment. Part of the cache key, so the empty replies are not reused.
+PROMPT_SPEAKER = {"unknown": "speaker"}
+
+
 def _window_raw(client, cache: DiskCache, window: list[TranscriptSegment]) -> dict:
     """{facts: [raw dicts], repaired, cached, metrics: [...]} for one window."""
-    segs = [{"id": s.id, "speaker": s.speaker, "text": s.text} for s in window]
+    segs = [{"id": s.id, "speaker": PROMPT_SPEAKER.get(s.speaker, s.speaker), "text": s.text} for s in window]
     key = extraction_cache_key(segs, client.model, client.model_revision, PROMPT_VERSION_FULL, provider=client.spec.name)
     hit = cache.get(key)
     if hit is not None:

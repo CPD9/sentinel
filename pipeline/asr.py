@@ -54,12 +54,15 @@ class AsrError(RuntimeError):
 
 # --------------------------------------------------------------------------- model
 
+# The ASR bake-off winner (GPU, case WER; large-v3 only ties it at 2x the VRAM): used when ASR_MODEL_PATH is unset,
+# so ./run.sh works on a fresh folder with no manual step.
+DEFAULT_ASR_MODEL = "mobiuslabsgmbh/faster-whisper-large-v3-turbo"
+
+
 def resolve_model(spec: str | None = None) -> tuple[str, str]:
     """(local model dir, "<name>@<revision>") for a CTranslate2 dir or a faster-whisper model name."""
     load_env()
-    spec = spec or os.environ.get("ASR_MODEL_PATH")
-    if not spec:
-        raise AsrError("ASR_MODEL_PATH is not set")
+    spec = spec or os.environ.get("ASR_MODEL_PATH") or DEFAULT_ASR_MODEL
     p = Path(spec).expanduser()
     if not p.is_dir() and (REPO_ROOT / spec).is_dir():
         p = REPO_ROOT / spec
@@ -164,6 +167,9 @@ def cached_elapsed(entry: dict, timing: dict) -> float | None:
     return entry.get("elapsed_s") if same else None
 
 
+GPU_DECODE = ("cuda", "float16")
+
+
 def cache_key(audio_sha: str, asr_model: str, device: str, compute_type: str, decode: dict = DECODE) -> str:
     """Hypotheses are keyed by inference config too: CPU/int8 and GPU/float16 can decode different text."""
     blob = json.dumps({"audio": audio_sha, "model": asr_model, "device": device, "compute_type": compute_type,
@@ -232,6 +238,11 @@ def transcribe(audio_path: str | Path, call_id: str, model_spec: str | None = No
     device = device or default_device()[0]
     compute_type = compute_type or ("float16" if device == "cuda" else "int8")
     cp = cache_dir / f"{cache_key(audio_sha, asr_model, device, compute_type)}.json"
+    # A GPU/float16 decode of the same audio, model and decode settings (e.g. from scripts/pod_asr_batch.py) is the
+    # reference hypothesis and is reused on any host, so a laptop run shows exactly what the GPU decoded.
+    gpu = cache_dir / f"{cache_key(audio_sha, asr_model, *GPU_DECODE)}.json"
+    if gpu.is_file() and not force:
+        cp = gpu
     if cp.is_file() and not force:
         raw = json.loads(cp.read_text(encoding="utf-8"))["raw"]
     else:

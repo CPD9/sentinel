@@ -1,6 +1,6 @@
 # One rule per criterion in pipeline/schemas.CRITERIA. Rules are data over validated facts and keyword hits.
-# ALL NUMBERS ARE JUDGEMENT PLACEHOLDERS: nothing here has been tuned or evaluated on data.
-version: rules-v1
+# Numbers are judgement placeholders except where a comment says they were tuned (on dev + Testset_30 only, never holdout).
+version: rules-v2
 
 defaults:
   fire_at: 0.5            # a rule "fires" when it has a supporting fact and risk >= fire_at
@@ -21,7 +21,12 @@ rules:
     enabled: true
     scope: {info_types: [credentials]}
     facts:
-      - {when: {act: disclose, info_type: credentials}, risk: 0.9}
+      # A customer reading out a code is a review, not an alarm (8 of 10 false alarms on dev+Testset_30, e.g. "the last
+      # four are 4-2-4-2", or after the advisor said "please don't tell me any number"). The advisor disclosing, or a
+      # third party receiving it, stays an alarm. Tuned on dev+Testset_30 only: esc F1 0.625 -> 0.625, strict-alarm
+      # precision 0.45 -> 0.62, false alarms on gold no_alert 10 -> 2, strict-alarm recall 0.43 -> 0.24.
+      - {when: {act: disclose, info_type: credentials}, risk: 0.6}
+      - {when: {act: disclose, info_type: credentials, speaker: advisor}, risk: 0.9}
       - {when: {act: disclose, info_type: credentials, recipient_third_party: true}, risk: 0.95}
       - {when: {act: request, info_type: credentials}, risk: 0.8}
 

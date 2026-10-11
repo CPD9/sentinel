@@ -135,7 +135,7 @@ def test_no_llm_is_not_a_stage_error_and_is_labelled(env):
 
 
 def test_alarm_with_fake_llm_has_snippet_trigger_trace_and_result_file(env, monkeypatch):
-    fake_extract(monkeypatch, [Fact("F1", "customer", "disclose", "credentials", ["S3"], "Mis Passwort isch Sunneblueme")])
+    fake_extract(monkeypatch, [Fact("F1", "customer", "disclose", "credentials", ["S3"], "Mis Passwort isch Sunneblueme", recipient_third_party=True)])
     events = []
     r = run(env, on_event=events.append)
     assert r["decision"] == "alarm" and r["stage_errors"] == [] and validate_call_result(r) == []
@@ -157,7 +157,7 @@ def test_extractor_exception_is_review(env, monkeypatch):
 
 
 def test_raising_callback_is_harmless_and_logged_once(env, monkeypatch, caplog):
-    fake_extract(monkeypatch, [Fact("F1", "customer", "disclose", "credentials", ["S3"], "Mis Passwort isch Sunneblueme")])
+    fake_extract(monkeypatch, [Fact("F1", "customer", "disclose", "credentials", ["S3"], "Mis Passwort isch Sunneblueme", recipient_third_party=True)])
     calls = []
 
     def bad(e):
@@ -177,7 +177,7 @@ def test_unexpected_exception_becomes_review(env, monkeypatch):
 
 
 def test_snippet_failure_does_not_change_decision(env, monkeypatch):
-    fake_extract(monkeypatch, [Fact("F1", "customer", "disclose", "credentials", ["S3"], "Mis Passwort isch Sunneblueme")])
+    fake_extract(monkeypatch, [Fact("F1", "customer", "disclose", "credentials", ["S3"], "Mis Passwort isch Sunneblueme", recipient_third_party=True)])
     env.wav.write_bytes(b"corrupt")
     r = run(env)
     assert r["decision"] == "alarm" and "snippets" in {e["stage"] for e in r["stage_errors"]}
@@ -235,7 +235,7 @@ def test_failed_trace_write_regenerates_narrative(env, monkeypatch):
 
 
 def test_snippet_failure_keeps_alarm_and_its_narrative(env, monkeypatch):
-    fake_extract(monkeypatch, [Fact("F1", "customer", "disclose", "credentials", ["S3"], "Mis Passwort isch Sunneblueme")])
+    fake_extract(monkeypatch, [Fact("F1", "customer", "disclose", "credentials", ["S3"], "Mis Passwort isch Sunneblueme", recipient_third_party=True)])
     env.wav.write_bytes(b"corrupt")
     r = run(env)
     assert r["decision"] == "alarm" and "Decision alarm" in r["narrative"]

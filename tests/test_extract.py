@@ -346,3 +346,12 @@ def test_truncated_window_is_split_and_retried(tmp_path, v1_then_restore):
     assert len(c.calls) == 3                                   # 6 segments truncated, then 3 + 3
     c.calls.clear()
     assert len(run(c, t, tmp=tmp_path)) == 6 and len(c.calls) == 1   # halves are cached; only the full window re-asks
+
+
+def test_unknown_speakers_are_shown_neutrally(tmp_path):
+    t = tr([(sid, "unknown", text) for sid, _, text in SEGS])
+    c = FakeClient([reply(raw_fact(speaker="customer"))])
+    (f,) = run(c, t, tmp=tmp_path)
+    user = c.calls[0]["messages"][-1]["content"]
+    assert "(unknown)" not in user and "[T004] (speaker) Mis Passwort" in user
+    assert f.valid and f.speaker == "customer"              # no speaker mismatch against an unknown segment
