@@ -5,6 +5,8 @@
 
 Writes <out_dir>/timing_summary.json and prints a short report. Labels are read here, after the predictions exist,
 never by the pipeline: a JSON {"<original file name>": "alarm|review|no_alert"} or a CSV with columns file,label.
+Labels are joined by source file: the original name (e.g. TEST-02.mp3) through out/source_files.json to the
+converted WAV the pipeline saw (TEST-02.wav) and its neutral call id; failing that, by file stem.
 """
 from __future__ import annotations
 
@@ -61,7 +63,7 @@ def summarize(out: Path, pod: dict | None, labels: dict[str, str] | None, total_
     except Exception:
         pass
     if labels:
-        by_id = {cid: labels[name] for name, cid in idm.items() if name in labels}
+        by_id = join_labels(labels, idm, _source_files(out))
         ids = [c["call_id"] for c in calls if c["call_id"] in by_id]
         if ids:
             dec = {c["call_id"]: c["decision"] for c in calls}
@@ -69,6 +71,24 @@ def summarize(out: Path, pod: dict | None, labels: dict[str, str] | None, total_
             body["quality"]["unlabelled"] = len(calls) - len(ids)
     (out / "timing_summary.json").write_text(json.dumps(body, indent=2), encoding="utf-8")
     return body
+
+
+def _source_files(out: Path) -> dict:
+    f = out / "source_files.json"
+    return json.loads(f.read_text(encoding="utf-8")) if f.is_file() else {}
+
+
+def join_labels(labels: dict[str, str], idm: dict[str, str], sources: dict) -> dict[str, str]:
+    """call id -> gold label. A label key is an original file name (or a stem): original name -> stem via
+    source_files.json, else the key's own stem; stem -> the processed WAV (<stem>.wav) -> neutral call id."""
+    by_stem = {Path(wav).stem: cid for wav, cid in idm.items()}
+    orig_to_stem = {v["file"]: stem for stem, v in sources.items()}
+    out = {}
+    for key, lab in labels.items():
+        stem = orig_to_stem.get(key) or Path(key).stem
+        if stem in by_stem:
+            out[by_stem[stem]] = lab
+    return out
 
 
 def _wavs(out: Path, idm: dict) -> list[Path]:

@@ -34,10 +34,11 @@ class TimingCollector:
         cid, kind = ev.get("call_id"), ev.get("event")
         with self._lock:
             c = self.calls.setdefault(cid, {"call_id": cid, "stages": {}, "failed": [], "elapsed_s": None})
-            if kind in ("stage_finished", "stage_failed") and ev.get("elapsed_s") is not None:
-                st = ev["stage"]
-                c["stages"][st] = round(c["stages"].get(st, 0.0) + float(ev["elapsed_s"]), 3)
-                if kind == "stage_failed":
+            if kind in ("stage_finished", "stage_failed"):
+                st = ev.get("stage") or "unknown"
+                if ev.get("elapsed_s") is not None:
+                    c["stages"][st] = round(c["stages"].get(st, 0.0) + float(ev["elapsed_s"]), 3)
+                if kind == "stage_failed":            # counted with or without a duration: never "0 errors" by omission
                     c["failed"].append(st)
             elif kind == "job_finished":
                 c["elapsed_s"] = ev.get("elapsed_s")

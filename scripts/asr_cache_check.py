@@ -2,6 +2,7 @@
 
     python scripts/asr_cache_check.py id                                   # -> "<spec>\t<name>@<revision>"
     python scripts/asr_cache_check.py check <wav_folder> <cache_dir> <name@revision>
+    python scripts/asr_cache_check.py missing <wav_folder> <cache_dir> <name@revision>   # names still to decode
 
 `id` resolves the model exactly as the pipeline does (pipeline.asr.resolve_model: ASR_MODEL_PATH, else .env, else
 DEFAULT_ASR_MODEL) and prints the Hugging Face spec to give the Pod plus the full id (name@revision) the cache keys
@@ -13,6 +14,7 @@ other revision, other decode settings) would make ./run.sh silently re-decode ev
 """
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -30,9 +32,19 @@ def model_id() -> tuple[str, str]:
     return mid.rsplit("@", 1)[0], mid
 
 
+def valid_entry(path: Path) -> bool:
+    """A cache file the pipeline can use: parses, and holds a raw decode with a segment list."""
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8")).get("raw")
+    except (OSError, ValueError):
+        return False
+    return isinstance(raw, dict) and isinstance(raw.get("segments"), list)
+
+
 def missing(wav_folder: Path, cache_dir: Path, mid: str) -> list[str]:
+    """WAVs without a valid GPU decode under the pipeline's cache key (what a retry still has to decode)."""
     return [w.name for w in sorted(wav_folder.glob("*.wav"))
-            if not (cache_dir / f"{asr.cache_key(asr._sha256(w), mid, *asr.GPU_DECODE)}.json").is_file()]
+            if not valid_entry(cache_dir / f"{asr.cache_key(asr._sha256(w), mid, *asr.GPU_DECODE)}.json")]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -40,6 +52,9 @@ def main(argv: list[str] | None = None) -> int:
     if argv[:1] == ["id"]:
         spec, mid = model_id()
         print(f"{spec}\t{mid}")
+        return 0
+    if argv[:1] == ["missing"] and len(argv) == 4:
+        print("\n".join(missing(Path(argv[1]), Path(argv[2]), argv[3])))
         return 0
     if argv[:1] == ["check"] and len(argv) == 4:
         miss = missing(Path(argv[1]), Path(argv[2]), argv[3])

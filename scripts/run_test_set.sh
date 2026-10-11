@@ -92,7 +92,8 @@ POD_LINE=""
 if [[ $CPU == 0 ]]; then
   echo "== GPU ASR on the Pod ($FMT upload)"
   FLAG=""; [[ $FMT == flac ]] && FLAG="--flac"
-  if OUT=$("$ROOT/scripts/pod_asr_folder.sh" "$WAVS" "$RUN/artifacts" $FLAG 2>&1); then
+  # incremental on a retry (same --run-dir): recordings already decoded are not uploaded again
+  if OUT=$("$ROOT/scripts/pod_asr_folder.sh" "$WAVS" "$RUN/artifacts" $FLAG --model-id "$(printf '%s' "$IDLINE" | cut -f2)" 2>&1); then
     echo "$OUT" | tail -2; POD_LINE=$(echo "$OUT" | grep '^pod_asr_timing' || true)
   else
     echo "$OUT" | tail -5; bad "Pod ASR failed or its decodes do not match the pipeline's model: stopping (rerun with --cpu to decode on the laptop on purpose)"; exit 3

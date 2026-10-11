@@ -32,6 +32,14 @@ def test_collector_sums_stages_and_records_failures():
     assert r["calls"][0]["failed"] == ["judge"]
 
 
+def test_stage_failed_without_duration_still_counts_as_an_error():
+    c = TimingCollector()
+    c({"event": "stage_failed", "call_id": "call_002", "stage": "pipeline", "message": "process stopped"})
+    c({"event": "job_finished", "call_id": "call_002", "elapsed_s": 1.0, "decision": "review"})
+    r = c.report(wall_s=1.0, workers=1, run_id="t")
+    assert r["stage_errors"] == 1 and r["calls"][0]["failed"] == ["pipeline"] and "pipeline" not in r["stages"]
+
+
 def test_run_timings_flag_writes_file_and_leaves_results_alone(tmp_path, monkeypatch):
     monkeypatch.setattr(stages, "run_analysis", lambda *a, **k: (None, [], False))
     monkeypatch.setattr(stages, "run_asr", lambda audio, cid, **k: (asr_transcript(cid), []))
@@ -117,12 +125,15 @@ def test_cache_check_fails_loudly_on_missing_gpu_decode(tmp_path, capsys):
     make_wav(wavs / "a.wav", seconds=2)
     make_wav(wavs / "b.wav", seconds=3)
     mid = "mobiuslabsgmbh/faster-whisper-large-v3-turbo@0a363e9161cb"
+    entry = json.dumps({"raw": {"language": "de", "segments": []}})
     key = asr.cache_key(asr._sha256(wavs / "a.wav"), mid, *asr.GPU_DECODE)
-    (cache / f"{key}.json").write_text("{}")
+    (cache / f"{key}.json").write_text(entry)
     assert acc.main(["check", str(wavs), str(cache), mid]) == 3
     assert "b.wav" in capsys.readouterr().err
     key_b = asr.cache_key(asr._sha256(wavs / "b.wav"), mid, *asr.GPU_DECODE)
-    (cache / f"{key_b}.json").write_text("{}")
+    (cache / f"{key_b}.json").write_text("{}")                     # unusable entry: still missing
+    assert acc.main(["check", str(wavs), str(cache), mid]) == 3
+    (cache / f"{key_b}.json").write_text(entry)
     assert acc.main(["check", str(wavs), str(cache), mid]) == 0
     assert acc.main(["check", str(wavs), str(cache), "mobiuslabsgmbh/faster-whisper-large-v3-turbo@ffffffffffff"]) == 3
 
@@ -152,3 +163,51 @@ def test_export_uses_packet_keywords_and_original_hashes(tmp_path):
     proto = json.loads((tmp_path / "exp" / "Laufprotokoll.json").read_text())
     assert proto["audio_sha256"] == {"TEST-02": "a" * 64} and proto["selection_run_id"] == "SIZE-1"
     assert eo.keyword_list_for(None) == eo.KEYWORD_LIST and eo.KEYWORD_LIST.is_file()   # tracked copy, not data/
+
+
+def test_pod_asr_retry_decodes_only_what_is_missing(tmp_path):
+    import subprocess
+    root = Path(__file__).resolve().parents[1]
+    wavs, art = tmp_path / "wavs", tmp_path / "art"
+    wavs.mkdir()
+    for i, n in enumerate(("TEST-02.wav", "TEST-03.wav", "TEST-07.wav")):
+        make_wav(wavs / n, seconds=2 + i)
+    mid = "mobiuslabsgmbh/faster-whisper-large-v3-turbo@0a363e9161cb"
+
+    def dry():
+        r = subprocess.run(["bash", str(root / "scripts" / "pod_asr_folder.sh"), str(wavs), str(art), "--flac",
+                            "--dry-run", "--model-id", mid], capture_output=True, text=True, timeout=120)
+        assert r.returncode == 0, r.stderr
+        return r.stdout
+    assert "to decode: 3 of 3" in dry()
+    cache = art / "cache" / "asr"
+    for n in ("TEST-02.wav", "TEST-03.wav"):                       # a first attempt got two of three through
+        key = asr.cache_key(asr._sha256(wavs / n), mid, *asr.GPU_DECODE)
+        (cache / f"{key}.json").write_text(json.dumps({"raw": {"segments": []}}))
+    out = dry()
+    assert "to decode: 1 of 3" in out and "TEST-07.wav" in out and "TEST-02.wav" not in out
+    key = asr.cache_key(asr._sha256(wavs / "TEST-07.wav"), mid, *asr.GPU_DECODE)
+    (cache / f"{key}.json").write_text(json.dumps({"raw": {"segments": []}}))
+    assert "to decode: 0 of 3" in dry()                            # the retry decodes nothing
+
+
+def test_summary_joins_labels_by_source_file_for_non_wav_inputs(tmp_path):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    import test_set_summary as tss
+    out = tmp_path / "out"
+    out.mkdir()
+    calls = [{"call_id": "call_x001", "decision": "alarm", "stage_errors": []},
+             {"call_id": "call_x002", "decision": "no_alert", "stage_errors": []},
+             {"call_id": "call_x003", "decision": "review", "stage_errors": []}]
+    (out / "results.json").write_text(json.dumps({"calls": calls}))
+    (out / "id_map.json").write_text(json.dumps({"map": {"TEST-02.wav": "call_x001", "TEST-03.wav": "call_x002",
+                                                          "TEST-07.wav": "call_x003"}}))
+    (out / "source_files.json").write_text(json.dumps({"TEST-02": {"file": "TEST-02.mp3", "sha256": "a"},
+                                                        "TEST-03": {"file": "TEST-03.m4a", "sha256": "b"},
+                                                        "TEST-07": {"file": "TEST-07.ogg", "sha256": "c"}}))
+    labels = {"TEST-02.mp3": "alarm", "TEST-03.m4a": "alarm", "TEST-07": "no_alert"}   # names and a bare stem
+    b = tss.summarize(out, None, labels, None, None, None)
+    q = b["quality"]
+    assert q["n"] == 3 and q["unlabelled"] == 0
+    assert (q["strict_alarm"]["tp"], q["strict_alarm"]["fn"]) == (1, 1)
+    assert tss.join_labels({"TEST-02.flac": "review"}, {"TEST-02.wav": "call_x001"}, {}) == {"call_x001": "review"}
