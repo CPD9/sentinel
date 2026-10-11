@@ -22,7 +22,7 @@ import {
 import { getJudge, getMethods, snippetUrl } from "@/lib/data";
 import { fmtDateTime, fmtTime } from "@/lib/format";
 
-import type { AnalysisArtifact, CallResult, Criterion, Decision, DecisionTrace, Fact, JudgeVerdict, RuleResult, Thresholds, Transcript } from "@/lib/types";
+import type { AnalysisArtifact, CallResult, Criterion, Decision, DecisionTrace, Fact, JudgeVerdict, RuleResult, Speaker, Thresholds, Transcript } from "@/lib/types";
 import { useAsync, type Loadable } from "@/lib/use-async";
 import { cn } from "@/lib/utils";
 import { ActionBar } from "./action-bar";
@@ -211,7 +211,8 @@ export function CallSummary({ meta, result, trace, analysis, transcript, thresho
                 No fact supports a rule. {t.facts.length} fact{t.facts.length === 1 ? " was" : "s were"} extracted from the whole call and checked.
               </p>
             ) : (
-              <FactList facts={leadFacts} max={compact ? 3 : 6} onCite={cite} />
+              <FactList facts={leadFacts} max={compact ? 3 : 6} onCite={cite}
+                voice={transcript.data?.speaker_source ? new Map(transcript.data.segments.map((s) => [s.id, s.speaker])) : undefined} />
             )}
           </section>
           <div className="space-y-6">
@@ -282,7 +283,7 @@ function RiskBlock({ risk, confidence, th, decision, trace }: { risk: number | n
   );
 }
 
-function FactList({ facts, max, onCite }: { facts: Fact[]; max: number; onCite: (segs: string[]) => void }) {
+function FactList({ facts, max, onCite, voice }: { facts: Fact[]; max: number; onCite: (segs: string[]) => void; voice?: Map<string, Speaker> }) {
   const shown = facts.slice(0, max);
   return (
     <ol className="space-y-2">
@@ -298,6 +299,8 @@ function FactList({ facts, max, onCite }: { facts: Fact[]; max: number; onCite: 
               <span lang="gsw">“{f.quote}”</span>
               {f.gloss_de && <span lang="de" className="text-muted-foreground">“{f.gloss_de}”</span>}
             </span>
+            {(() => { const v = voice?.get(f.segment_ids[0]); return v && v !== "unknown" && v !== f.speaker
+              ? <span className="mt-1 block text-xs text-muted-foreground" title="Role from speaker separation (display only)">Voice separation: {speakerLabel(v)}</span> : null; })()}
             {f.counter_evidence && <span className="mt-1 block text-xs text-muted-foreground">Against it: {f.counter_evidence}</span>}
             {!f.valid && <span className="mt-1 block text-xs font-medium text-review">Not verified against the transcript ({f.drop_reason ?? "dropped"}); it does not count.</span>}
           </button>

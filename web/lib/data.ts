@@ -8,7 +8,7 @@ import { approxSimulate, patchComponents, samePatch, type WhatifCalls } from "./
 import type {
   AnalysisArtifact, ApiErrorBody, ApplyResponse, AuditEntry, CallListItem, CallResult, DecisionTrace, FeedbackEntry,
   Decision, KeywordsConfig, Patch, PreviewRequest, PreviewResponse, ProcessingEvent, QualityReport, QualityReportSummary,
-  JudgeVerdict, MethodsResponse, ThresholdCurveFile, QualityEvidence, ReportResponse, Stage, RerunResponse, RulesConfig, SimulationResult, SuggestionsResponse, Thresholds, Transcript, Verdict,
+  JudgeVerdict, MethodsResponse, ThresholdCurveFile, QualityEvidence, ReportResponse, Stage, RerunResponse, RulesConfig, SimulationResult, SpeakerRoles, SuggestionsResponse, Thresholds, Transcript, Verdict,
 } from "./types";
 import { CRITERIA, EVENT_TYPES, verdictAllowed } from "./types";
 
@@ -98,6 +98,16 @@ export async function getTrace(id: string): Promise<DecisionTrace> {
 }
 export async function getAnalysis(id: string): Promise<AnalysisArtifact> {
   return (await getJson<AnalysisArtifact>(isFixtures ? fx(`${id}.analysis.json`) : api(`/calls/${id}/analysis`))).data;
+}
+/** Display-only speaker roles (scripts/assign_speakers.py). Only the local-run fallback serves them; null when absent. */
+export async function getSpeakers(id: string): Promise<SpeakerRoles | null> {
+  if (!isLocalRun) return null;
+  try {
+    return (await getJson<SpeakerRoles>(api(`/calls/${id}/speakers`))).data;
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404) return null;
+    throw e;
+  }
 }
 
 /** Audio URLs. In fixtures mode there is no audio (*.wav is gitignored): callers get null and show the 404 state. */

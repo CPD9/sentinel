@@ -485,6 +485,50 @@ class Transcript(_Artifact):
         return errs
 
 
+# --------------------------------------------------------------------------- SpeakerRoles (display only)
+# <speakers_dir>/<call_id>.json, written by scripts/assign_speakers.py. Never feeds the decision.
+
+LABEL_SOURCES = ("acoustic + content", "content only")
+
+
+@dataclass
+class SpeakerTurn:
+    start_s: float
+    end_s: float
+    cluster: str
+    role: str
+
+
+@dataclass
+class SegmentRole:
+    id: str
+    role: str
+    cluster: str | None = None            # acoustic cluster with the largest time overlap
+    overlap_frac: float | None = None     # share of the segment covered by that cluster
+    mixed: bool = False                   # a second cluster covers > 30 % of the segment
+
+
+@dataclass
+class SpeakerRoles(_Artifact):
+    call_id: str
+    label_source: str
+    mapper: dict[str, str]                # {model, prompt_version, provider}
+    transcript: dict[str, str]            # {path, asr_model, sha256} of the transcript the segments join to
+    segments: list[SegmentRole]
+    diarizer: str | None = None
+    cluster_roles: dict[str, str] = field(default_factory=dict)
+    rationale: str = ""
+    turns: list[SpeakerTurn] = field(default_factory=list)
+    schema_version: int = SCHEMA_VERSION
+
+    @classmethod
+    def _semantic(cls, d: dict) -> list[str]:
+        errs = _schema_version(d) + _enum(d["label_source"], LABEL_SOURCES, "label_source")
+        errs += [e for i, s in enumerate(d["segments"]) for e in _enum(s["role"], SPEAKERS, f"segments[{i}].role")]
+        errs += [e for i, t in enumerate(d.get("turns", [])) for e in _enum(t["role"], SPEAKERS, f"turns[{i}].role")]
+        return errs
+
+
 # --------------------------------------------------------------------------- DecisionTrace
 
 FACT_ACTS = ("request", "disclose", "warn", "refuse", "hypothetical", "quote", "other")

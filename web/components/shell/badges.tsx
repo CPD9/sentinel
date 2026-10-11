@@ -1,6 +1,7 @@
 import { AlertTriangle, Check, Eye, Loader2, OctagonAlert, XCircle, Clock } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { CRITERION_LABEL, SPEAKER_COLOR, criterionColor } from "@/lib/colors";
+import { speakerLabel } from "@/lib/explain";
 import { humanize } from "@/lib/format";
 import type { CallStatus, Criterion, Decision, Speaker } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -45,7 +46,7 @@ export function CriterionChip({ criterion, className }: { criterion: Criterion |
 
 export function SpeakerChip({ speaker }: { speaker: Speaker }) {
   return (
-    <Badge style={{ color: SPEAKER_COLOR[speaker], borderColor: SPEAKER_COLOR[speaker] }}>{speaker}</Badge>
+    <Badge style={{ color: SPEAKER_COLOR[speaker], borderColor: SPEAKER_COLOR[speaker] }}>{speakerLabel(speaker)}</Badge>
   );
 }
 

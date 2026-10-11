@@ -7,6 +7,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { criterionColor } from "@/lib/colors";
 import { DECISION_LABEL } from "@/lib/explain";
 import { humanize, pct } from "@/lib/format";
+import { useSpeakerRoles } from "@/lib/use-speakers";
+import { speakerLabel } from "@/lib/explain";
 import type { CallResult, DecisionPath, DecisionTrace } from "@/lib/types";
 import type { Loadable } from "@/lib/use-async";
 import { cn } from "@/lib/utils";
@@ -32,6 +34,8 @@ function Body({ t, result }: { t: DecisionTrace; result: CallResult }) {
   const facts = new Map(t.facts.map((f) => [f.fact_id, f]));
   const hits = new Map(t.keyword_hits.map((h) => [h.hit_id, h]));
   const droppedN = t.facts.filter((f) => !f.valid).length;
+  const roles = useSpeakerRoles(result.call_id);
+  const voice = new Map((roles?.segments ?? []).map((s) => [s.id, s.role]));
   const markers = [{ at: t.thresholds.review, label: "review" }, { at: t.thresholds.alarm, label: "alarm" }];
 
   return (
@@ -46,7 +50,9 @@ function Body({ t, result }: { t: DecisionTrace; result: CallResult }) {
               {t.facts.map((f) => (
                 <tr key={f.fact_id} className={cn(!f.valid && "bg-muted/60 text-muted-foreground")}>
                   <td className="px-2 py-2 font-mono text-xs">{f.fact_id}</td>
-                  <td className="px-2 py-2"><SpeakerChip speaker={f.speaker} /></td>
+                  <td className="px-2 py-2"><SpeakerChip speaker={f.speaker} />
+                    {(() => { const v = voice.get(f.segment_ids[0]); return v && v !== "unknown" && v !== f.speaker
+                      ? <p className="mt-1 text-xs text-muted-foreground" title="Role from speaker separation (display only)">voice: {speakerLabel(v)}</p> : null; })()}</td>
                   <td className="px-2 py-2">{f.act}</td><td className="px-2 py-2">{humanize(f.info_type)}</td>
                   <td className="px-2 py-2">
                     <span lang="gsw" className={cn(!f.valid && "line-through")}>“{f.quote}”</span>

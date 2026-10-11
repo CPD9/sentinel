@@ -1,0 +1,14 @@
+# Pod-only venv for acoustic speaker clustering (scripts/pod_diarize.py):
+#   python3 -m venv --system-site-packages /workspace/venvs/diarize   # reuses the image's torch 2.8 + cu128
+#   /workspace/venvs/diarize/bin/pip install --no-cache-dir -r requirements-diarize-pod.txt
+# Gated models (accept terms on HF, then `huggingface-cli login` on the Pod; never pass the token on argv):
+#   pyannote/speaker-diarization-3.1, pyannote/segmentation-3.0
+pyannote.audio==3.3.2
+# pyannote.audio 3.3.2 breaks with the newest releases of these:
+huggingface_hub==0.25.2   # 1.x removed use_auth_token
+pyannote.core==5.0.0
+pyannote.database==5.1.3
+pyannote.pipeline==3.0.1
+pyannote.metrics==3.2.1
+matplotlib
+soundfile
