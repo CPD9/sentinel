@@ -34,7 +34,7 @@ from pipeline.schemas import (CRITERIA, DECISION_RANK, DECISIONS, AnalysisArtifa
                               Workload, WorkloadPair)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-THRESHOLD_KEYS = ("alarm", "review", "confidence_gate")
+THRESHOLD_KEYS = ("alarm", "review", "confidence_gate", "keyword_review")    # keyword_review: {enabled, min_segments}
 _PATCH_KEYS = ("thresholds", "keywords", "rules")
 
 
@@ -48,6 +48,7 @@ class CallInputs:
     analysis: AnalysisArtifact | None = None
     stage_errors: list[StageError] = field(default_factory=list)
     versions: Versions | None = None
+    judge: dict | None = None          # cached S4 judge result (out/judge/<id>.json): decision_source "direct_judge"
 
     @property
     def call_id(self) -> str:
@@ -103,7 +104,14 @@ def load_inputs(artifacts_dir: Path = REPO_ROOT / "artifacts", out_dir: Path = R
             # The result file is missing or unreadable but the cached trace says a stage failed: keep the call locked
             # (always review) rather than re-deciding it from facts that may be incomplete.
             errors = [StageError("unknown", "stage error recorded in the cached decision trace")]
-        calls.append(CallInputs(transcript, trace.facts, analysis, errors, trace.versions))
+        judge = None
+        jp = out_dir / "judge" / f"{cid}.json"
+        if jp.exists():
+            try:
+                judge = json.loads(jp.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                judge = None
+        calls.append(CallInputs(transcript, trace.facts, analysis, errors, trace.versions, judge))
     return calls
 
 
@@ -130,7 +138,8 @@ def load_raw(config_dir: Path = dc.CONFIG_DIR) -> RawConfig:
 def patch_components(patch: dict | None) -> list[str]:
     """Stable, human-readable list of the independent knobs a patch turns, e.g. ['thresholds.alarm=0.8', 'rules.disable:insider_trading']."""
     p = patch or {}
-    out = [f"thresholds.{k}={p['thresholds'][k]}" for k in THRESHOLD_KEYS if k in (p.get("thresholds") or {})]
+    out = [f"thresholds.{k}={json.dumps(p['thresholds'][k], sort_keys=True)}" for k in THRESHOLD_KEYS
+           if k in (p.get("thresholds") or {})]
     k = p.get("keywords") or {}
     out += ["keywords.replace"] if "families" in k else [f"keywords.disable:{f}" for f in k.get("disable_families", [])]
     r = p.get("rules") or {}
@@ -277,8 +286,11 @@ class Simulator:
             hk = (call.call_id, self._kwkey(key, cfg))
             if hk not in self._hits:
                 self._hits[hk] = kw.find_hits(call.transcript, cfg.keywords)
-            self._traces[ck] = decide_call(call.transcript, call.facts, call.analysis, cfg, call.stage_errors or None,
-                                           call.versions, hits=self._hits[hk], validate=self.validate)
+            t = decide_call(call.transcript, call.facts, call.analysis, cfg, call.stage_errors or None,
+                            call.versions, hits=self._hits[hk], validate=self.validate)
+            if cfg.decision_source == "direct_judge" and call.judge is not None and not call.locked:
+                dc.judge_decide(t, call.judge, cfg)          # thresholds act on the cached judge risk, no LLM
+            self._traces[ck] = t
         return self._traces[ck]
 
     # -- evaluation

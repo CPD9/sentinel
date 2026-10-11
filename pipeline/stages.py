@@ -156,9 +156,16 @@ def run_judge(transcript: Transcript):
         return None, _err("judge", exc)
 
 
-def judge_findings(result, transcript: Transcript) -> list[Finding]:
-    """The judge's verdict as one finding whose evidence is its VALIDATED citations (they drive the snippets)."""
-    if result.decision == "no_alert":
+def judge_findings(result, transcript: Transcript, trace: DecisionTrace | None = None) -> list[Finding]:
+    """Findings for a judge-decided call: the judge's verdict as one finding whose evidence is its VALIDATED citations
+    (they drive the snippets). With `trace`: none for no_alert; keyword_review (or a review without a validated
+    citation) points at the rules' evidence, which includes the keyword passages."""
+    if trace is not None:
+        if trace.decision == "no_alert":
+            return []
+        if trace.decision_path == "keyword_review" or not result.valid_citations:
+            return build_findings(trace, transcript)
+    elif result.decision == "no_alert":
         return []
     text = {s.id: s.text for s in transcript.segments}
     ev = []
@@ -169,7 +176,16 @@ def judge_findings(result, transcript: Transcript) -> list[Finding]:
     return [Finding(result.criterion, result.risk, f"Direct judge: {result.reason}", ev, [])]
 
 
-def apply_judge(trace: DecisionTrace, result) -> None:
+def apply_judge(trace: DecisionTrace, result, config=None) -> None:
+    """Thresholded judge decision (decide.judge_decide). Without a config: the old verdict rule (kept for callers)."""
+    if config is not None:
+        from pipeline import decide as dec
+        dec.judge_decide(trace, result.to_dict(), config)
+        return
+    _apply_verdict(trace, result)
+
+
+def _apply_verdict(trace: DecisionTrace, result) -> None:
     """The judge's verdict decides (decision_source "direct_judge"): an alarm needs >= 1 validated citation, else it
     is a review, never an alarm; so is an alarm below the confidence gate. Facts, rules and the confidence breakdown stay in the trace as the why."""
     decision = result.decision
