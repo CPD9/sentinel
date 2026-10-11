@@ -187,3 +187,12 @@ def test_quality_list_and_detail():
     assert isinstance(reports, list) and reports[0]["report_id"] == "quality_MOCK_test" and reports[0]["is_mock"]
     assert client.get("/api/quality/quality_MOCK_test").status_code == 200
     assert_error(client.get("/api/quality/nope"), 404, "not_found")
+
+
+
+def test_rows_say_why_and_report_is_refused_in_fixture_mode():
+    rows = {r["call_id"]: r for r in client.get("/api/calls").json()}
+    assert rows["call_MOCK_001"]["decision_path"] == "alarm" and rows["call_MOCK_001"]["reason"]
+    assert rows["call_MOCK_003"]["decision_path"] is None and rows["call_MOCK_003"]["reason"] is None   # processing
+    assert all(schemas.CallListItem.validate(r) == [] for r in rows.values())
+    assert_error(client.post("/api/calls/call_MOCK_001/report"), 409, "conflict")

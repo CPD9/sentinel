@@ -156,3 +156,34 @@ def test_reference_runs_never_mix_in_asr_documents(run):
     ref.mkdir()
     shutil.copy(run / "artifacts" / "traces" / "call_r01.json", ref / "call_r01.json")
     assert client.get("/api/calls/call_r01/trace").status_code == 200
+
+
+
+def test_call_rows_say_why(run):
+    r1, r2 = client.get("/api/calls").json()
+    trace = client.get("/api/calls/call_r01/trace").json()
+    result = client.get("/api/calls/call_r01").json()
+    top = max(result["findings"], key=lambda f: f["risk"])
+    assert r1["decision_path"] == trace["decision_path"] == "alarm" and r1["reason"] == top["reason"]
+    assert r2["decision_path"] == "no_alert" and r2["reason"]
+
+
+def test_escalate_is_a_verdict_on_any_decision(run):
+    for cid in ("call_r01", "call_r02"):                      # alarm and no_alert
+        r = client.post("/api/feedback", json={"call_id": cid, "verdict": "escalate"})
+        assert r.status_code == 201 and r.json()["verdict"] == "escalate"
+    assert client.get("/api/calls/call_r01").json()["decision"] == "alarm"     # never changes the decision
+
+
+def test_report_is_a_dry_run_by_default(run, monkeypatch):
+    monkeypatch.delenv("TRIGGER_URL", raising=False)
+    r = client.post("/api/calls/call_r01/report")
+    body = r.json()
+    assert r.status_code == 201 and body["dry_run"] is True and body["errors"] == []
+    payload = body["records"][0]["payload"]
+    assert payload["url"].endswith("/calls/call_r01?t=92") and payload["title"].startswith("alarm: ")
+    assert json.loads((run / "out" / "triggers" / "call_r01_0.json").read_text(encoding="utf-8"))["payload"] == payload
+    # an officer-confirmed call that is not an alarm can be reported too
+    r = client.post("/api/calls/call_r02/report")
+    assert r.status_code == 201 and r.json()["records"][0]["payload"]["title"].startswith("confirmed fraud: ")
+    assert_error(client.post("/api/calls/call_unknown/report"), 404, "not_found")

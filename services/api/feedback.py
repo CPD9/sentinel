@@ -1,8 +1,9 @@
 """Officer feedback, docs/API.md "What-if, feedback and suggestions": POST /feedback and GET /feedback.
 
 The officer tells SENTINEL whether a decision was right (correct), wrong (false_alarm) or whether a call should
-have been flagged (missed). A verdict never changes the decision; it only feeds the suggestions. The latest verdict
-per call wins, so an officer changes their mind by posting again.
+have been flagged (missed), or asks a person above them to look (escalate). A verdict never changes the decision;
+false_alarm / missed / correct feed the suggestions, escalate does not. The latest verdict per call wins, so an
+officer changes their mind by posting again.
 
 Fixture mode: verdicts start from fixtures/feedback.json and new ones are kept in memory only (lost on restart),
 so the demo works without writing to out/. Real mode (SENTINEL_RUN_DIR): every verdict is appended to the run's

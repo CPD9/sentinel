@@ -28,6 +28,15 @@ SNIPPET_NAME_RE = re.compile(r"^[\w.-]+\.wav$")
 DOC_KINDS = ("transcript", "trace", "analysis")
 
 
+def summary(result: dict | None, trace: dict | None) -> dict:
+    """The two list fields that say *why*: decision_path (from the trace; stage_error for a failed call without a
+    trace) and the top finding's reason."""
+    findings = [f for f in (result or {}).get("findings") or [] if isinstance(f, dict)]
+    top = max(findings, key=lambda f: f.get("risk") or 0, default=None)
+    path = (trace or {}).get("decision_path") or ("stage_error" if (result or {}).get("stage_errors") else None)
+    return {"decision_path": path, "reason": (top or {}).get("reason")}
+
+
 class FixtureStore:
     """Read-only access to fixtures/. Every document in there is invented (is_mock / versions = MOCK)."""
 
@@ -48,8 +57,9 @@ class FixtureStore:
 
     # ---------------------------------------------------------------- calls
     def list_calls(self) -> list[dict]:
-        """All inbox rows (CallListItem dicts)."""
-        return self._load("calls.json") or []
+        """All inbox rows (CallListItem dicts), with decision_path and reason added from the call's documents."""
+        rows = self._load("calls.json") or []
+        return [{**r, **summary(self.get_result(r["call_id"]), self.get_doc(r["call_id"], "trace"))} for r in rows]
 
     def get_row(self, call_id: str) -> dict | None:
         """One inbox row, or None for an unknown call."""
@@ -171,6 +181,7 @@ class ArtifactStore:
             "n_stage_errors": len(errors),
             "updated_at": _iso_mtime(path),
             "is_mock": False,
+            **summary(r, self.get_doc(call_id, "trace")),
         }
 
     def list_calls(self) -> list[dict]:

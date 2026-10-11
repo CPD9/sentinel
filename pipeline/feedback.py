@@ -1,6 +1,6 @@
 """Officer feedback and the config audit trail: two append-only JSON-lines files under out/.
 
-  out/feedback.jsonl   one FeedbackEntry per line {call_id, verdict: false_alarm|missed|correct, note, ts, ...}
+  out/feedback.jsonl   one FeedbackEntry per line {call_id, verdict: false_alarm|missed|correct|escalate, note, ts, ...}
   out/audit.jsonl      one AuditEntry per line (config changes, e.g. an applied suggestion)
 
 Appends are atomic: one `write` of a single newline-terminated line on an O_APPEND descriptor, under an exclusive

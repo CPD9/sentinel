@@ -249,7 +249,9 @@ class Simulator:
         self.validate = validate
         self.inputs = list(inputs)
         self.raw = raw or load_raw()
-        self.feedback = {c: e for c, e in (feedback or {}).items() if c in {i.call_id for i in self.inputs}}
+        # escalate asks for a second look; it says nothing about right or wrong, so it never steers a suggestion
+        self.feedback = {c: e for c, e in (feedback or {}).items()
+                         if c in {i.call_id for i in self.inputs} and e.verdict != "escalate"}
         self.base_config = self.raw.build()
         self._hits: dict[tuple[str, str], list] = {}
         self._configs: dict[str, Config] = {}

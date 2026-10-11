@@ -1,5 +1,5 @@
 "use client";
-import { Check, Flag, ThumbsUp, TriangleAlert } from "lucide-react";
+import { ArrowUpCircle, Check, Flag, ThumbsUp, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ApiError, getFeedback, isFixtures, postFeedback } from "@/lib/data";
@@ -8,11 +8,12 @@ import type { Decision, Verdict } from "@/lib/types";
 import { VERDICTS, verdictAllowed } from "@/lib/types";
 import { useAsync } from "@/lib/use-async";
 
-const ICON = { false_alarm: Flag, missed: TriangleAlert, correct: ThumbsUp } as const;
+const ICON = { false_alarm: Flag, missed: TriangleAlert, correct: ThumbsUp, escalate: ArrowUpCircle } as const;
 const WHY_NOT: Record<Verdict, string> = {
   false_alarm: "Nothing was flagged, so there is no false alarm to report.",
   missed: "This is already an alarm, so nothing was missed.",
   correct: "",
+  escalate: "",
 };
 
 /** Officer verdict on this call. It never changes the decision; it feeds the suggested changes in Sensitivity. */

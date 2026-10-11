@@ -39,7 +39,7 @@ export function humanize(s: string): string {
   return s.replaceAll("_", " ");
 }
 
-export const VERDICT_LABEL = { false_alarm: "False alarm", missed: "Missed", correct: "Correct" } as const;
+export const VERDICT_LABEL = { false_alarm: "False alarm", missed: "Missed", correct: "Correct", escalate: "Escalate" } as const;
 
 /** "thresholds.alarm=0.8" → "alarm threshold 0.8", "rules.disable:insider_trading" → "rule insider trading off". */
 export function componentLabel(c: string): string {

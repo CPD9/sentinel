@@ -885,10 +885,14 @@ class CallListItem(_Artifact):
     n_stage_errors: int = 0
     updated_at: str | None = None
     is_mock: bool = False
+    decision_path: str | None = None      # from the trace: why the decision came out this way (e.g. low_confidence)
+    reason: str | None = None             # the top finding's reason, one line
 
     @classmethod
     def _semantic(cls, d: dict) -> list[str]:
         errs = _enum(d["status"], CALL_STATUSES, "status")
+        if d.get("decision_path") is not None and d["decision_path"] not in DECISION_PATHS:
+            errs.append(f"decision_path {d['decision_path']!r} not in {tuple(DECISION_PATHS)}")
         if d.get("variant") is not None:
             errs += _enum(d["variant"], VARIANTS, "variant")
         if d.get("decision") is not None:
@@ -1150,7 +1154,9 @@ def _convention_set(cs: dict, where: str) -> list[str]:
 # Officer feedback (out/feedback.jsonl), the what-if simulation (POST /simulate) and the ranked suggestions
 # (GET /suggestions). None of these read ground-truth labels: feedback comes from the officer in the UI.
 
-VERDICTS = ("false_alarm", "missed", "correct")
+# escalate = "a person above me must look": recorded like any verdict, never changes the decision, and is not a
+# label for the suggestions (pipeline/simulate.py ignores it).
+VERDICTS = ("false_alarm", "missed", "correct", "escalate")
 DECISION_RANK = {"no_alert": 0, "review": 1, "alarm": 2}
 FLIP_DIRECTIONS = ("up", "down")                       # up = more severe (no_alert < review < alarm)
 AUDIT_ACTIONS = ("apply_suggestion", "settings_change")

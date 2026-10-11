@@ -20,6 +20,7 @@ from fastapi.responses import JSONResponse, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from pipeline import schemas
+from pipeline.trigger import send_triggers
 
 from . import events, feedback, settings
 from .deps import ApiError, checked, known_call, log, side_doc, store
@@ -176,6 +177,25 @@ def get_snippet(call_id: str, name: str, request: Request):
     if path is None:
         raise ApiError(404, "not_available", f"Snippet {name} not available" + (" (fixture mode has no audio)" if store.is_mock else ""))
     return wav_response(request, path)
+
+
+# --------------------------------------------------------------------------- report to Outcept
+@api.post("/calls/{call_id}/report")
+def report_call(call_id: str):
+    """Report a call to the Outcept trigger API ("Confirm fraud" in the UI). Dry-run by default: the payloads are
+    written to the run's out*/triggers/ and nothing is sent; a real POST happens only when TRIGGER_URL is set
+    (pipeline/trigger.py). Alarms and calls the officer confirmed (any decision) can be reported."""
+    row = known_call(call_id)
+    if store.is_mock:
+        raise ApiError(409, "conflict", "Reporting is disabled in fixture mode (MOCK data only).")
+    if row["status"] not in ("done", "error"):
+        raise ApiError(409, "conflict", f"Call {call_id!r} has no decision yet")
+    result = schemas.CallResult.from_dict(store.get_result(call_id))
+    if not any(f.risk > 0 for f in result.findings):
+        raise ApiError(409, "conflict", f"Call {call_id!r} has no finding to report")
+    records, errors = send_triggers(call_id, result.decision, result.findings, store.out / "triggers", confirmed=True)
+    return JSONResponse({"call_id": call_id, "dry_run": all(r.get("mode") == "dry-run" for r in records),
+                         "records": records, "errors": [e.message for e in errors]}, status_code=201)
 
 
 # --------------------------------------------------------------------------- quality
