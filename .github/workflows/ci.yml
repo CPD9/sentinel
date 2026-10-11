@@ -26,8 +26,11 @@ jobs:
           cache-dependency-path: |
             requirements-dev.txt
             requirements-analysis.txt
-      - run: pip install -r requirements-dev.txt -r requirements-analysis.txt
-      # test_runtime_per_audio_minute is timing-based and flaky (cold numba start); skipped until fixed.
+            services/api/requirements.txt
+      # ASR runtime only, same pins as requirements-asr.txt. torch/transformers are left out: no test uses them,
+      # they only serve ct2-transformers-converter (benchmark_asr.py fine-tune conversion).
+      - run: pip install -r requirements-dev.txt -r requirements-analysis.txt -r services/api/requirements.txt faster-whisper==1.2.1 ctranslate2==4.8.2 av==18.1.0
+      # test_runtime_per_audio_minute is timing-based and flaky (cold numba start); uncomment the deselect if it fails.
       - run: python -m pytest #--deselect tests/test_audio_analysis.py::test_runtime_per_audio_minute
 
   web:
