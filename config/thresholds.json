@@ -28,5 +28,7 @@
   "keyword_review": {
     "enabled": false,
     "min_segments": 2
-  }
+  },
+  "judge_mode": "multi",
+  "_judge_mode": "multi: one zero-shot check per criterion (pipeline/judge_multi.py), risk = max. 11 Oct 2026, all 62 calls, ASR mode, defaults 0.70 / 0.20: AUC 0.69 [0.58, 0.80] vs 0.63 single; balanced accuracy 0.69 vs 0.63; precision 1.00, recall 0.38, 0 false alarms, 21 % review load. 'single' = one general verdict (pipeline/judge.py)."
 }

@@ -147,10 +147,13 @@ def _span(transcript: Transcript, ids: list[str]) -> tuple[float | None, float |
     return min(s.start_s for s in segs), max(s.end_s for s in segs)
 
 
-def run_judge(transcript: Transcript):
-    """(JudgeResult | None, errors): the S4 direct judge with validated citations (pipeline/judge.py)."""
-    from pipeline import judge
+def run_judge(transcript: Transcript, mode: str = "single"):
+    """(JudgeResult | None, errors): the S4 direct judge with validated citations (pipeline/judge.py), or with
+    mode "multi" one focused check per criterion (pipeline/judge_multi.py; risk = max over the checks)."""
+    from pipeline import judge, judge_multi
     try:
+        if mode == "multi":
+            return judge_multi.judge_call_multi(transcript), []
         return judge.judge_call(transcript), []
     except Exception as exc:
         return None, _err("judge", exc)
