@@ -14,6 +14,7 @@ import { AblationChart, GroupBars, LatencyBars, METRICS, ReliabilityDiagram, Wer
 import { Headline } from "./headline";
 import { kindOf } from "./kind";
 import { Prove } from "./prove";
+import { SameSentence } from "./same-sentence";
 import { BigMetric, MetricBar } from "./metric";
 import { cn } from "@/lib/utils";
 import { DECISION_LABEL } from "@/lib/explain";
@@ -35,6 +36,7 @@ export function QualityView() {
         <p className="text-body text-muted-foreground">How well the system finds fraud. The cross-validated number comes first; every other number says whether the system was tuned on those calls or never saw them.</p>
       </div>
       {reports.data && <Prove reports={reports.data} />}
+      <SameSentence />
       {reports.data && reports.data.length > 1 && <><h2 className="eyebrow pt-2">Each report in detail</h2><Compare reports={reports.data} active={id} onPick={setId} /></>}
       {list.status === "loading" && !list.data && <SkeletonBlock rows={6} />}
       {list.status === "error" && !list.data && <ErrorCard error={list.error} onRetry={list.reload} />}

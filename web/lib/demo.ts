@@ -30,3 +30,7 @@ export function setDemoStep(i: number | null) {
   try { if (i == null) sessionStorage.removeItem(KEY); else sessionStorage.setItem(KEY, String(i)); } catch { /* private window: demo bar still works for this page */ }
   window.dispatchEvent(new Event("sentinel-demo"));
 }
+
+/** "Same sentence, two verdicts": two calls where a customer reads six digits aloud, in different situations (found by
+ *  searching the transcripts; the case's own deep-dive pair). Override with NEXT_PUBLIC_SAME_SENTENCE="call_a,call_b". */
+export const SAME_SENTENCE_PAIR: [string, string] = ((process.env.NEXT_PUBLIC_SAME_SENTENCE || "call_005,call_018").split(",").map((s) => s.trim()) as [string, string]);
