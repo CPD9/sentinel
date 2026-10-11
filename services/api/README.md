@@ -3,9 +3,10 @@
 The thin FastAPI layer between the web app and the pipeline. The contract is [`docs/API.md`](../../docs/API.md),
 response bodies are the dataclasses in [`pipeline/schemas.py`](../../pipeline/schemas.py).
 
-**Status: fixture mode only.** Every endpoint in API.md answers, serving the MOCK documents in
-[`fixtures/`](../../fixtures/README.md). Real mode (uploads, `process_call()`, results from `out/` and
-`artifacts/`, audio and snippets) comes with the pipeline milestone.
+**Status:** two modes. **Fixture mode** serves the MOCK documents in [`fixtures/`](../../fixtures/README.md).
+**Real mode** serves a finished pipeline run from disk (results, transcripts, traces, analysis, audio and snippets;
+verdicts appended to `out/feedback.jsonl`). Not wired yet: uploads + `process_call()` from the API, re-deciding
+calls when settings are saved, `/simulate`, `/suggestions`, `/audit`.
 
 ## Run
 
@@ -13,7 +14,8 @@ From the repo root (Python 3.11, same `.venv` as the pipeline):
 
 ```bash
 uv pip install -r services/api/requirements.txt
-SENTINEL_FIXTURES=1 python -m services.api          # http://127.0.0.1:8001, docs at /docs
+SENTINEL_FIXTURES=1 python -m services.api          # MOCK fixtures, http://127.0.0.1:8001, docs at /docs
+SENTINEL_RUN_DIR="/path/to/run" python -m services.api   # a real run: the folder that contains out/ and artifacts/
 ```
 
 Then the web app against it, in a second terminal:
@@ -27,7 +29,7 @@ npm install && npm run dev      # http://127.0.0.1:3000; /api/* is proxied to 12
 Tests (skipped automatically when the API deps are missing):
 
 ```bash
-pytest tests/test_api.py
+pytest tests/test_api.py tests/test_api_real.py
 ```
 
 ## Files
@@ -37,15 +39,17 @@ pytest tests/test_api.py
 | `main.py` | The app: error format, CORS, calls / documents / audio / quality / health endpoints |
 | `events.py` | Server-Sent Events: per-call replay + live, global stream, `Last-Event-ID` resume, heartbeats |
 | `settings.py` | Thresholds, keywords, rules (GET/PUT with validation) and `POST /settings/preview` |
+| `feedback.py` | Officer verdicts: `GET`/`POST /feedback` (in memory in fixture mode, `out/feedback.jsonl` in real mode) |
 | `deps.py` | Shared pieces: `ApiError`, the store, `checked()` (schema validation), `known_call()` |
-| `store.py` | Where data comes from. `FixtureStore` today; an `ArtifactStore` with the same methods later |
+| `store.py` | Where data comes from: `FixtureStore` (fixtures/) or `ArtifactStore` (a run's out/ + artifacts/), same methods |
 | `__main__.py` | `python -m services.api` → uvicorn on 127.0.0.1 (port `API_PORT`, default 8001) |
 
 ## Environment
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `SENTINEL_FIXTURES` | unset | `1` = serve `fixtures/`. Required for now; without it the API refuses to start |
+| `SENTINEL_FIXTURES` | unset | `1` = serve `fixtures/` (MOCK data) |
+| `SENTINEL_RUN_DIR` | unset | Folder of a pipeline run (contains `out/results/` and `artifacts/`). One of the two is required |
 | `API_PORT` | `8001` | Port (8000 stays free for the vLLM tunnel) |
 | `SENTINEL_REPLAY_SCALE` | `0.1` | Fixture event replay pacing, as a fraction of the recorded gaps (0 = instant) |
 
@@ -61,3 +65,9 @@ pytest tests/test_api.py
 - `POST /settings/preview` re-applies the decide.py priority order to the cached rows with the new
   thresholds. It is a MOCK approximation: risk and confidence come from the row, not from re-running rules.
   Keyword hit counts are case-insensitive substring counts over the fixture transcripts.
+
+## Real mode behaviour
+
+See docs/API.md "Real mode". In short: the call list is built from `out/results/*.json` (never from label files),
+audio and snippets are served with `Range`, verdicts are appended to the run's `out/feedback.jsonl`, and settings
+start from the run's thresholds and the repo's `config/`. To show a newer run, restart with the new folder.

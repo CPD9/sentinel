@@ -192,7 +192,8 @@ def suggestions_response(inputs: list[CallInputs], feedback: dict[str, FeedbackE
                          max_results: int = 5) -> SuggestionsResponse:
     """The body of GET /api/suggestions. An empty list always carries a reason."""
     sim = Simulator(inputs, raw, feedback, validate=False)
-    counts = {v: sum(fb.verdict == v for fb in sim.feedback.values()) for v in VERDICTS}
+    # escalate is not a correctness label (the Simulator drops it), so it is not counted here either
+    counts = {v: sum(fb.verdict == v for fb in sim.feedback.values()) for v in VERDICTS if v != "escalate"}
     sugg = suggest(inputs, feedback, raw, max_results, sim)
     reason = None
     if not sugg:

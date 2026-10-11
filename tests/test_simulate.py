@@ -250,6 +250,15 @@ def test_feedback_check_lists_fixed_unchanged_and_violations():
     assert {f.call_id: f.feedback_verdict for f in r.flipped} == {"call_a": "false_alarm", "call_b": "correct"}
 
 
+def test_escalate_is_not_a_label_for_the_feedback_check():
+    """escalate asks for a second look; read as a verdict it would count as 'missed' and steer the suggestions."""
+    calls = [make_call("call_a", "password_asked"), make_call("call_c", "greeting")]
+    fb = {"call_a": make_entry("call_a", "escalate", "alarm"), "call_c": make_entry("call_c", "escalate", "no_alert")}
+    sim = Simulator(calls, RAW, fb)
+    assert sim.feedback == {}
+    assert sim.run({"thresholds": {"alarm": 0.95}}).feedback_check is None
+
+
 def test_simulation_is_fast():
     calls = make_corpus(60, seed=1, mock=False)
     t = time.perf_counter()

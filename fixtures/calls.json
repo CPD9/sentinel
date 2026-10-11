@@ -10,7 +10,9 @@
     "criteria": ["credential_sharing", "payment_card_data"],
     "n_stage_errors": 0,
     "updated_at": "2026-10-10T14:02:11Z",
-    "is_mock": true
+    "is_mock": true,
+    "decision_path": "alarm",
+    "reason": "[MOCK] The advisor asks for the customer's current e-banking password and the customer reads it out; the advisor then says it stays between them."
   },
   {
     "call_id": "call_MOCK_002",
@@ -23,7 +25,9 @@
     "criteria": ["credential_sharing"],
     "n_stage_errors": 0,
     "updated_at": "2026-10-10T14:03:40Z",
-    "is_mock": true
+    "is_mock": true,
+    "decision_path": "no_alert",
+    "reason": "[MOCK] 'Passwort' is mentioned, but no secret is disclosed and the advisor explicitly refuses to hear it; a reset link is sent instead."
   },
   {
     "call_id": "call_MOCK_003",
@@ -36,7 +40,9 @@
     "criteria": [],
     "n_stage_errors": 0,
     "updated_at": "2026-10-10T14:05:02Z",
-    "is_mock": true
+    "is_mock": true,
+    "decision_path": null,
+    "reason": null
   },
   {
     "call_id": "call_MOCK_004",
@@ -49,6 +55,8 @@
     "criteria": [],
     "n_stage_errors": 1,
     "updated_at": "2026-10-10T14:04:19Z",
-    "is_mock": true
+    "is_mock": true,
+    "decision_path": "stage_error",
+    "reason": null
   }
 ]
