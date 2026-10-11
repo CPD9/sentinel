@@ -47,3 +47,32 @@ Reproduce:
 python scripts/run_extract.py --split tune --allow-test --provider builder_pod --prompt v2 --workers 4
 python scripts/model_grid.py artifacts/predictions/extract_builder_pod_*_reference_tune*.json
 ```
+
+## Detection strategies (T4, 11 Oct 2026)
+
+Same tuning set (48 calls, reference transcripts, untuned rules), all LLM work by Apertus v1.5 8B on the builder Pod.
+S2 and S3 re-decide the cached prompt-v2 facts; S4 is one prompt per call (`scripts/baseline_direct.py`).
+Run `strategy_lab_t4` (`artifacts/bench/strategy_lab_t4/summary.json`), 2000 paired call resamples.
+
+| id | strategy | esc F1 dev | esc F1 test30 | esc F1 all [95% CI] | alarm P | alarm R | macro F1 | false alarms on gold no_alert |
+|---|---|---|---|---|---|---|---|---|
+| S3 | hybrid: LLM facts + keyword hits through the rules (shipped) | 0.59 | 0.67 | **0.63** [0.47, 0.75] | 0.45 | 0.43 | 0.29 | 10 |
+| S2 | context only: LLM facts, no keyword hits | 0.59 | 0.57 | 0.58 [0.42, 0.72] | 0.40 | 0.29 | 0.24 | 8 |
+| S8 | ensemble: majority of S1, S3, S4; disagreement → review | 0.53 | 0.55 | 0.54 [0.36, 0.69] | 0.40 | 0.10 | 0.25 | 2 |
+| S1 | keywords only (placeholder: alarm at hits in 3 segments of one family) | 0.43 | 0.55 | 0.48 [0.30, 0.64] | 0.44 | 0.19 | 0.23 | 4 |
+| S4 | direct judge: one LLM prompt per call | 0.55 | 0.29 | 0.44 [0.23, 0.64] | n/a (no alarm) | 0.00 | 0.31 | 0 |
+
+- **Default stays S3 (hybrid)**, written to `config/strategy_defaults.json` with S2 and S8 as the next two.
+- Separable at P ≥ 0.95 (paired bootstrap on escalation F1): only **S3 > S1** (0.958). S3 vs S2, S8 and S4 are not
+  separable at n = 48; the order among them is a tendency, not a result.
+- Agreement (Cohen's κ): S2 and S3 agree on 90 % of calls (κ 0.84), so keyword hits change few decisions; LLM-fact
+  strategies barely agree with S1 and S4 (κ ≤ 0.04). The ensemble follows S1 closely (κ 0.79) and trades recall for
+  precision: only 2 false alarms on gold no_alert, but strict-alarm recall drops to 0.10.
+- S4 never says `alarm` with this model: Apertus 8B as a one-prompt judge escalates only to review.
+- Per Stufe (escalation F1): S3 0.69 / 0.57 / 0.60 for Stufe 1 / 2 / 3; S1 and S4 score 0.00 on Stufe 2.
+
+```bash
+python scripts/baseline_direct.py --split dev && python scripts/baseline_direct.py --split test --allow-test
+python scripts/strategy_lab.py --facts artifacts/traces_extract/extract_builder_pod_apertus-8b_reference_tune_v2 \
+    --direct artifacts/predictions/baseline_direct_builder-pod-apertus-8b_{dev,test}.json --run-id strategy_lab_t4
+```
