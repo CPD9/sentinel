@@ -214,11 +214,13 @@ export interface CrossvalRow {
   label: string; folds: Record<string, number | null>; recall_folds?: Record<string, number | null>; cv_mean: number | null; cv_min: number | null; cv_max: number | null;
   all62: number | null; flag_all: Record<string, number> | null;
 }
+export interface MultiCheckRow { method: string; auc: number | null; auc_ci: [number, number] | null; bacc: number | null; esc_p: number | null; esc_r: number | null; false_alarms: number | null; review_load: number | null }
 export interface QualityEvidence {
   crossval: CrossvalRow[];
   strategies: { tuning_set: string | null; rows: { id: string; strategy: string | null; description: string | null; n: number | null; esc_f1: number | null; ci: [number, number] | null }[] } | null;
   auc: { value: number; run_id: string | null; note: string } | null;
   judge_eval?: { auc: Record<string, { value: number | null; ci: [number, number] | null; n: number | null }>; citations_valid: number | null; citations_total: number | null; judge_version: string | null } | null;
+  multi_check?: { gate_pass: boolean | null; version: string | null; rows: MultiCheckRow[] } | null;
   methods?: { ship_rule_pass: boolean | null; rows: { name: string; oof: { esc_p?: number | null; esc_r?: number | null; esc_f1?: number | null; bacc?: number | null; review_load?: number | null; false_alarms?: number | null } | null; cv_bacc: number | null; cv_bacc_range: [number, number] | null }[] } | null;
 }
 

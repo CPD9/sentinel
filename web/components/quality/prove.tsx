@@ -116,12 +116,20 @@ function JudgeProve({ ev, reports }: { ev: QualityEvidence; reports: QualityRepo
   const prefix = reports.find((r) => kindOf(r).prefix && kindOf(r).unseen) ?? null;
   const e = fin?.overall.escalation;
   const zeroShot = fin?.notes.some((n) => /no tuned parameter/i.test(n));
+  // multi-check judge (shipped when its gate passed): one zero-shot check per criterion, on all case calls
+  const mc = ev.multi_check?.gate_pass ? ev.multi_check.rows.find((r) => /multi/i.test(r.method)) ?? null : null;
+  const pos = e ? e.tp + e.fn : null;                                   // calls that need a person (from the final report)
+  const mcCaught = mc?.esc_r != null && pos ? Math.round(mc.esc_r * pos) : null;
+  const mcF1 = mc?.esc_p != null && mc.esc_r != null && mc.esc_p + mc.esc_r > 0 ? (2 * mc.esc_p * mc.esc_r) / (mc.esc_p + mc.esc_r) : null;
+  const headAuc = mc?.auc != null ? { value: mc.auc, ci: mc.auc_ci } : auc(/S4|judge/i);
   type LadderRow = { label: string; note?: string; f1: number | null | undefined; r?: number | null; p?: number | null; bacc?: number | null; load?: number | null; fa?: number | null; auc?: { value: number | null; ci: [number, number] | null } | null; strong?: boolean; muted?: boolean };
   const ladder: { label: string; note?: string; f1: number | null | undefined; r?: number | null; p?: number | null; bacc?: number | null; load?: number | null; fa?: number | null; auc?: { value: number | null; ci: [number, number] | null } | null; strong?: boolean; muted?: boolean }[] = [
     { label: "Pre-fix system (facts → rules, before the speech fix)", note: `unseen holdout, ${prefix?.overall.n ?? "–"} calls, run once`, f1: prefix?.overall.escalation.f1.value ?? null, r: prefix?.overall.escalation.recall.value ?? null },
     { label: "Facts → rules", f1: facts?.oof?.esc_f1, r: facts?.oof?.esc_r, p: facts?.oof?.esc_p, bacc: facts?.oof?.bacc, load: facts?.oof?.review_load, fa: facts?.oof?.false_alarms, auc: auc(/facts/i) },
-    { label: `AI judge${ev.methods!.ship_rule_pass ? "" : " (shipped)"}`, f1: judge?.oof?.esc_f1, r: judge?.oof?.esc_r, p: judge?.oof?.esc_p, bacc: judge?.oof?.bacc, load: judge?.oof?.review_load, fa: judge?.oof?.false_alarms, auc: auc(/S4|judge/i), strong: !ev.methods!.ship_rule_pass },
+    { label: mc ? "Single AI judge (one verdict per call)" : `AI judge${ev.methods!.ship_rule_pass ? "" : " (shipped)"}`, note: mc ? "zero-shot, so out-of-fold = all calls" : undefined, f1: judge?.oof?.esc_f1, r: judge?.oof?.esc_r, p: judge?.oof?.esc_p, bacc: judge?.oof?.bacc, load: judge?.oof?.review_load, fa: judge?.oof?.false_alarms, auc: auc(/S4|judge/i), strong: !mc && !ev.methods!.ship_rule_pass },
     ...(cond ? [{ label: `AI judge + learned review conditions${ev.methods!.ship_rule_pass ? " (shipped)" : ""}`, note: ev.methods!.ship_rule_pass ? undefined : "not shipped: did not beat the judge alone under cross-validation", f1: cond.oof?.esc_f1, r: cond.oof?.esc_r, p: cond.oof?.esc_p, bacc: cond.oof?.bacc, load: cond.oof?.review_load, fa: cond.oof?.false_alarms, strong: !!ev.methods!.ship_rule_pass, muted: !ev.methods!.ship_rule_pass }] : []),
+    ...(mc ? [{ label: "Multi-check judge (shipped)", note: "one zero-shot check per criterion, risk = the highest; all calls, nothing tuned on them", f1: mcF1, r: mc.esc_r, p: mc.esc_p,
+      bacc: mc.bacc, load: mc.review_load, fa: mc.false_alarms, auc: mc.auc != null ? { value: mc.auc, ci: mc.auc_ci } : null, strong: true }] : []),
   ];
   const base: LadderRow[] = [
     { label: "Flag all (everything to review)", f1: flagAll?.oof?.esc_f1, r: flagAll?.oof?.esc_r, p: flagAll?.oof?.esc_p, bacc: flagAll?.oof?.bacc, load: flagAll?.oof?.review_load, fa: flagAll?.oof?.false_alarms, auc: auc(/flag-all/i) },
@@ -134,7 +142,14 @@ function JudgeProve({ ev, reports }: { ev: QualityEvidence; reports: QualityRepo
       <div className="grid gap-5 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <div className="elevated space-y-2 rounded-[var(--radius-panel)] p-6">
           <p id="prove-h" className="eyebrow">The decision: an AI judge reads the whole call</p>
-          {e && fin ? (
+          {mc && pos != null && mcCaught != null ? (
+            <>
+              <p className="text-headline font-semibold leading-tight">{mc.false_alarms === 0 ? "0 false alarms" : `${mc.false_alarms} false alarms`} in {fin!.overall.n} calls</p>
+              <p className="tabular text-lead"><b>{pos - mcCaught}</b> missed cases · <b>{mc.false_alarms}</b> false alarms · <b>{mcCaught}</b> caught</p>
+              <p className="text-lead">it finds <b className="tabular">{mcCaught} of {pos}</b> calls that need a person: recall <b className="tabular">{f2(mc.esc_r)}</b>, up from {f2(judge?.oof?.esc_r)} with one verdict per call.</p>
+              <p className="text-sm text-muted-foreground">Multi-check judge: one zero-shot check per criterion, no parameter tuned on these calls. The independent test is the jury&rsquo;s hidden set.</p>
+            </>
+          ) : e && fin ? (
             <>
               <p className="text-headline font-semibold leading-tight">{e.fp === 0 ? "0 false alarms" : `${e.fp} false alarm${e.fp === 1 ? "" : "s"}`} in {fin.overall.n} calls</p>
               <p className="tabular text-lead"><b>{e.fn}</b> missed case{e.fn === 1 ? "" : "s"} · <b>{e.fp}</b> false alarm{e.fp === 1 ? "" : "s"} · <b>{e.tp}</b> caught</p>
@@ -145,9 +160,10 @@ function JudgeProve({ ev, reports }: { ev: QualityEvidence; reports: QualityRepo
         </div>
         <div className="elevated space-y-2 rounded-[var(--radius-panel)] p-6">
           <p className="eyebrow">How well it ranks calls (AUC, 95% range)</p>
-          {auc(/S4|judge/i) ? <p className="tabular"><span className="text-headline font-semibold">{f2(auc(/S4|judge/i)!.value)}</span><span className="ml-2 text-sm text-muted-foreground">{range(auc(/S4|judge/i)!.ci)} · 0.50 is a coin flip</span></p> : <p className="text-sm text-muted-foreground">range not computed</p>}
+          {headAuc ? <p className="tabular"><span className="text-headline font-semibold">{f2(headAuc.value)}</span><span className="ml-2 text-sm text-muted-foreground">{range(headAuc.ci)} · 0.50 is a coin flip</span></p> : <p className="text-sm text-muted-foreground">range not computed</p>}
+          {mc && auc(/S4|judge/i) && <p className="text-sm">The single judge before it: <b className="tabular">{f2(auc(/S4|judge/i)!.value)}</b>{range(auc(/S4|judge/i)!.ci)}; the ranges overlap.</p>}
           {auc(/facts/i) && <p className="text-sm">The first method, facts → rules: <b className="tabular">{f2(auc(/facts/i)!.value)}</b>{range(auc(/facts/i)!.ci)}, no better than chance.</p>}
-          {ev.judge_eval?.citations_total ? <p className="text-sm text-muted-foreground">{ev.judge_eval.citations_valid} of {ev.judge_eval.citations_total} of the judge&rsquo;s citations were found word for word in the transcript.</p> : null}
+          {ev.judge_eval?.citations_total ? <p className="text-sm text-muted-foreground">{ev.judge_eval.citations_valid} of {ev.judge_eval.citations_total} of the {mc ? "single " : ""}judge&rsquo;s citations were found word for word in the transcript.</p> : null}
         </div>
       </div>
 
@@ -178,6 +194,7 @@ function JudgeProve({ ev, reports }: { ev: QualityEvidence; reports: QualityRepo
           We measured that instead of tuning it away, kept the pre-fix result ({f2(prefix?.overall.escalation.f1.value)} on the unseen holdout) on record, and changed the decision: an AI judge now reads the whole call and cites the passages it relies on, while the facts and rules stay as the explanation.
           It raises {judge?.oof?.false_alarms === 0 ? "no false alarm" : `${judge?.oof?.false_alarms} false alarms`} and ranks calls above chance{auc(/S4|judge/i) ? ` (AUC ${f2(auc(/S4|judge/i)!.value)}${range(auc(/S4|judge/i)!.ci)})` : ""}, but it finds only about {shipped?.oof?.esc_r != null ? `${Math.round(shipped.oof.esc_r * 100)} in 100` : "a quarter of the"} calls that need a person.
           {cond && !ev.methods!.ship_rule_pass ? " A learned recall layer on top did not beat it under cross-validation, so it is not shipped." : ""}
+          {mc ? ` Then we split the judge into one check per criterion: still ${mc.false_alarms === 0 ? "no false alarm" : `${mc.false_alarms} false alarms`}, AUC ${f2(mc.auc)}${range(mc.auc_ci)}, and it finds about ${Math.round((mc.esc_r ?? 0) * 100)} in 100 calls that need a person. That is what ships.` : ""}
         </p>
       </div>
     </section>

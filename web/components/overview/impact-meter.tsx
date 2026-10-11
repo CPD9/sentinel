@@ -26,6 +26,8 @@ export function ImpactMeter() {
   const { recall, recallSource } = useMemo(() => {
     const m = ev.data?.methods;
     if (m?.rows.length) {
+      const mc = ev.data?.multi_check?.gate_pass ? ev.data.multi_check.rows.find((r) => /multi/i.test(r.method)) : null;   // shipped multi-check judge
+      if (mc?.esc_r != null) return { recall: mc.esc_r, recallSource: "multi-check AI judge (shipped), zero-shot on all case calls" };
       const row = m.ship_rule_pass ? m.rows.find((r) => /conditions/i.test(r.name)) : m.rows.find((r) => /^S4 alone$/i.test(r.name));
       if (row?.oof?.esc_r != null) return { recall: row.oof.esc_r, recallSource: `${m.ship_rule_pass ? "AI judge + learned conditions" : "AI judge"} (shipped), 3-fold cross-validation, out-of-fold` };
     }

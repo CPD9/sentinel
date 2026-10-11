@@ -172,9 +172,13 @@ function qualityEvidence() {
   type Oof = { esc_p?: number | null; esc_r?: number | null; esc_f1?: number | null; bacc?: number | null; review_load?: number | null; false_alarms?: number | null };
   const je = readJsonLenient<{ scorers?: Record<string, { auc?: { auc?: number; ci95?: [number, number]; n?: number } }>; citations_valid?: number; citations_total?: number; judge_version?: string }>(path.join(ART, "metrics", "judge_eval.json"));
   const cc = readJson<{ methods?: Record<string, { oof?: Oof; cv_bacc_mean?: number; cv_bacc_range?: [number, number] }>; ship_rule_pass?: boolean }>(path.join(ART, "metrics", "conditions_cv.json"));
+  const mc = readJsonLenient<{ rows?: { method: string; auc?: number; auc_ci95?: [number, number]; bacc?: number; esc_p?: number; esc_r?: number; false_alarms?: number; review_load?: number }[]; gate_pass?: boolean; version?: string }>(path.join(ART, "metrics", "multi_check_eval.json"));
   const out = {
     judge_eval: je ? { auc: Object.fromEntries(Object.entries(je.scorers ?? {}).map(([k, v]) => [k, { value: v.auc?.auc ?? null, ci: v.auc?.ci95 ?? null, n: v.auc?.n ?? null }])),
       citations_valid: je.citations_valid ?? null, citations_total: je.citations_total ?? null, judge_version: je.judge_version ?? null } : null,
+    // multi-check judge vs the single judge on all 62 case calls (zero-shot: no tuned parameter), when the master wrote it
+    multi_check: mc ? { gate_pass: mc.gate_pass ?? null, version: mc.version ?? null, rows: (mc.rows ?? []).map((r) => ({ method: r.method, auc: r.auc ?? null,
+      auc_ci: r.auc_ci95 ?? null, bacc: r.bacc ?? null, esc_p: r.esc_p ?? null, esc_r: r.esc_r ?? null, false_alarms: r.false_alarms ?? null, review_load: r.review_load ?? null })) } : null,
     methods: cc ? { ship_rule_pass: cc.ship_rule_pass ?? null, rows: Object.entries(cc.methods ?? {}).map(([name, v]) => ({ name, oof: v.oof ?? null, cv_bacc: v.cv_bacc_mean ?? null, cv_bacc_range: v.cv_bacc_range ?? null })) } : null,
   };
   return {
