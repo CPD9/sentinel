@@ -11,7 +11,6 @@ import { AuditTab } from "./tabs/audit-tab";
 import { AudioTab } from "./tabs/audio-tab";
 import { ReasoningTab } from "./tabs/reasoning-tab";
 import { TranscriptTab } from "./tabs/transcript-tab";
-import { AskCallPanel } from "@/components/copilot/ask-call-panel";
 import { ErrorCard, SkeletonBlock } from "@/components/shell/states";
 import { ProcessingView } from "@/components/processing/processing-view";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -102,15 +101,12 @@ function Body({ result, tab, sel }: { result: CallResult; tab: TabValue; sel: { 
           result={result} trace={trace} analysis={analysis} transcript={transcript} thresholds={trace.data?.thresholds ?? null} onCite={onCite} />
       </article>
 
-      <AskCallPanel callId={id} onCite={onCite} />
+      <CallCopilot callId={id} result={result} trace={trace.data ?? null} transcript={transcript.data ?? null} onCite={onCite} />
 
       <section aria-labelledby="transcript-h" className="stage-in space-y-3" style={{ "--i": 1 } as React.CSSProperties}>
         <h2 id="transcript-h" className="text-title font-semibold tracking-tight">Transcript</h2>
         <TranscriptTab result={result} trace={trace} transcript={transcript} focusSeg={sel.seg} />
       </section>
-
-      {/* copilot slot (web/copilot): renders nothing until that PR lands */}
-      <CallCopilot callId={id} result={result} trace={trace.data ?? null} transcript={transcript.data ?? null} onCite={onCite} />
 
       <section aria-labelledby="details-h" className="space-y-3 pt-2">
         <div>

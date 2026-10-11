@@ -1,13 +1,14 @@
 "use client";
 import { Save, X } from "lucide-react";
 import Link from "next/link";
-import { Fragment, useState } from "react";
+import { Fragment, useCallback, useState } from "react";
 import { ErrorCard, SkeletonBlock } from "@/components/shell/states";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { CRITERION_LABEL, criterionColor } from "@/lib/colors";
 import { InfoTip } from "@/components/ui/info-tip";
 import { ApiError, getKeywords, getRules, isFixtures, isLocalRun, putKeywords, putRules } from "@/lib/data";
+import { useDemoDraftReset } from "@/lib/demo";
 import { DECISION_LABEL } from "@/lib/explain";
 import { cn } from "@/lib/utils";
 import type { KeywordsConfig, RulesConfig } from "@/lib/types";
@@ -53,6 +54,7 @@ const familyLabel = (key: string, f: { criterion: string; label?: string }) => C
 function Keywords() {
   const saved = useAsync(getKeywords, "keywords");
   const [edited, setDraft] = useState<KeywordsConfig | null>(null);
+  useDemoDraftReset(useCallback(() => setDraft(null), []));
   const draft = edited ?? saved.data;
   const [msg, setMsg] = useState<Msg>(null);
   const [newWord, setNewWord] = useState("");
@@ -165,6 +167,7 @@ function Chip({ word, hits, fresh, variantOf, onRemove }: { word: string; hits: 
 function Rules() {
   const saved = useAsync(getRules, "rules");
   const [edited, setDraft] = useState<RulesConfig | null>(null);
+  useDemoDraftReset(useCallback(() => setDraft(null), []));
   const draft = edited ?? saved.data;
   const [msg, setMsg] = useState<Msg>(null);
   const preview = usePreview(draft ? { rules: draft } : null);

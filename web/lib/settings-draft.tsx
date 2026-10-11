@@ -2,6 +2,7 @@
 // The officer's unsaved what-if draft, shared by the Tuning sliders, the "detection switches", the suggestions' Preview
 // button and the impact panel. Nothing here is saved: it only becomes a Patch for POST /api/simulate (or a confirmed save).
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import { useDemoDraftReset } from "./demo";
 import type { KeywordReview, Patch, Thresholds } from "./types";
 
 interface Draft { thresholds: Thresholds | null; families: string[]; rules: string[]; keywordReview: KeywordReview | null }
@@ -25,6 +26,7 @@ const toggle = (xs: string[], x: string) => (xs.includes(x) ? xs.filter((y) => y
 
 export function SettingsDraftProvider({ children }: { children: ReactNode }) {
   const [draft, setDraft] = useState<Draft>(EMPTY);
+  useDemoDraftReset(useCallback(() => setDraft(EMPTY), []));
   const setThreshold = useCallback((saved: Thresholds, k: "alarm" | "review" | "confidence_gate", v: number) => setDraft((d) => {
     const n = { ...(d.thresholds ?? saved), [k]: Math.round(v * 100) / 100 };
     if (k === "alarm") n.alarm = Math.max(n.alarm, n.review + GAP);

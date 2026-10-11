@@ -1,6 +1,8 @@
 // Demo mode for the jury: a keyboard-driven path (→ / ←) over the SAME real screens, hitting the four required moments
 // in order. No separate pages and no staged data: each step is a real URL plus one line telling the presenter what to show.
 // The call ids default to the final judge run (s4t_0551_final); set NEXT_PUBLIC_DEMO_ALERT / NEXT_PUBLIC_DEMO_HARMLESS for another run.
+import { useEffect } from "react";
+
 export const DEMO_ALERT = process.env.NEXT_PUBLIC_DEMO_ALERT || "call_041";   // insider trading before the quarterly figures: the AI judge alert, as in the case brief
 export const DEMO_HARMLESS = process.env.NEXT_PUBLIC_DEMO_HARMLESS || "call_026";
 
@@ -27,8 +29,21 @@ export function demoStep(): number | null {
   try { const v = sessionStorage.getItem(KEY); return v == null ? null : Math.max(0, Math.min(DEMO_STEPS.length - 1, Number(v))); } catch { return null; }
 }
 export function setDemoStep(i: number | null) {
+  const prev = demoStep();
   try { if (i == null) sessionStorage.removeItem(KEY); else sessionStorage.setItem(KEY, String(i)); } catch { /* private window: demo bar still works for this page */ }
+  // every real step change (→ / ←, a step dot, Esc, start) throws away unsaved settings drafts BEFORE the next page opens,
+  // so step 4's "keyword review on" never leaks into steps 5–8: they always show the shipped settings
+  if (prev !== i) window.dispatchEvent(new Event(DRAFT_RESET));
   window.dispatchEvent(new Event("sentinel-demo"));
+}
+
+const DRAFT_RESET = "sentinel-draft-reset";
+/** Unsaved settings drafts call this to be discarded when the demo changes step. */
+export function useDemoDraftReset(reset: () => void) {
+  useEffect(() => {
+    window.addEventListener(DRAFT_RESET, reset);
+    return () => window.removeEventListener(DRAFT_RESET, reset);
+  }, [reset]);
 }
 
 /** "Same sentence, two verdicts": two calls where a customer reads six digits aloud, in different situations (found by
