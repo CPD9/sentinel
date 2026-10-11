@@ -37,8 +37,20 @@ Banks record client phone calls, but people can only listen to a small sample of
 - **Evidence for every alert.** The design discards any alert whose quote cannot be found in the call at the cited time, before anyone sees it.
 - **It says when it is unsure.** If the audio is poor, the transcript is doubtful or the evidence conflicts, the call goes to **review**. The design never turns doubt into a confident alarm, and a technical failure is recorded as an error, not as "all clear".
 - **Self-hosted by design.** The plan is to run all models on our own server in Switzerland, with no audio or transcript sent to any cloud AI service.
-- **People stay in charge.** The AI reads and writes text. The decision comes from rules and thresholds that a compliance officer can read and change without programming.
-- **Measured carefully.** Quality is to be reported on held-out calls, with its uncertainty, because the sample is small. No such results exist yet.
+- **People stay in charge.** An AI judge reads each call and must cite the exact words behind every flag; the alarm and review thresholds and the keyword list are settings a compliance officer can read and change without programming, with the effect shown immediately.
+- **Measured carefully.** Every number comes with its uncertainty, because the sample is small, and the negative results are reported too ([`docs/RESULTS.md`](docs/RESULTS.md)).
+
+## Results at a glance
+
+On all 62 case calls, from speech recognition to decision, the shipped multi-check judge ranks calls better than
+chance (AUC 0.69 [0.58, 0.80]), raises **no false alarm**, sends **21 %** of calls to a person and finds 13 of the 34
+calls that need escalation (precision 1.00, recall 0.38). It is zero-shot with no tuned parameter, so these numbers
+are effectively unseen. Our first design, fact extraction plus hand-written rules, ranked calls worse than chance; we
+report that too. Full report, method and limitations: [`docs/RESULTS.md`](docs/RESULTS.md).
+
+![AUC ladder](docs/assets/results/ladder.png)
+
+![Threshold curve: false alarms, missed cases and review load](docs/assets/results/threshold_curve.png)
 
 ## Project status
 
