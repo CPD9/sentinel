@@ -93,13 +93,17 @@ function Row({ c, active, stage, trace }: { c: CallListItem; active: boolean; st
   useEffect(() => { if (active) ref.current?.scrollIntoView({ block: "nearest" }); }, [active]);
 
   const criterion = c.criteria[0] as Criterion | undefined;
+  // Only a failure that decided the call replaces the line; a failed trigger or snippet keeps the reason (chip stays).
+  const path = trace?.decision_path ?? c.decision_path;
+  const blocked = c.n_stage_errors > 0 && (path ? path === "stage_error" : true);
   const line = g === "processing" ? (c.status === "queued" ? "queued" : `processing${stage ? ` · ${stage}` : ""}`)
-    : c.n_stage_errors > 0 ? "A processing step failed"
+    : blocked ? "A processing step failed before the decision"
     : g === "alarm" ? (trace ? plainReason(trace) : null) ?? (criterion ? CRITERION_LABEL[criterion] : "")
     : g === "review" ? (trace ? unsureLine(trace) : unsureFromPath(c.decision_path) ?? "Unsure: details inside")
     : trace && trace.keyword_hits.length > 0 ? "Keywords heard, no rule broken" : "Nothing found";
   // risk 0 on a call with a stage error means "never checked", not "safe": show nothing rather than 0.
-  const showRisk = g === "alarm" && c.risk_score != null && !(c.n_stage_errors > 0 && !c.risk_score);
+  // risk 0 on a call whose decision came from a failed step means "never checked", not "safe": show nothing then.
+  const showRisk = g === "alarm" && c.risk_score != null && !(blocked && !c.risk_score);
 
   return (
     <li>

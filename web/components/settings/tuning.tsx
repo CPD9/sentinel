@@ -5,7 +5,8 @@
 // The unsaved draft is shared with the suggestions' Preview via SettingsDraftProvider; nothing is saved until "Save changes".
 import { AlertTriangle, ArrowRight, CheckCircle2, ChevronRight, Save } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { DecisionBadge } from "@/components/shell/badges";
 import { ErrorCard, SkeletonBlock } from "@/components/shell/states";
 import { InfoTip } from "@/components/ui/info-tip";
@@ -37,6 +38,16 @@ export function Tuning() {
   const [epoch, setEpoch] = useState(0);              // bumps after a save/apply so suggestions and the change log reload
 
   const draft = d.thresholds ?? saved.data;
+  // Demo path: /settings/threshold?draft_alarm=0.5 opens with that alert line as an unsaved draft (nothing is saved).
+  const params = useSearchParams();
+  const wanted = params.get("draft_alarm");
+  const appliedDraft = useRef(false);
+  useEffect(() => {
+    if (appliedDraft.current || !wanted || !saved.data) return;
+    appliedDraft.current = true;
+    const v = Number(wanted);
+    if (v > saved.data.review && v <= 1) setThreshold(saved.data, "alarm", v);
+  }, [wanted, saved.data, setThreshold]);
   const patch = toPatch(saved.data);
   const sim = useSimulate(patch);
   const result = sim.data ?? sim.stale;
