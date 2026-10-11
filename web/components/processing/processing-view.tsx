@@ -1,16 +1,18 @@
 "use client";
-// Stage timeline, driven by ProcessingEvents. Step-by-step status idea adapted from Leadership-Demo's processing-flow / phase-card,
-// but driven by real events instead of a time estimate.
+// Step timeline, driven by ProcessingEvents (live SSE, or a replay of the recorded run in the local-run fallback). Each
+// finished step says what it produced, counted from the call's own documents.
 import { AlertTriangle, ArrowRight, Check, Circle, CircleDashed, Loader2, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useReducer, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DecisionBadge } from "@/components/shell/badges";
 import { EmptyState } from "@/components/shell/states";
-import { subscribeCallEvents, type StreamStatus } from "@/lib/data";
+import { getAnalysis, getCall, getTrace, getTranscript, isFixtures, isLocalRun, subscribeCallEvents, type StreamStatus } from "@/lib/data";
+import { CRITERION_LABEL } from "@/lib/colors";
+import { DECISION_LABEL, TEMPLATE_PREFIX } from "@/lib/explain";
+import { useAsync } from "@/lib/use-async";
 import { fmtSeconds } from "@/lib/format";
-import type { Decision, ProcessingEvent, Stage } from "@/lib/types";
+import type { AnalysisArtifact, CallResult, Decision, DecisionTrace, ProcessingEvent, Stage, Transcript } from "@/lib/types";
 import { STAGES } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -58,12 +60,27 @@ export function ProcessingView({ callId, inline = false, onFinished }: { callId:
   const stageFailures = useMemo(() => Object.entries(m.stages).filter(([, s]) => s.state === "failed"), [m.stages]);
   const noHistory = status === "closed" && m.log.length === 0;
 
+  // What each step produced, from the call's own documents (loaded once the job is finished; real numbers only).
+  const docs = useAsync(async () => {
+    if (!m.finished) return null;
+    const [call, trace, transcript, analysis] = await Promise.all([
+      getCall(callId).catch(() => null), getTrace(callId).catch(() => null), getTranscript(callId).catch(() => null), getAnalysis(callId).catch(() => null),
+    ]);
+    return { result: call?.kind === "result" ? call.data : null, trace, transcript, analysis };
+  }, `proc-docs:${callId}:${m.finished}`);
+  const produced = useMemo(() => producedBy(docs.data ?? null), [docs.data]);
+  const shown = STAGES.filter((st) => st !== "upload" && st !== "analysis");
+
   return (
-    <div className="space-y-4">
+    <div className="stage-in space-y-5">
       {!inline && (
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">Processing <span className="font-mono">{callId}</span></h1>
-          <p className="text-sm text-muted-foreground">Live stages from the pipeline. A failed stage does not stop the timeline: the call ends as review.</p>
+        <div className="space-y-1">
+          <Link href={`/calls/${callId}`} className="text-sm text-muted-foreground hover:text-foreground">← Call {callId}</Link>
+          <h1 className="text-headline font-semibold tracking-tight">How <span className="font-mono">{callId}</span> was processed</h1>
+          <p className="text-body text-muted-foreground">
+            {isLocalRun ? "Replay of the recorded run: each step with what it produced. Times appear only where the run recorded them; this is not live."
+              : isFixtures ? "MOCK replay from fixtures." : "Live steps from the pipeline. A failed step never ends as “no alert”: the call goes to review."}
+          </p>
         </div>
       )}
 
@@ -78,57 +95,88 @@ export function ProcessingView({ callId, inline = false, onFinished }: { callId:
       {noHistory ? (
         <EmptyState>No processing history for this call.</EmptyState>
       ) : (
-        <Card>
-          <CardHeader><CardTitle>Stages</CardTitle>
-            {m.finished && (
-              <div className="flex items-center gap-3">
-                <DecisionBadge decision={m.decision} />
-                <Link href={`/calls/${callId}`} className="inline-flex h-8 items-center gap-1 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground">Open call <ArrowRight className="size-3.5" /></Link>
-              </div>
-            )}
-          </CardHeader>
-          <CardContent>
-            <ol className="space-y-1" aria-live="polite">
-              {STAGES.map((stage) => {
-                const s = m.stages[stage];
-                const notRun = m.finished && s.state === "waiting";
-                const elapsed = s.state === "running" && s.startedAt ? (now - s.startedAt) / 1000 : s.elapsed;
-                return (
-                  <li key={stage} className={cn("rounded-md border px-3 py-2", s.state === "failed" ? "border-alarm bg-alarm-bg" : "border-transparent", s.state === "running" && "border-info bg-info-bg")}>
-                    <div className="flex items-center gap-3">
-                      <StageIcon state={notRun ? "waiting" : s.state} notRun={notRun} />
-                      <span className={cn("w-28 font-mono text-sm", (s.state === "waiting") && "text-muted-foreground")}>{stage}</span>
-                      <span className="text-xs text-muted-foreground">{notRun ? "not run" : s.state}</span>
-                      {s.cached && <span className="rounded border border-border px-1.5 text-[11px]" title="Result reused from cache">from cache</span>}
-                      <span className="tabular ml-auto text-sm">{elapsed != null && s.state !== "waiting" ? fmtSeconds(elapsed) : ""}</span>
-                    </div>
-                    {s.state === "failed" && s.message && <p className="mt-1 pl-8 text-sm text-alarm"><AlertTriangle className="mr-1 inline size-3.5" />{s.message}</p>}
-                  </li>
-                );
-              })}
-            </ol>
-            {stageFailures.length > 0 && m.finished && <p className="mt-3 text-sm text-muted-foreground">The call ended as <b>review</b> because a stage failed. It is never treated as “no alert”.</p>}
-          </CardContent>
-        </Card>
+        <section aria-label="Steps" className="elevated rounded-[var(--radius-panel)] p-6">
+          <ol className="relative space-y-1" aria-live="polite">
+            {shown.map((stage, i) => {
+              const s = m.stages[stage];
+              const notRun = m.finished && s.state === "waiting";
+              const elapsed = s.state === "running" && s.startedAt ? (now - s.startedAt) / 1000 : s.elapsed;
+              const what = s.state === "done" ? produced[stage] : null;
+              return (
+                <li key={stage} className={cn("relative grid grid-cols-[2rem_12rem_minmax(0,1fr)_5rem] items-start gap-3 rounded-xl px-3 py-2.5 transition-colors duration-[var(--dur-base)]",
+                  s.state === "failed" && "bg-alarm-bg", s.state === "running" && "bg-muted")}>
+                  {i < shown.length - 1 && <span aria-hidden className={cn("absolute left-[1.65rem] top-9 h-[calc(100%-1.25rem)] w-px", s.state === "done" ? "bg-foreground/40" : "bg-border")} />}
+                  <StageIcon state={notRun ? "waiting" : s.state} notRun={notRun} />
+                  <div>
+                    <p className={cn("font-semibold", s.state === "waiting" && "text-muted-foreground")}>{STAGE_LABEL[stage] ?? stage}</p>
+                    <p className="font-mono text-[11px] text-muted-foreground">{stage}{s.cached ? " · from cache" : ""}</p>
+                  </div>
+                  <p className={cn("min-w-0 text-sm", s.state === "failed" ? "text-alarm" : "text-muted-foreground")}>
+                    {s.state === "failed" ? <><AlertTriangle className="mr-1 inline size-3.5" />{s.message}</> : notRun ? "not run" : what ?? (s.state === "running" ? "working…" : "")}
+                  </p>
+                  <span className="tabular text-right text-sm">{elapsed != null && s.state !== "waiting" ? fmtSeconds(elapsed) : ""}</span>
+                </li>
+              );
+            })}
+          </ol>
+          {m.finished && (
+            <div className="mt-5 flex flex-wrap items-center gap-4 border-t border-border pt-5">
+              <DecisionBadge decision={m.decision} size="lg" />
+              {stageFailures.length > 0 && <p className="text-sm text-muted-foreground">A step failed, so the call went to <b>review</b>. It is never treated as “no alert”.</p>}
+              <Link href={`/calls/${callId}`} className="ml-auto inline-flex h-11 items-center gap-2 rounded-full bg-primary px-6 font-semibold text-primary-foreground hover:opacity-90">Open the call <ArrowRight className="size-4" /></Link>
+            </div>
+          )}
+        </section>
       )}
 
-      {m.log.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Event log</CardTitle>
-            <Button variant="ghost" size="sm" onClick={() => setShowLog((v) => !v)} aria-expanded={showLog}>{showLog ? "Hide" : `Show (${m.log.length})`}</Button>
-          </CardHeader>
-          {showLog && (
-            <CardContent>
-              <pre className="max-h-72 overflow-auto rounded-md bg-muted p-3 font-mono text-xs leading-relaxed">
-                {m.log.map((e) => `#${String(e.seq).padStart(2, "0")}  ${e.ts}  ${e.event}${e.stage ? ` ${e.stage}` : ""}${e.message ? `  — ${e.message}` : ""}`).join("\n")}
-              </pre>
-            </CardContent>
-          )}
-        </Card>
+      {m.log.length > 0 && !isLocalRun && (
+        <details className="rounded-2xl border border-border">
+          <summary className="cursor-pointer px-5 py-3 text-sm font-semibold">Event log <span className="font-normal text-muted-foreground">({m.log.length} events)</span></summary>
+          <pre className="max-h-72 overflow-auto border-t border-border p-4 font-mono text-xs leading-relaxed">
+            {m.log.map((e) => `#${String(e.seq).padStart(2, "0")}  ${e.ts}  ${e.event}${e.stage ? ` ${e.stage}` : ""}${e.message ? `  — ${e.message}` : ""}`).join("\n")}
+          </pre>
+        </details>
       )}
     </div>
   );
+}
+
+const STAGE_LABEL: Partial<Record<Stage, string>> = {
+  asr: "Speech to text", diarize: "Who is speaking", keywords: "Keywords", extract: "AI facts", validate: "Evidence check",
+  rules: "Rules", confidence: "Confidence", decide: "Decision", narrate: "Explanation", snippets: "Audio passages", trigger: "Report",
+};
+
+type Docs = { result: CallResult | null; trace: DecisionTrace | null; transcript: Transcript | null; analysis: AnalysisArtifact | null } | null;
+/** One line per step, counted from the call's documents. A step without a document says nothing rather than guessing. */
+function producedBy(d: Docs): Partial<Record<Stage, string>> {
+  if (!d) return {};
+  const { result, trace, transcript } = d;
+  const out: Partial<Record<Stage, string>> = {};
+  if (transcript) {
+    const n = transcript.segments.length;
+    out.asr = transcript.mode === "reference" ? `reference transcript used, ${n} lines (no speech recognition in this run)` : `${n} segments${transcript.asr_model ? ` · ${transcript.asr_model}` : ""}`;
+    const by = (sp: string) => transcript.segments.filter((x) => x.speaker === sp).length;
+    out.diarize = by("unknown") === n ? "roles unknown: shown as Speaker" : `${by("advisor")} advisor · ${by("customer")} customer · ${by("unknown")} unknown lines`;
+  }
+  if (trace) {
+    const fams = new Set(trace.keyword_hits.map((h) => h.family)).size;
+    out.keywords = trace.keyword_hits.length ? `${trace.keyword_hits.length} hits in ${fams} famil${fams === 1 ? "y" : "ies"}` : "no keyword heard";
+    out.extract = `${trace.facts.length} facts from the whole call`;
+    const dropped = trace.facts.filter((f) => !f.valid).length;
+    out.validate = `${trace.facts.length - dropped} verified${dropped ? `, ${dropped} dropped` : ""}`;
+    const fired = trace.rules.filter((r) => r.fired);
+    out.rules = fired.length ? fired.map((r) => `${CRITERION_LABEL[r.criterion] ?? r.criterion} fired (${Math.round(r.risk * 100)})`).join(", ") : `no rule fired (highest ${Math.round(Math.max(0, ...trace.rules.map((r) => r.risk)) * 100)})`;
+    out.confidence = trace.confidence_breakdown ? `${Math.round(trace.confidence_breakdown.value * 100)} vs gate ${Math.round(trace.confidence_breakdown.gate * 100)}` : "not computed";
+    out.decide = `${DECISION_LABEL[trace.decision]} (${trace.decision_path.replaceAll("_", " ")})`;
+  }
+  if (result) {
+    out.narrate = result.narrative.startsWith(TEMPLATE_PREFIX) ? "template text (no LLM narrative in this run)" : "written after the decision was locked";
+    const ev = result.findings.flatMap((f) => f.evidence);
+    const cut = ev.filter((e) => e.snippet_path).length;
+    out.snippets = cut ? `${cut} passages cut (±10 s)` : ev.some((e) => e.start_s == null) ? "none: no timestamps in this run" : "no passage to cut";
+    out.trigger = result.decision === "alarm" ? "prepared for the trigger API (dry run unless configured)" : "nothing to report";
+  }
+  return out;
 }
 
 function StageIcon({ state, notRun }: { state: StageState["state"]; notRun: boolean }) {

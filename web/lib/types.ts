@@ -201,6 +201,16 @@ export interface CallListItem {
   n_stage_errors: number;
   updated_at: string | null;
   is_mock: boolean;
+  decision_path?: DecisionPath | null;  // why the decision came out this way (from the trace); docs/API.md GET /calls
+  reason?: string | null;               // the top finding's reason, one line
+}
+// ---- How each detection method decided (strategy comparison run, scripts/strategy_lab.py)
+export interface MethodDecision { id: string; decision: Decision | null; risk: number | null; reason: string | null; criteria: string[]; error: boolean }
+export interface MethodsResponse { call_id: string; run: string; default: string | null; top3: string[]; methods: MethodDecision[] }
+export interface ReportResponse {
+  call_id: string; dry_run: boolean;
+  records: { mode: "dry-run" | "send"; payload: { url: string; title: string; description: string }; response?: unknown; error?: string }[];
+  errors: string[];
 }
 export interface ProcessingEvent {
   seq: number;
@@ -281,9 +291,9 @@ export interface PreviewResponse {
 export interface RerunResponse { rerun: { stages: string[]; n_calls: number } }
 
 // ---- What-if, feedback, suggestions (pipeline/schemas.py, docs/API.md "What-if, feedback and suggestions")
-export const VERDICTS = ["false_alarm", "missed", "correct"] as const;
-/** "escalate" is accepted only when the API says so (GET /api/capabilities, see data.ts getCapabilities). */
-export type Verdict = (typeof VERDICTS)[number] | "escalate";
+// escalate = "a person above me must look": recorded like any verdict, never changes a decision, not used by suggestions.
+export const VERDICTS = ["false_alarm", "missed", "correct", "escalate"] as const;
+export type Verdict = (typeof VERDICTS)[number];
 export const DECISION_RANK: Record<Decision, number> = { no_alert: 0, review: 1, alarm: 2 };
 /** A false alarm needs a flag to be false; a miss needs room above the current decision. */
 export const verdictAllowed = (v: Verdict, d: Decision): boolean => !((v === "false_alarm" && d === "no_alert") || (v === "missed" && d === "alarm"));
@@ -315,7 +325,7 @@ export interface Suggestion {
   fix_credit: number; fixed: string[]; not_fixed: string[]; collateral_flips: string[]; effect: SimulationResult;
 }
 export interface SuggestionsResponse {
-  generated_at: string; config_version: string; n_feedback: number; counts_by_verdict: Record<(typeof VERDICTS)[number], number> & { escalate?: number };
+  generated_at: string; config_version: string; n_feedback: number; counts_by_verdict: Partial<Record<Verdict, number>>;
   suggestions: Suggestion[]; caveat: string; reason: string | null; is_mock: boolean; schema_version: number;
 }
 export interface AuditEntry {

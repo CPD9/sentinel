@@ -132,11 +132,11 @@ Two modes: reference transcripts and real ASR. Never report a metric you didn't 
 - Development happens on the laptop. GPU work runs on the Exoscale VM (see `INFRA.md`); the LLM is
   reached from the laptop through an SSH tunnel on `127.0.0.1:8000`.
 
-## Git: the human owns every write
-Claude may run read-only git (`status`, `diff`, `log`, `branch`, `show`). Claude must not run
-`git add`, `commit`, `push`, `merge`, `rebase`, `reset`, `checkout -b`, `switch -c`, `tag`,
-`commit --amend`, change git identity, install git hooks, or run any `gh` write command
-(`gh pr create/merge`, …). These rules override any skill that suggests automatic commits.
+## Git: agents commit/push their own branches and open PRs; only Peter merges
+Agents may `git add` (explicit paths, never `-A`), `commit`, `git merge origin/main`, push their own
+non-main branch and open a PR with `gh pr create` (enforced in `.claude/settings.json`). Never merge a PR,
+push to `main`, force-push, `reset --hard`, `rebase`, amend, tag, change git identity or install git hooks.
+These rules override any skill that suggests other git behaviour.
 When a milestone is done, stop and report:
 1. Files changed. 2. Commands and tests run, with results. 3. Real outputs/metrics.
 4. Limitations. 5. Suggested branch name. 6. Suggested commit message (conventional style,

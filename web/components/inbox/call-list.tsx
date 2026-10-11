@@ -10,7 +10,7 @@ import { useEffect, useRef } from "react";
 import { StageErrorChip } from "@/components/shell/badges";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CRITERION_LABEL } from "@/lib/colors";
-import { plainReason, score, unsureLine } from "@/lib/explain";
+import { plainReason, score, unsureFromPath, unsureLine } from "@/lib/explain";
 import type { CallListItem, Criterion, DecisionTrace } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -96,7 +96,7 @@ function Row({ c, active, stage, trace }: { c: CallListItem; active: boolean; st
   const line = g === "processing" ? (c.status === "queued" ? "queued" : `processing${stage ? ` · ${stage}` : ""}`)
     : c.n_stage_errors > 0 ? "A processing step failed"
     : g === "alarm" ? (trace ? plainReason(trace) : null) ?? (criterion ? CRITERION_LABEL[criterion] : "")
-    : g === "review" ? (trace ? unsureLine(trace) : "Unsure: details inside")
+    : g === "review" ? (trace ? unsureLine(trace) : unsureFromPath(c.decision_path) ?? "Unsure: details inside")
     : trace && trace.keyword_hits.length > 0 ? "Keywords heard, no rule broken" : "Nothing found";
   // risk 0 on a call with a stage error means "never checked", not "safe": show nothing rather than 0.
   const showRisk = g === "alarm" && c.risk_score != null && !(c.n_stage_errors > 0 && !c.risk_score);
