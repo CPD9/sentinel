@@ -37,7 +37,7 @@ export const VARIANTS = ["clean", "noisy", "unspecified"] as const;
 export type Variant = (typeof VARIANTS)[number];
 export const CALL_STATUSES = ["queued", "processing", "done", "error"] as const;
 export type CallStatus = (typeof CALL_STATUSES)[number];
-export const EVENT_TYPES = ["job_queued", "stage_started", "stage_finished", "stage_failed", "job_finished"] as const;
+export const EVENT_TYPES = ["job_queued", "stage_started", "stage_finished", "stage_failed", "job_finished", "notice"] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
 
 // ---- CallResult

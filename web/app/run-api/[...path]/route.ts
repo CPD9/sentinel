@@ -12,6 +12,7 @@ import { createReadStream, existsSync, readFileSync, readdirSync, statSync } fro
 import path from "node:path";
 import { Readable } from "node:stream";
 import { createInterface } from "node:readline";
+import { eventStream, isUploadId, runningJob, startUpload, uploadPaths, uploadRows } from "../uploads";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -157,6 +158,24 @@ function qualityEvidence() {
   };
 }
 
+// ---- an uploaded call: served from its own folder under the uploads dir; 202 while the pipeline is still running
+function uploadGet(req: Request, id: string, b: string | undefined, name: string | undefined): Response {
+  const P = uploadPaths(id);
+  if (b === "events") return eventStream(id);
+  const job = runningJob(id);
+  if (!b) {
+    if (job) return json({ call_id: id, status: "processing", duration_s: null, variant: null, decision: null, risk_score: null, confidence: null, criteria: [], n_stage_errors: 0, updated_at: null, is_mock: false }, 202);
+    return existsSync(P.result) ? json(readJson(P.result)) : err(404, "not_found", `Unknown call ${id}`);
+  }
+  const doc = (f: string) => (existsSync(f) ? json(readJson(f)) : err(404, "not_available", `${b} not available for ${id}`));
+  if (b === "transcript") return doc(P.transcript);
+  if (b === "trace") return doc(P.trace);
+  if (b === "analysis") return doc(P.analysis);
+  if (b === "audio") return existsSync(P.audio) ? fileResponse(P.audio, req, "audio/wav") : err(404, "not_available", "No audio.");
+  if (b === "snippets" && name) { const f = path.join(P.snippets, name); return inside(P.snippets, f) && existsSync(f) ? fileResponse(f, req, "audio/wav") : err(404, "not_available", "No snippet."); }
+  return err(404, "not_available", `${b} not available for an uploaded call`);
+}
+
 // ---- feedback in memory (this server only)
 const feedback = new Map<string, Record<string, unknown>>();
 const VERDICTS = ["false_alarm", "missed", "correct", "escalate"];
@@ -166,7 +185,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ path: string[] 
   const p = (await ctx.params).path;
   const [a, id, b, name] = p;
   if (a === "run" && p.length === 1) return json({ ...run(), source: "local files (read-only fallback, not the API)" });
-  if (a === "calls" && p.length === 1) return json(calls());
+  if (a === "calls" && p.length === 1) return json([...calls(), ...uploadRows()]);
   if (a === "feedback") return json([...feedback.values()]);
   if (a === "audit" || a === "events") return a === "audit" ? json([]) : new Response(null, { status: 204 });
   if (a === "settings" && id === "thresholds") {
@@ -190,6 +209,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ path: string[] 
     return hit ? json(hit) : err(404, "not_found", `Unknown report ${id}`);
   }
   if (a !== "calls" || !id || !safeId(id)) return err(404, "not_found", `No route /${p.join("/")} in the local-run fallback.`);
+  if (isUploadId(id)) return uploadGet(req, id, b, name);
   if (!existsSync(path.join(RUN, "results", `${id}.json`))) return err(404, "not_found", `Unknown call ${id}`);
   if (!b) return json(readJson(path.join(RUN, "results", `${id}.json`)));
   const doc = (f: string) => (existsSync(f) ? json(readJson(f)) : err(404, "not_available", `${b} not available for ${id}`));
@@ -212,6 +232,13 @@ export async function GET(req: Request, ctx: { params: Promise<{ path: string[] 
 export async function POST(req: Request, ctx: { params: Promise<{ path: string[] }> }) {
   if (!RUN || !ART) return err(503, "not_configured", "Local-run fallback: set SENTINEL_RUN_DIR and SENTINEL_ARTIFACTS_DIR.");
   const [a] = (await ctx.params).path;
+  if (a === "calls" && (await ctx.params).path.length === 1) {
+    const form = await req.formData().catch(() => null);
+    const file = form?.get("file");
+    if (!(file instanceof File)) return err(422, "invalid", "Send one .wav as multipart field 'file'.");
+    const r = await startUpload(file);
+    return r.ok ? json(r.row, 201) : err(r.status, r.error, r.detail);
+  }
   const body = await req.json().catch(() => null) as Record<string, unknown> | null;
   if (a === "simulate") return simulate(body?.patch ?? {});
   const segs = (await ctx.params).path;

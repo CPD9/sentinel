@@ -17,6 +17,9 @@ export const isFixtures = DATA_MODE === "fixtures";
 const API_PREFIX = process.env.NEXT_PUBLIC_API_PREFIX === "/run-api" ? "/run-api" : "/api";
 /** True when api mode reads the local-run fallback (app/run-api) instead of the FastAPI service. */
 export const isLocalRun = !isFixtures && API_PREFIX === "/run-api";
+/** Live upload through the local-run fallback (app/run-api/uploads.ts). NEXT_PUBLIC_LIVE_UPLOAD=0 hides every upload control. */
+export const liveUpload = !isFixtures && process.env.NEXT_PUBLIC_LIVE_UPLOAD !== "0" && (API_PREFIX === "/run-api");
+export const isUploadedCall = (id: string) => /^upload_\d{6}(_\d+)?$/.test(id);
 export const DATA_SOURCE_LABEL = isFixtures ? "fixtures (MOCK)" : isLocalRun ? "local run, read-only" : "live API";
 
 export class ApiError extends Error {
@@ -125,6 +128,7 @@ export function subscribeCallEvents(
   onEvent: (e: ProcessingEvent) => void,
   onStatus: (s: StreamStatus) => void,
 ): Subscription {
+  if (isLocalRun && isUploadedCall(id)) return sse(api(`/calls/${id}/events`), onEvent, onStatus, true);
   if (isLocalRun) return runReplay(id, onEvent, onStatus);
   return isFixtures ? mockReplay(id, onEvent, onStatus) : sse(api(`/calls/${id}/events`), onEvent, onStatus, true);
 }
