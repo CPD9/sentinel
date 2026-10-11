@@ -386,11 +386,12 @@ def quality_report(pred_path: Path, split: str, report_id: str, *, n_resamples: 
     from datetime import datetime, timezone
 
     from pipeline.schemas import QualityReport
-    m = evaluate(pred_path, split)
+    m = evaluate(pred_path, None if split == "all" else split)
     run = RunResult.from_dict(_load(pred_path))
     calls = {c.call_id: c for c in run.calls}
     pc = m["per_call"]
-    groups = [g["call_ids"] for g in _load(SPLITS_FILE)["splits"][split]["groups"]]
+    splits = _load(SPLITS_FILE)["splits"]
+    groups = [g["call_ids"] for s in (splits if split == "all" else [split]) for g in splits[s]["groups"]]
     idx = {c["call_id"]: i for i, c in enumerate(pc)}
     groups = [[idx[c] for c in g if c in idx] for g in groups]
     groups = [g for g in groups if g]

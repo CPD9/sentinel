@@ -112,3 +112,63 @@ undiarized segments and normalises Swiss German towards Standard German, and Ape
 facts (77 facts on 48 calls vs 673 with reference transcripts). Next levers, in order: speaker diarization
 (`pipeline/diarize.py`, not built), segment splitting at pauses, and rules that do not depend on speaker roles.
 n is small (14 unseen calls, 7 dialogues), so the CIs are wide.
+
+## T5b: ASR-path fix (11 Oct 2026, 04:30–05:15)
+
+From here on everything is **tuned on all case data (62 calls: dev + Testset_30 + holdout); the independent test
+is the jury's hidden set.** The T5 holdout result above (escalation F1 0.00) stays recorded as the **pre-fix** result
+(`artifacts/quality/final_report_prefix_holdout.json`).
+
+Each step measured in ASR mode on all 62 calls (`scripts/measure_asr.py`, bootstrap over dialogue groups):
+
+| step | facts / call | escalation P / R / F1 [95% CI] | strict alarm P / R | false alarms on gold no_alert | AUC risk vs escalation |
+|---|---|---|---|---|---|
+| pre-fix (T5 frozen system) | ≈ 1.6 | 0.41 / 0.26 / 0.32 [0.11, 0.51] | 1.00 / 0.08 | 0 (+13 review) | 0.43 |
+| 1: re-segmentation at sentence ends / pauses ≥ 0.6 s / 25 words | 1.56 | 0.40 / 0.24 / 0.30 [0.13, 0.47] | 0.50 / 0.04 | 1 (+11 review) | 0.46 |
+| 2: + ASR prompt `extract-v2-asr` (infer advisor/customer per fact) | 11.39 | 0.43 / 0.53 / 0.47 [0.31, 0.61] | 0.17 / 0.04 | 3 (+21 review) | 0.37 |
+| 3: + ASR keyword floor (review band, never alarm) | best grid point: escalation balanced accuracy 0.51 with or without it | | | | |
+| **shipped: steps 1 + 2, T5 thresholds** (run `asr_fix_final`) | 10.55 | 0.43 / 0.53 / 0.47 [0.31, 0.61] | 0.17 / 0.04 | 3 (+21 review) | 0.37 |
+
+- Step 1 barely changes the transcript: Whisper segments are already sentence-sized (3555 → 3974 segments; only 312
+  held more than one sentence). Kept because it makes evidence passages tighter and costs nothing.
+- Step 2 is the real ASR fix for fact extraction: 7× more facts, escalation recall 0.24 → 0.53.
+- Step 3 is in the config (`keyword_only_risk_asr`) but off: it did not help.
+- Thresholds were left at the T5 values: no grid point (alarm 0.50–0.90 × review 0.20–0.65 × gate 0–0.7 × keyword
+  floor) reached an escalation balanced accuracy meaningfully above chance (best 0.51).
+
+### 3-fold cross-validation (the number to quote)
+
+Thresholds (and, for the keyword-floor row, the floor) tuned on two splits with the `scripts/calibrate.py` grid and
+objective (escalation F1, ties strict-alarm precision), scored on the third, rotated (`scripts/crossval.py`, re-decision
+over cached traces, no LLM). Splits are dialogue-grouped. Escalation F1:
+
+| config | dev | Testset_30 | holdout | **3-fold CV (mean, range)** | all 62 (tuned, in-sample) |
+|---|---|---|---|---|---|
+| pre-fix (T5, recorded; tuned on dev + Testset_30) | 0.43 (tuned on) | 0.35 (tuned on) | **0.00** (unseen) | n/a (traces overwritten) | 0.32 at T5 thresholds |
+| + re-segmentation | 0.26 | 0.25 | 0.00 | 0.17 (0.00–0.26) | 0.30 |
+| + extract-v2-asr | 0.38 | 0.71 | 0.44 | 0.51 (0.38–0.71) | 0.53 |
+| + keyword floor | 0.56 | 0.71 | 0.44 | 0.57 (0.44–0.71) | 0.60 |
+| **final (shipped: re-segmentation + extract-v2-asr, T5 thresholds, floor off)** | 0.38 | 0.71 | 0.44 | **0.51 (0.38–0.71)** | 0.53 |
+| trivial: everything to review | 0.73 | 0.75 | 0.60 | 0.69 | 0.71 |
+
+The keyword floor adds 0.06 CV escalation F1 only by sending more calls to review, which moves towards the trivial
+"everything to review" row that every configuration stays below; it is not shipped. CV re-tunes thresholds per fold,
+so the final row equals the extract-v2-asr row.
+
+### The finding that matters: the facts → rules decision has no skill yet
+
+Trivial baselines on all 62 calls (34 of them need escalation): "everything to review" scores escalation F1 **0.71**
+(macro F1 0.09); "everything no_alert" scores macro F1 0.21. Every escalation F1 reported on this page so far,
+including reference mode (0.63 on dev + Testset_30, where flag-all scores 0.74), is **below the flag-all baseline**.
+The risk score ranks calls worse than chance: AUC against gold escalation is 0.37–0.46 in ASR mode and 0.41 for the
+shipped hybrid on reference transcripts. Only the one-prompt direct judge (S4, reference) is above chance: AUC 0.64.
+
+Why, from the calls: the extractor misses clear violations and fires on harmless calls. `call_002` (the customer
+splits a 9000 payment into 2 × 4500 "so the whole thing does not land at the approval desk") gets risk 0.0, while
+harmless calls where a customer reads out digits get 0.9. The case data is built so that harmless calls contain the
+same topics and keywords as violations; facts that capture the topic (credentials mentioned, client data asked for)
+do not capture the violation.
+
+Next: make the direct judge the decision on ASR transcripts and keep the facts as evidence and explanation (being
+measured in a follow-up branch before the freeze), and per-criterion fact types for the violation itself
+(e.g. "split to avoid approval"), not the topic.

@@ -60,7 +60,8 @@ class RulesConfig:
     keyword_only_risk: float
     counter_discount: dict[str, float]
     rules: dict[str, RuleCfg]
-    prior_counter_speakers: tuple[str, ...] = ()   # their facts are also discounted by EARLIER counters of the other side
+    prior_counter_speakers: tuple[str, ...] = ()
+    keyword_only_risk_asr: float | None = None      # ASR transcripts: risk from family hits alone (None = keyword_only_risk)   # their facts are also discounted by EARLIER counters of the other side
 
 
 def parse_rules(d: dict) -> RulesConfig:
@@ -83,6 +84,7 @@ def parse_rules(d: dict) -> RulesConfig:
     for k in (*COUNTER_ACTS, "self"):
         disc.setdefault(k, 0.0)
     prior = tuple(df.get("prior_counter_speakers") or ())
+    kw_asr = None if df.get("keyword_only_risk_asr") is None else unit(df["keyword_only_risk_asr"], "defaults.keyword_only_risk_asr")
     errs += [f"defaults.prior_counter_speakers: unknown speaker {x!r}" for x in prior if x not in SPEAKERS]
     rules: dict[str, RuleCfg] = {}
     for i, r in enumerate(d.get("rules") or []):
@@ -118,7 +120,7 @@ def parse_rules(d: dict) -> RulesConfig:
     errs += [f"rules: missing a rule for criterion {c}" for c in CRITERIA if c not in rules]
     if errs:
         raise ConfigError(errs)
-    return RulesConfig(str(d.get("version", "rules")), fire_at, boost, kw_only, disc, rules, prior)
+    return RulesConfig(str(d.get("version", "rules")), fire_at, boost, kw_only, disc, rules, prior, kw_asr)
 
 
 def load_rules(path: Path = RULES_FILE) -> RulesConfig:
@@ -184,7 +186,10 @@ def evaluate(facts: list[Fact], hits: list[KeywordHit], transcript: Transcript, 
         supported[crit] = bool(sup)
         if not sup:
             unsupported += [(crit, f.fact_id, base(f)) for f in dropped if base(f) is not None]
-        kw_only = (rule.keyword_only_risk if rule.keyword_only_risk is not None else cfg.keyword_only_risk) if hit_ids else 0.0
+        floor = cfg.keyword_only_risk
+        if transcript.mode == "asr" and cfg.keyword_only_risk_asr is not None:
+            floor = cfg.keyword_only_risk_asr          # ASR finds fewer facts: hits alone may reach review, never alarm
+        kw_only = (rule.keyword_only_risk if rule.keyword_only_risk is not None else floor) if hit_ids else 0.0
         risk = min(rule.max_risk, max([r for _, r, _ in sup] + [kw_only]))
         fired = bool(sup) and risk >= cfg.fire_at
         fact_ids = list(dict.fromkeys([f.fact_id for f, _, _ in sup] + [c.fact_id for _, _, ap in sup for c in ap]

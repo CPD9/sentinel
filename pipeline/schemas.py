@@ -933,7 +933,7 @@ class ProcessingEvent(_Artifact):
 
 # --------------------------------------------------------------------------- QualityReport
 
-SPLITS = ("dev", "holdout", "test")
+SPLITS = ("dev", "holdout", "test", "all")          # all = every case call (tuned on all case data)
 CONVENTIONS = ("strict_alarm", "escalation")
 CURVE_PARAMS = ("alarm_threshold", "review_threshold", "confidence_gate")
 ABLATIONS = ("keyword_only", "llm_only", "combined")
