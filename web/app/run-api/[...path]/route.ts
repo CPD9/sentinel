@@ -4,7 +4,8 @@
 // new run = pointing the two variables at it.
 //   reads    results/*.json (+ results.json), transcripts[_reference]/, traces[_reference]/, analysis/<id>/analysis.json,
 //            audio/<id>.wav (Range requests), out/snippets/<id>/, artifacts/manifests/inference.json (variant only:
-//            neutral ids, never evaluation.json), artifacts/quality/final_report.json, config/*.json of the repo
+//            neutral ids, never evaluation.json), artifacts/quality/final_report.json, config/*.json of the repo,
+//            <SENTINEL_SPEAKERS_DIR or RUN/../speakers>/<id>.json (display-only speaker roles, scripts/assign_speakers.py)
 //   what-if  POST /simulate runs pipeline/simulate.py (exact decide.py over the cached facts) in a helper process
 //   writes   nothing on disk. Feedback lives in this server's memory until restart; saving settings is refused (409).
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
@@ -19,6 +20,7 @@ export const runtime = "nodejs";
 const RUN = process.env.SENTINEL_RUN_DIR ?? "";
 const ART = process.env.SENTINEL_ARTIFACTS_DIR ?? "";
 const REPO = path.resolve(process.cwd(), "..");
+const SPK = process.env.SENTINEL_SPEAKERS_DIR ?? (RUN ? path.join(RUN, "..", "speakers") : "");
 
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
 const err = (status: number, error: string, detail: string | string[]) => json({ error, detail }, status);
@@ -169,6 +171,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ path: string[] 
   if (b === "transcript") return doc(path.join(ART, `transcripts${suffix()}`, `${id}.json`));
   if (b === "trace") return doc(path.join(ART, `traces${suffix()}`, `${id}.json`));
   if (b === "analysis") return doc(path.join(ART, "analysis", id, "analysis.json"));
+  if (b === "speakers") return SPK ? doc(path.join(SPK, `${id}.json`)) : err(404, "not_available", "No speaker roles.");
   if (b === "audio") {
     const f = path.join(ART, "audio", `${id}.wav`);
     return existsSync(f) ? fileResponse(f, req, "audio/wav") : err(404, "not_available", "No audio for this call.");

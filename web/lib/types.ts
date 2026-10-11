@@ -78,6 +78,8 @@ export interface TranscriptSegment {
   end_s: number | null;
   avg_logprob: number | null;
   no_speech_prob: number | null;
+  /** web-only, set by lib/use-speakers.ts: a second voice covers > 30 % of this segment */
+  role_mixed?: boolean;
 }
 export interface Transcript {
   call_id: string;
@@ -87,6 +89,21 @@ export interface Transcript {
   duration_s: number | null;
   is_mock: boolean;
   notes: string[];
+  /** web-only, set by lib/use-speakers.ts: where the displayed speaker roles come from */
+  speaker_source?: string;
+}
+
+// ---- SpeakerRoles (display only, never feeds the decision; written by scripts/assign_speakers.py)
+export interface SegmentRole { id: string; role: Speaker; cluster?: string | null; overlap_frac?: number | null; mixed?: boolean }
+export interface SpeakerRoles {
+  call_id: string;
+  label_source: "acoustic + content" | "content only";
+  diarizer: string | null;
+  mapper: Record<string, string>;
+  transcript: { path: string; asr_model: string; sha256: string };
+  segments: SegmentRole[];
+  cluster_roles: Record<string, Speaker>;
+  rationale: string;
 }
 
 // ---- DecisionTrace

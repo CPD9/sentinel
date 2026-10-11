@@ -19,7 +19,7 @@ import { cn } from "@/lib/utils";
 
 const BARS = 72;                          // waveform bars across the player, whatever the snippet length
 
-type Line = { key: string; speaker: Speaker; start: number | null; text: string; segment: string | null; passage: number | null; cited: boolean } | { key: string; gap: true };
+type Line = { key: string; speaker: Speaker; judge?: Speaker; start: number | null; text: string; segment: string | null; passage: number | null; cited: boolean } | { key: string; gap: true };
 
 /** Excerpt lines: each cited segment (passages + the facts shown next to it) with one neighbour on each side, in time
  *  order, "…" where lines were skipped. */
@@ -41,7 +41,11 @@ function buildLines(passages: Evidence[], transcript: Transcript | null, extra: 
   for (const i of [...keep].sort((a, b) => a - b)) {
     if (prev >= 0 && i > prev + 1) out.push({ key: `gap${i}`, gap: true });
     const s = segs[i];
-    out.push({ key: s.id, speaker: s.speaker, start: s.start_s, text: s.text, segment: s.id, passage: citedAt.get(i) ?? null, cited: citedAt.has(i) || factAt.has(i) });
+    // the transcript's (diarized) role; the judge's own role for the citation when the transcript has none, or as a
+    // note when the two disagree
+    const pi = citedAt.get(i), judge = pi != null ? passages[pi].speaker : undefined;
+    out.push({ key: s.id, speaker: s.speaker === "unknown" && judge ? judge : s.speaker,
+      judge: judge && judge !== "unknown" && s.speaker !== "unknown" && judge !== s.speaker ? judge : undefined, start: s.start_s, text: s.text, segment: s.id, passage: citedAt.get(i) ?? null, cited: citedAt.has(i) || factAt.has(i) });
     prev = i;
   }
   return out;
@@ -106,7 +110,8 @@ export function ExcerptPlayer({ callId, passages, transcript, hits, waveform, mo
           const isFocus = l.segment != null && focused.has(l.segment);
           const row = (
             <>
-              <span className="font-medium" style={l.cited ? { color: SPEAKER_COLOR[l.speaker] } : undefined}>{speakerLabel(l.speaker)}</span>
+              <span className="font-medium" style={l.cited ? { color: SPEAKER_COLOR[l.speaker] } : undefined}>{speakerLabel(l.speaker)}
+                {l.judge && <span className="block text-[10px] font-normal text-muted-foreground" title="The judge attributed this citation to a different role">judge: {speakerLabel(l.judge)}</span>}</span>
               <span className="tabular text-muted-foreground">{fmtTime(l.start)}</span>
               <span lang="gsw" className="min-w-0">“<Underlined text={l.text} words={hits.filter((h) => h.segment_id === l.segment).map((h) => h.matched_text)} />”</span>
               {hasGloss && <span lang="de" className="min-w-0 font-normal text-muted-foreground">{g ? `“${g}”` : ""}</span>}

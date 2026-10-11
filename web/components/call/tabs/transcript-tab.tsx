@@ -86,6 +86,7 @@ function Body({ result, hits, facts, t, focusSeg }: { result: CallResult; hits: 
       <p className="text-xs text-muted-foreground" title={`Dimmed = avg log-prob < ${ASR_LOW_LOGPROB} or no-speech > ${Math.round(ASR_HIGH_NO_SPEECH * 100)} % (display heuristic only)`}>
         Tinted = evidence for a finding · bold = quoted by a fact (Standard German gloss on the right) · dotted box = keyword · grey underline = counter-evidence · dimmed = unclear speech recognition.
       </p>
+      {t.speaker_source && <p className="text-xs text-muted-foreground">Speakers: {t.speaker_source}. Display only: the roles do not change the decision.</p>}
       {note && <p role="status" className="rounded-md border border-border bg-muted px-3 py-2 text-xs">{note}</p>}
       {rows.length === 0 ? <EmptyState>No segment matches this search.</EmptyState> : (
         <ol className="divide-y divide-border rounded-lg border border-border bg-card">
@@ -108,6 +109,7 @@ function Body({ result, hits, facts, t, focusSeg }: { result: CallResult; hits: 
                     {crit && <span className="text-[11px] font-medium" style={{ color: criterionColor(crit) }}>evidence · {humanize(crit)}</span>}
                     {quoted && !crit && <span className="text-[11px] font-medium">quoted by a fact</span>}
                     {counter && <span className="text-[11px] text-muted-foreground">counter-evidence</span>}
+                    {s.role_mixed && <span className="text-[11px] text-muted-foreground" title="A second voice covers more than 30 % of this line">two voices</span>}
                     {lowConf && <span className="text-[11px] text-muted-foreground" title={`avg log-prob ${s.avg_logprob}, no-speech ${s.no_speech_prob}`}>unclear speech recognition</span>}
                   </div>
                   <div className={cn("grid gap-x-6", g && "md:grid-cols-2")}>

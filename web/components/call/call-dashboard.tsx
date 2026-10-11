@@ -19,6 +19,7 @@ import { CALL_TABS, type TabValue } from "@/lib/tabs";
 import { useAsync } from "@/lib/use-async";
 import { cn } from "@/lib/utils";
 import type { CallResult } from "@/lib/types";
+import { useSpeakerOverlay } from "@/lib/use-speakers";
 
 export function CallDashboard({ id, tab, sel }: { id: string; tab: TabValue; sel: { win?: string; seg?: string } }) {
   const call = useAsync(() => getCall(id), `call:${id}`);
@@ -69,7 +70,7 @@ function Body({ result, tab, sel }: { result: CallResult; tab: TabValue; sel: { 
   const router = useRouter();
   const audio = useCallAudio();
   const trace = useAsync(() => getTrace(id), `trace:${id}`);
-  const transcript = useAsync(() => getTranscript(id), `tr:${id}`);
+  const transcript = useSpeakerOverlay(id, useAsync(() => getTranscript(id), `tr:${id}`));
   const analysis = useAsync(() => getAnalysis(id), `an:${id}`);
   const calls = useAsync(getCalls, "calls");
   const item = calls.data?.find((c) => c.call_id === id);
