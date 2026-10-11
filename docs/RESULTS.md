@@ -243,3 +243,26 @@ branch `ml/conditions`, not merged). Ship rule set before measuring: beat S4 alo
 with the cap enforced inside each fold the chosen cut adds no review, i.e. exactly S4 alone (0.64). It fails the rule,
 so S4 alone ships. Per-method AUC with CIs and per-fold CV precision / recall: `artifacts/metrics/crossval.json`
 (`methods`), `artifacts/metrics/conditions_cv.json`.
+
+## Adjustable threshold and keyword list on top of the judge (11 Oct 2026, 06:00)
+
+The brief requires an adjustable threshold, and demo moment 2 is one change to the threshold or the keyword list with
+a visible effect. With `decision_source: direct_judge` the existing `alarm` / `review` thresholds now act on the
+cached judge risk (`decide.judge_decide`): alarm if risk >= alarm AND >= 1 validated citation AND confidence >= gate;
+review if risk >= review; otherwise no_alert. `keyword_review` (`{"enabled", "min_segments"}` in
+`config/thresholds.json`, off by default) lets keyword hits alone raise a call to review, never to alarm; editing
+`config/keywords.json` changes the hits without any LLM re-run. Defaults alarm 0.70 / review 0.20 reproduce the S4
+verdicts: **0 of 62 calls differ**. `pipeline.simulate` re-decides all 62 calls from cache in **27 ms**.
+
+In-sample curve on all 62 calls (`scripts/threshold_curve.py` → `artifacts/metrics/threshold_curve.json`; nothing was
+tuned on these numbers; false alarms = gold no_alert decided alarm, missed = gold alarm/review decided no_alert):
+
+| setting | false alarms | missed cases (of 34) | review load |
+|---|---|---|---|
+| review 0.00 (everything to a person) | 0 | 0 | 100 % |
+| **review 0.20 (default)** | **0** | **25** | **15 %** |
+| review 0.40 | 0 | 30 | 6 % |
+| review 0.70 | 0 | 33 | 2 % |
+| default + keyword review, min 4 segments | 0 | 25 | 18 % |
+| default + keyword review, min 2 segments | 0 | 20 | 35 % |
+| default + keyword review, min 1 segment | 0 | 17 | 40 % |

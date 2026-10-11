@@ -47,7 +47,7 @@ def test_patched_docs_does_not_mutate_the_input_and_roundtrips_through_the_valid
 
 
 @pytest.mark.parametrize("patch", [
-    {"thresholds": {"alarm": 0.3}},                          # review (0.4) >= alarm
+    {"thresholds": {"alarm": 0.15}},                         # review (0.2) >= alarm
     {"thresholds": {"review": 0.8}},
     {"thresholds": {"alarm": 1.5}},
     {"thresholds": {"gate": 0.5}},                           # unknown key
@@ -317,3 +317,26 @@ def test_corrupt_result_files_do_not_unlock_a_failed_call(tmp_path):
     (tmp_path / "out" / "results" / "call_bad.json").write_text("{not json", encoding="utf-8")
     (tmp_path / "out" / "results.json").write_text("[1, 2", encoding="utf-8")
     assert _load(tmp_path)["call_bad"].locked
+
+
+def test_judge_mode_what_if_is_cached_and_fast():
+    import time
+    from pipeline import simulate as sm
+    from pipeline.schemas import Transcript, TranscriptSegment
+    raw = sm.load_raw()
+    raw.thresholds = {**raw.thresholds, "decision_source": "direct_judge", "alarm": 0.7, "review": 0.2,
+                      "keyword_review": {"enabled": False, "min_segments": 1}}
+    segs = [TranscriptSegment("S0001", "unknown", "Mein Passwort ist Sonnenblume.", 0.0, 2.0, -0.2, 0.01)]
+    calls = [sm.CallInputs(Transcript(f"call_{i:03d}", "asr", segs, asr_model="m", duration_s=2.0), [],
+                           judge={"risk": r, "citations": [{"valid": True}]})
+             for i, r in enumerate([0.0] * 50 + [0.3] * 10 + [0.9] * 2)]
+    s = sm.Simulator(calls, raw)
+    t0 = time.perf_counter()
+    base = s.decisions({})
+    assert sum(v == "alarm" for v in base.values()) == 2 and sum(v == "review" for v in base.values()) == 10
+    up = s.decisions({"thresholds": {"review": 0.4}})
+    assert sum(v == "review" for v in up.values()) == 0                          # the review threshold moves calls
+    kw_on = s.decisions({"thresholds": {"keyword_review": {"enabled": True, "min_segments": 1}}})
+    assert sum(v == "review" for v in kw_on.values()) == 60                      # keyword hits -> review, never alarm
+    assert sum(v == "alarm" for v in kw_on.values()) == 2
+    assert time.perf_counter() - t0 < 1.0

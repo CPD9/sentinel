@@ -17,9 +17,10 @@ _PATH_TEXT = {
     "alarm": "a rule hit reached the alarm threshold with validated evidence",
     "review_band": "risk is in the review band",
     "no_alert": "no rule reached the review threshold",
-    "judge_alarm": "the direct judge found a clear violation, backed by a validated citation",
-    "judge_review": "the direct judge found a possible violation (or an alarm without a validated citation)",
-    "judge_no_alert": "the direct judge found no criterion met",
+    "judge_alarm": "the direct judge's risk reached the alarm threshold, backed by a validated citation",
+    "judge_review": "the direct judge's risk is in the review band (or alarm-level without a validated citation)",
+    "judge_no_alert": "the direct judge's risk is below the review threshold",
+    "keyword_review": "keyword hits alone raised the call to review (the judge found no criterion met)",
 }
 
 
@@ -42,10 +43,13 @@ def narrate(trace: DecisionTrace, findings: list[Finding]) -> tuple[str, str | N
             change = (f"Risk would have to reach {th.review:.2f} (review) or {th.alarm:.2f} (alarm), "
                       "e.g. through a validated fact supporting a rule.")
         elif trace.decision_path == "judge_no_alert":
-            change = ("The judge would have to find a criterion met in the transcript (e.g. a disclosed active "
-                      "secret, a split payment to avoid approval); a better transcript of the passage could change it.")
+            change = (f"The judge's risk would have to reach {th.review:.2f} (review) or {th.alarm:.2f} (alarm), or "
+                      "keyword review would have to be on with enough hits; lowering the review threshold also works.")
         elif trace.decision_path == "judge_review":
-            change = "An alarm needs the judge to find a criterion clearly met with a citation that validates."
+            change = (f"An alarm needs the judge's risk at {th.alarm:.2f} or more with a citation that validates and "
+                      f"confidence at the gate {th.confidence_gate:.2f}.")
+        elif trace.decision_path == "keyword_review":
+            change = "Turning keyword review off, or raising its minimum number of hit segments, returns it to no_alert."
         elif trace.decision_path == "low_confidence":
             change = f"Confidence would have to reach the gate {th.confidence_gate:.2f} (better audio or ASR)."
         else:
