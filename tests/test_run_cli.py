@@ -28,3 +28,19 @@ def test_test_split_is_locked(monkeypatch):
     import pytest
     with pytest.raises(SystemExit):
         cli.plan_jobs(None, "test", allow_test=False)
+
+
+def test_own_artifacts_dir_keeps_a_new_set_out_of_the_shared_artifacts(tmp_path, monkeypatch):
+    from pipeline import extract, judge
+    monkeypatch.setattr(stages, "run_analysis", lambda *a, **k: (None, [], False))
+    monkeypatch.setattr(stages, "run_asr", lambda audio, cid, **k: (asr_transcript(cid), []))
+    monkeypatch.setattr(cli, "INFERENCE", tmp_path / "none.json")
+    monkeypatch.setattr(extract, "CACHE_DIR", extract.CACHE_DIR)          # restored after the test
+    monkeypatch.setattr(judge, "CACHE_DIR", judge.CACHE_DIR)
+    folder = tmp_path / "wavs"
+    folder.mkdir()
+    make_wav(folder / "a.wav")
+    art, out = tmp_path / "art", tmp_path / "out"
+    assert cli.main([str(folder), "--no-llm", "--out", str(out), "--artifacts", str(art), "--workers", "2"]) == 0
+    assert (art / "traces" / "call_x001.json").is_file() and (out / "results" / "call_x001.json").is_file()
+    assert extract.CACHE_DIR == art / "cache" / "extract" and judge.CACHE_DIR == art / "cache" / "judge"
