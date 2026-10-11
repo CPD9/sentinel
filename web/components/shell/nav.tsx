@@ -36,7 +36,7 @@ function LocalRunBanner() {
   const bits = r ? [
     `Real run ${r.run_id}`,
     r.mode === "reference" ? "reference transcripts (no audio timestamps)" : "speech-recognition transcripts",
-    r.notes.some((n) => /dry-run/i.test(n)) ? "trigger dry-run" : null,
+    (r.notes ?? []).some((n) => /dry-run/i.test(n)) ? "trigger dry-run" : null,
   ].filter(Boolean) : ["Real run"];
   return (
     <div role="status" className="border-b border-border bg-muted px-4 py-1.5 text-center text-xs text-muted-foreground">

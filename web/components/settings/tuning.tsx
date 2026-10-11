@@ -65,7 +65,7 @@ export function Tuning() {
       reset(); saved.reload(); calls.reload(); setEpoch((e) => e + 1);
     } catch (e) { setMsg({ ok: false, text: errText(e) }); }
   };
-  const curve = report.data?.threshold_curves.find((c) => c.param === "alarm_threshold");
+  const curve = report.data?.threshold_curves?.find((c) => c.param === "alarm_threshold");
   const decided = (calls.data ?? []).filter(DECIDED);
 
   const readOnly = isFixtures || isLocalRun;
