@@ -1,11 +1,6 @@
-import { Configuration } from "@/components/settings/configuration";
-import { SettingsPage } from "@/components/settings/settings-view";
+import { redirect } from "next/navigation";
 
+// Keywords moved under Settings (Nik's design 07).
 export default function Page() {
-  return (
-    <SettingsPage title="Keywords & checks"
-      description="What Sentinel looks for: keyword families with their Swiss German variants, and one check per kind of fraud. Hit counts update live. No code needed.">
-      <Configuration />
-    </SettingsPage>
-  );
+  redirect("/settings/keywords");
 }

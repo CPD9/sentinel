@@ -2,16 +2,16 @@
 // Wording follows what the pipeline actually does (pipeline/rules.py, confidence.py, decide.py; CLAUDE.md steps 6-8).
 export const GLOSSARY = {
   alarm: {
-    title: "Alarm",
-    text: "A check found a verified passage that breaks a rule, the risk is at or above the alarm threshold and nothing makes the system unsure. Without a verified supporting passage there is never an alarm, whatever the thresholds.",
+    title: "Alert",
+    text: "A check found a verified passage that breaks a rule, the risk is at or above the alert line and nothing makes the system unsure. Without a verified supporting passage there is never an alert, whatever the lines.",
   },
   review: {
     title: "Review",
-    text: "The system is not sure enough to decide alone, so a person decides. Reasons: a processing step failed, evidence could not be verified or points both ways, confidence is below the gate, or the risk sits between the review and the alarm threshold. Review is not an alarm.",
+    text: "The system is not sure enough to decide alone, so a person decides. Reasons: a processing step failed, evidence could not be verified or points both ways, confidence is below the gate, or the risk sits between the review line and the alert line. Review is not an alert.",
   },
   no_alert: {
     title: "No alert",
-    text: "No check found a rule-breaking passage with enough risk. The call may still contain keywords; they alone never raise an alarm.",
+    text: "No check found a rule-breaking passage with enough risk. The call may still contain keywords; they alone never raise an alert.",
   },
   calls_checked: {
     title: "Calls checked",
@@ -34,12 +34,12 @@ export const GLOSSARY = {
     text: "If confidence is below this value on a call with some risk, the system does not decide alone: the call goes to review.",
   },
   alarm_threshold: {
-    title: "Alarm threshold",
-    text: "The risk at which a call becomes an alarm. Lower catches more fraud but gives more false alarms; higher gives fewer false alarms but misses more.",
+    title: "Alert line",
+    text: "The risk at which a call becomes an alert. Lower catches more fraud but gives more false alarms; higher gives fewer false alarms but misses more.",
   },
   review_threshold: {
-    title: "Review threshold",
-    text: "From this risk up to the alarm threshold, a call is handed to a person instead of being dropped.",
+    title: "Review line",
+    text: "From this risk up to the alert line, a call is handed to a person instead of being dropped.",
   },
   finding: {
     title: "Finding",
@@ -71,7 +71,7 @@ export const GLOSSARY = {
   },
   caught: {
     title: "Caught",
-    text: "Calls that needed attention (expected alarm or review) and were flagged as alarm or review.",
+    text: "Calls that needed attention (expected alert or review) and were flagged as alert or review.",
   },
   missed: {
     title: "Missed",
@@ -79,7 +79,7 @@ export const GLOSSARY = {
   },
   false_alarm: {
     title: "False alarm",
-    text: "An alarm on a call that should not be an alarm. Each one costs an officer time.",
+    text: "An alert on a call that should not be one. Each one costs an officer time.",
   },
   precision: {
     title: "Precision",
@@ -88,6 +88,14 @@ export const GLOSSARY = {
   recall: {
     title: "Recall",
     text: "Of all the calls that really needed attention, the share Sentinel flagged. Low recall means missed cases.",
+  },
+  fact: {
+    title: "Fact",
+    text: "Something a speaker did in the call, found by the AI over the whole conversation: who asked for, disclosed or warned about which kind of information, with the exact words quoted. Every fact is checked against the transcript; a fact whose quote cannot be found there is dropped and makes the system less sure.",
+  },
+  rule: {
+    title: "Rule",
+    text: "One fixed check per kind of fraud. It scores the verified facts (plus a small boost when a keyword appears in the same passage) and fires when the risk is high enough. Rules are configuration, not AI: the same facts always give the same result.",
   },
   ci: {
     title: "Confidence interval",

@@ -36,11 +36,11 @@ export function useWavUpload(onUploaded: () => void) {
 export function UploadButton({ upload }: { upload: ReturnType<typeof useWavUpload> }) {
   const input = useRef<HTMLInputElement>(null);
   return (
-    <div className="flex flex-col items-start gap-1 sm:items-end">
+    <div className="flex flex-col items-end gap-1">
       <input ref={input} type="file" accept=".wav,audio/wav" multiple hidden
         onChange={(e) => { if (e.target.files) void upload.send(e.target.files); e.target.value = ""; }} />
-      <Button disabled={upload.busy} onClick={() => input.current?.click()}><Plus className="size-4" />{upload.busy ? "Uploading…" : "Analyse a call"}</Button>
-      <span className="text-[11px] text-muted-foreground">.wav, or drop files anywhere on this page</span>
+      <Button variant="outline" size="sm" className="rounded-full" disabled={upload.busy} onClick={() => input.current?.click()}
+        title=".wav files; you can also drop them anywhere on this page"><Plus className="size-4" />{upload.busy ? "Uploading…" : "Analyse a call"}</Button>
       {upload.msg && <span role="alert" className="max-w-xs text-xs text-alarm sm:text-right">{upload.msg}</span>}
     </div>
   );

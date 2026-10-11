@@ -314,6 +314,16 @@ function persistFeedback() {
 const routeMissing = (e: unknown) => e instanceof ApiError && (e.status === 404 || e.status === 405);
 const notBuilt = (what: string, route: string) => new ApiError(404, "not_available", `${what}: not available on this server yet (${route} is not implemented).`);
 
+/** What this server accepts beyond the documented contract. GET /api/capabilities (proposed to Jules):
+ *  { verdicts: string[], report: boolean }. A server without the route gets the documented defaults, so the
+ *  escalate button and the trigger report stay hidden until the API really accepts them. Fixtures: local MOCK feedback. */
+export interface Capabilities { verdicts: Verdict[]; report: boolean }
+export async function getCapabilities(): Promise<Capabilities> {
+  if (isFixtures) return { verdicts: ["false_alarm", "missed", "correct", "escalate"], report: false };
+  try { return (await getJson<Capabilities>(api("/capabilities"))).data; }
+  catch (e) { if (routeMissing(e)) return { verdicts: ["false_alarm", "missed", "correct"], report: false }; throw e; }
+}
+
 /** Latest verdict per call. Throws not_available when the server has no feedback route. */
 export async function getFeedback(): Promise<FeedbackEntry[]> {
   if (!isFixtures) {

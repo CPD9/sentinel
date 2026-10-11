@@ -1,7 +1,6 @@
-import { Tuning } from "@/components/settings/tuning";
-import { SettingsDraftProvider } from "@/lib/settings-draft";
+import { redirect } from "next/navigation";
 
-// Tuning renders its own title row, so Reset / Save can sit next to the title.
+// Sensitivity moved under Settings (Nik's design 05).
 export default function Page() {
-  return <SettingsDraftProvider><Tuning /></SettingsDraftProvider>;
+  redirect("/settings/threshold");
 }

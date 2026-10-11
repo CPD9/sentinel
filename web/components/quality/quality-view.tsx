@@ -71,10 +71,10 @@ function Report({ r }: { r: QualityReport }) {
       </Card>
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <ConventionCard title="Strict alarm" desc="alarm vs everything else" cs={r.overall} kind="strict_alarm" />
-        <ConventionCard title="Escalation" desc="alarm + review vs no alert" cs={r.overall} kind="escalation" />
+        <ConventionCard title="Strict alert" desc="alert vs everything else" cs={r.overall} kind="strict_alarm" />
+        <ConventionCard title="Escalation" desc="alert + review vs no alert" cs={r.overall} kind="escalation" />
         <Card>
-          <CardHeader><div><CardTitle>3-class</CardTitle><CardDescription>alarm / review / no alert</CardDescription></div></CardHeader>
+          <CardHeader><div><CardTitle>3-class</CardTitle><CardDescription>alert / review / no alert</CardDescription></div></CardHeader>
           <CardContent className="space-y-3">
             <MetricBar label="macro F1" m={r.overall.three_class.macro_f1} />
             <MetricBar label="accuracy" m={r.overall.three_class.accuracy} />

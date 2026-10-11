@@ -5,6 +5,7 @@ import { ScoreBar } from "@/components/shell/score";
 import { DocGate } from "@/components/shell/states";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { criterionColor } from "@/lib/colors";
+import { DECISION_LABEL } from "@/lib/explain";
 import { humanize, pct } from "@/lib/format";
 import type { CallResult, DecisionPath, DecisionTrace } from "@/lib/types";
 import type { Loadable } from "@/lib/use-async";
@@ -13,7 +14,7 @@ import { cn } from "@/lib/utils";
 // decide.py priority order (CLAUDE.md step 8).
 const PATH_STEPS: { id: DecisionPath[]; label: string; gives: string }[] = [
   { id: ["stage_error", "missing_evidence", "contradictory_evidence", "low_confidence"], label: "1 · Failed stage, missing or contradictory evidence, or confidence below the gate", gives: "review" },
-  { id: ["alarm"], label: "2 · Validated evidence and a rule hit at or above the alarm threshold", gives: "alarm" },
+  { id: ["alarm"], label: "2 · Validated evidence and a rule hit at or above the alert line", gives: "alert" },
   { id: ["review_band"], label: "3 · Risk inside the review band", gives: "review" },
   { id: ["no_alert"], label: "4 · Otherwise", gives: "no alert" },
 ];
@@ -88,7 +89,7 @@ function Body({ t, result }: { t: DecisionTrace; result: CallResult }) {
         </ul>
       </Step>
       <Arrow />
-      <Step title="3 · Confidence" subtitle="1 = no concern. The call needs total confidence at or above the gate to be a confident alarm or no-alert.">
+      <Step title="3 · Confidence" subtitle="1 = no concern. The call needs total confidence at or above the gate to be a confident alert or no-alert.">
         {t.confidence_breakdown ? (
           <div className="space-y-2">
             {Object.entries(t.confidence_breakdown.components).map(([k, v]) => (
@@ -103,7 +104,7 @@ function Body({ t, result }: { t: DecisionTrace; result: CallResult }) {
         ) : <p className="text-sm text-muted-foreground">Confidence was not computed for this call (n/a).</p>}
       </Step>
       <Arrow />
-      <Step title="4 · Decision path" subtitle="Checked in this order; the first step that applies decides. Doubt is checked before alarm.">
+      <Step title="4 · Decision path" subtitle="Checked in this order; the first step that applies decides. Doubt is checked before alert.">
         <ol className="space-y-1.5">
           {PATH_STEPS.map((s) => {
             const hit = s.id.includes(t.decision_path);
@@ -115,7 +116,7 @@ function Body({ t, result }: { t: DecisionTrace; result: CallResult }) {
             );
           })}
         </ol>
-        <p className="mt-2 text-sm">Result: <b>{humanize(result.decision)}</b> (risk {pct(t.risk_score)}, confidence {pct(t.confidence)}).</p>
+        <p className="mt-2 text-sm">Result: <b>{DECISION_LABEL[result.decision]}</b> (risk {pct(t.risk_score)}, confidence {pct(t.confidence)}).</p>
         {(t.why_not_flagged || t.what_would_change) && (
           <div className="mt-3 grid gap-3 md:grid-cols-2">
             {t.why_not_flagged && <div className="rounded-md bg-muted p-3 text-sm"><b>Why not flagged.</b> {t.why_not_flagged}</div>}

@@ -1,23 +1,19 @@
 "use client";
-// Dashboard shell: shared header + URL-driven tabs. Structure after Leadership-Demo's project detail page
-// (header, status handling, tab list with per-tab error marker, processing flow shown inline while running).
-import { AlertTriangle, ArrowLeft } from "lucide-react";
+// Call page shell: status handling (loading, unknown call, still processing), then the call body below.
+import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback } from "react";
-import { CallAudioProvider } from "./audio-context";
-import { FeedbackBar } from "./feedback-bar";
+import { CallAudioProvider, useCallAudio } from "./audio-context";
+import { CallHeader, CallSummary } from "./call-summary";
 import { AuditTab } from "./tabs/audit-tab";
 import { AudioTab } from "./tabs/audio-tab";
-import { EvidenceTab } from "./tabs/evidence-tab";
 import { ReasoningTab } from "./tabs/reasoning-tab";
-import { SummaryTab } from "./tabs/summary-tab";
 import { TranscriptTab } from "./tabs/transcript-tab";
-import { DecisionBadge, StageErrorChip } from "@/components/shell/badges";
-import { RiskConfidence } from "@/components/shell/score";
 import { ErrorCard, SkeletonBlock } from "@/components/shell/states";
 import { ProcessingView } from "@/components/processing/processing-view";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ApiError, audioUrl, getAnalysis, getCall, getTrace, getTranscript } from "@/lib/data";
+import { ApiError, audioUrl, getAnalysis, getCall, getCalls, getTrace, getTranscript } from "@/lib/data";
 import { useReportMock } from "@/lib/mock-store";
 import { CALL_TABS, type TabValue } from "@/lib/tabs";
 import { useAsync } from "@/lib/use-async";
@@ -55,68 +51,68 @@ export function CallDashboard({ id, tab, sel }: { id: string; tab: TabValue; sel
 }
 
 function BackLink() {
-  return <Link href="/" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="size-3.5" />Overview</Link>;
+  return <Link href="/" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="size-3.5" />Alerts</Link>;
 }
 
 function Loaded({ result, tab, sel }: { result: CallResult; tab: TabValue; sel: { win?: string; seg?: string } }) {
+  return (
+    <CallAudioProvider src={audioUrl(result.call_id)}>
+      <Body result={result} tab={tab} sel={sel} />
+    </CallAudioProvider>
+  );
+}
+
+// Call page: the same top block as the inbox panel (decision, reason, risk, passage player, facts, actions), then the
+// full transcript with the Standard German gloss, then the technical detail one click away under "Details".
+function Body({ result, tab, sel }: { result: CallResult; tab: TabValue; sel: { win?: string; seg?: string } }) {
   const id = result.call_id;
+  const router = useRouter();
+  const audio = useCallAudio();
   const trace = useAsync(() => getTrace(id), `trace:${id}`);
   const transcript = useAsync(() => getTranscript(id), `tr:${id}`);
   const analysis = useAsync(() => getAnalysis(id), `an:${id}`);
+  const calls = useAsync(getCalls, "calls");
+  const item = calls.data?.find((c) => c.call_id === id);
   useReportMock(`result:${id}`, result);
   useReportMock(`trace:${id}`, trace.data);
   useReportMock(`analysis:${id}`, analysis.data);
   useReportMock(`transcript:${id}`, transcript.data);
 
   const brokenDoc = useCallback((s: { status: string; error: ApiError | null }) => s.status === "error" && s.error != null && s.error.status !== 404, []);
-  const tabMarkers: Partial<Record<TabValue, boolean>> = {
-    reasoning: brokenDoc(trace), audio: brokenDoc(analysis), transcript: brokenDoc(transcript) || (transcript.status === "error" && result.stage_errors.length > 0),
+  const tabMarkers: Partial<Record<TabValue, boolean>> = { reasoning: brokenDoc(trace), audio: brokenDoc(analysis) };
+
+  // A fact or cited line was clicked: highlight it in the transcript (URL ?seg=) and play from there when there is audio.
+  const onCite = (segs: string[]) => {
+    router.replace(`/calls/${id}?tab=${tab}&seg=${encodeURIComponent(segs.join(","))}`, { scroll: false });
+    const start = transcript.data?.segments.find((s) => segs.includes(s.id))?.start_s;
+    if (start != null && audio.available) audio.play(Math.max(0, start - 1), null);
   };
-  const gate = trace.data?.thresholds.confidence_gate;
 
   return (
-    <CallAudioProvider src={audioUrl(id)}>
-      <div className="space-y-5">
-        <BackLink />
-        <header className="space-y-3">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <h1 className="font-mono text-xl font-semibold tracking-tight">{id}</h1>
-            <DecisionBadge decision={result.decision} size="lg" />
-            <StageErrorChip count={result.stage_errors.length} />
-            <RiskConfidence risk={result.risk_score} confidence={result.confidence} gate={gate} />
-          </div>
-          <FeedbackBar callId={id} decision={result.decision} />
-          {result.stage_errors.length > 0 && (
-            <div role="alert" className="rounded-md border border-alarm bg-alarm-bg px-3 py-2 text-sm text-alarm">
-              <p className="flex items-center gap-2 font-semibold"><AlertTriangle className="size-4" />Stage error — this call was not fully analysed, so it is routed to review.</p>
-              <ul className="mt-1 list-disc pl-6">
-                {result.stage_errors.map((e, i) => <li key={i}><code className="font-mono">{e.stage}</code>: {e.message}</li>)}
-              </ul>
-            </div>
-          )}
-        </header>
+    <div className="space-y-6">
+      <BackLink />
+      <article aria-label={`Call ${id}`} className="stage-in elevated rounded-[var(--radius-panel)]">
+        <CallHeader meta={{ call_id: id, updated_at: item?.updated_at ?? null, duration_s: item?.duration_s ?? analysis.data?.duration_s ?? null, is_mock: item?.is_mock ?? false }} decision={result.decision} />
+        <CallSummary meta={{ call_id: id, updated_at: item?.updated_at ?? null, duration_s: item?.duration_s ?? null, is_mock: item?.is_mock ?? false }}
+          result={result} trace={trace} analysis={analysis} transcript={transcript} thresholds={trace.data?.thresholds ?? null} onCite={onCite} />
+      </article>
 
-        <div className="grid gap-6 lg:grid-cols-2">
-          <section aria-labelledby="verdict" className="min-w-0 space-y-3">
-            <h2 id="verdict" className="text-lg font-semibold tracking-tight">Verdict &amp; reasoning</h2>
-            <SummaryTab result={result} trace={trace} stacked />
-          </section>
-          <section id="passages" aria-labelledby="passages-h" className="min-w-0 scroll-mt-20 space-y-3">
-            <h2 id="passages-h" className="text-lg font-semibold tracking-tight">Passages that carry the decision</h2>
-            <EvidenceTab result={result} analysis={analysis} stacked />
-          </section>
-        </div>
+      <section aria-labelledby="transcript-h" className="stage-in space-y-3" style={{ "--i": 1 } as React.CSSProperties}>
+        <h2 id="transcript-h" className="text-title font-semibold tracking-tight">Transcript</h2>
+        <TranscriptTab result={result} trace={trace} transcript={transcript} focusSeg={sel.seg} />
+      </section>
 
-        <div className="space-y-1 pt-2">
-          <h2 className="text-lg font-semibold tracking-tight">Details for auditors</h2>
-          <p className="text-sm text-muted-foreground">The full transcript, the step-by-step decision, the audio signals and the versions used.</p>
+      <section aria-labelledby="details-h" className="space-y-3 pt-2">
+        <div>
+          <h2 id="details-h" className="text-title font-semibold tracking-tight">Details</h2>
+          <p className="text-sm text-muted-foreground">For auditors: every step from facts to decision, the audio signals, and the versions used.</p>
         </div>
-        <nav aria-label="Call details" className="-mx-4 overflow-x-auto border-b border-border px-4">
-          <ul className="flex min-w-max gap-1">
+        <nav aria-label="Call details" className="overflow-x-auto border-b border-border">
+          <ul className="flex min-w-max gap-6">
             {CALL_TABS.map((t) => (
               <li key={t.value}>
-                <Link href={`/calls/${id}?tab=${t.value}`} scroll={false} aria-current={tab === t.value ? "page" : undefined}
-                  className={cn("relative flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm", tab === t.value ? "border-primary font-semibold text-link" : "border-transparent text-muted-foreground hover:text-foreground")}>
+                <Link href={`/calls/${id}?tab=${t.value}${sel.seg ? `&seg=${encodeURIComponent(sel.seg)}` : ""}`} scroll={false} aria-current={tab === t.value ? "page" : undefined}
+                  className={cn("-mb-px flex items-center gap-1.5 border-b-2 pb-2 text-lead", tab === t.value ? "border-foreground font-semibold" : "border-transparent text-muted-foreground hover:text-foreground")}>
                   {t.label}
                   {tabMarkers[t.value] && <span className="size-2 rounded-full bg-alarm" title="This tab's data failed to load" aria-label="error" />}
                 </Link>
@@ -124,14 +120,12 @@ function Loaded({ result, tab, sel }: { result: CallResult; tab: TabValue; sel: 
             ))}
           </ul>
         </nav>
-
         <section aria-label={tab}>
-          {tab === "transcript" && <TranscriptTab result={result} trace={trace} transcript={transcript} focusSeg={sel.seg} />}
-          {tab === "audio" && <AudioTab result={result} analysis={analysis} selectedWindow={sel.win} />}
           {tab === "reasoning" && <ReasoningTab result={result} trace={trace} />}
+          {tab === "audio" && <AudioTab result={result} analysis={analysis} selectedWindow={sel.win} />}
           {tab === "audit" && <AuditTab result={result} trace={trace} analysis={analysis} transcript={transcript} />}
         </section>
-      </div>
-    </CallAudioProvider>
+      </section>
+    </div>
   );
 }

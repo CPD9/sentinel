@@ -5,39 +5,43 @@
 //   - the player plays the passage's snippet (10 s before and after, as the case asks) over the call's real waveform,
 //     with the cited words highlighted on it
 // Without a transcript (e.g. ASR failed) the excerpt falls back to the cited quotes only; without a waveform the player
-// shows a plain bar; without audio (MOCK data) the play button is disabled, like PassagePlayer.
+// shows a plain bar; without audio (MOCK data) the play button is disabled. Reference transcripts have no timestamps:
+// then there is no player, and the excerpt says so instead of pretending.
+// Cited lines show the Standard German gloss (Fact.gloss_de) side by side; facts clicked elsewhere focus their line.
 import { Pause, Play } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { SPEAKER_COLOR } from "@/lib/colors";
 import { snippetUrl } from "@/lib/data";
+import { speakerLabel } from "@/lib/explain";
 import { fmtTime } from "@/lib/format";
 import type { Evidence, KeywordHit, Speaker, Transcript, WaveformPeaks } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const BARS = 72;                          // waveform bars across the player, whatever the snippet length
-const speakerName = (s: Speaker) => (s === "advisor" ? "Advisor" : s === "customer" ? "Customer" : "Unknown");
 
-type Line = { key: string; speaker: Speaker; start: number | null; text: string; segment: string | null; passage: number | null } | { key: string; gap: true };
+type Line = { key: string; speaker: Speaker; start: number | null; text: string; segment: string | null; passage: number | null; cited: boolean } | { key: string; gap: true };
 
-/** Excerpt lines: each cited segment with one neighbour on each side, in time order, "…" where lines were skipped. */
-function buildLines(passages: Evidence[], transcript: Transcript | null): Line[] {
+/** Excerpt lines: each cited segment (passages + the facts shown next to it) with one neighbour on each side, in time
+ *  order, "…" where lines were skipped. */
+function buildLines(passages: Evidence[], transcript: Transcript | null, extra: string[]): Line[] {
   const segs = transcript?.segments ?? [];
   const citedAt = new Map<number, number>();                       // segment index → passage index
   passages.forEach((p, pi) => p.segment_ids.forEach((sid) => {
     const i = segs.findIndex((s) => s.id === sid);
     if (i >= 0 && !citedAt.has(i)) citedAt.set(i, pi);
   }));
-  if (citedAt.size === 0) {                                          // no transcript: the quotes themselves
-    return passages.map((p, pi) => ({ key: `p${pi}`, speaker: p.speaker, start: p.start_s, text: p.text, segment: p.segment_ids[0] ?? null, passage: pi }));
+  const factAt = new Set(extra.map((sid) => segs.findIndex((s) => s.id === sid)).filter((i) => i >= 0));
+  if (citedAt.size === 0 && factAt.size === 0) {                    // no transcript: the quotes themselves
+    return passages.map((p, pi) => ({ key: `p${pi}`, speaker: p.speaker, start: p.start_s, text: p.text, segment: p.segment_ids[0] ?? null, passage: pi, cited: true }));
   }
   const keep = new Set<number>();
-  for (const i of citedAt.keys()) for (const j of [i - 1, i, i + 1]) if (j >= 0 && j < segs.length) keep.add(j);
+  for (const i of [...citedAt.keys(), ...factAt]) for (const j of [i - 1, i, i + 1]) if (j >= 0 && j < segs.length) keep.add(j);
   const out: Line[] = [];
   let prev = -1;
   for (const i of [...keep].sort((a, b) => a - b)) {
     if (prev >= 0 && i > prev + 1) out.push({ key: `gap${i}`, gap: true });
     const s = segs[i];
-    out.push({ key: s.id, speaker: s.speaker, start: s.start_s, text: s.text, segment: s.id, passage: citedAt.get(i) ?? null });
+    out.push({ key: s.id, speaker: s.speaker, start: s.start_s, text: s.text, segment: s.id, passage: citedAt.get(i) ?? null, cited: citedAt.has(i) || factAt.has(i) });
     prev = i;
   }
   return out;
@@ -53,42 +57,82 @@ function Underlined({ text, words }: { text: string; words: string[] }) {
     : <span key={i}>{part}</span>))}</>;
 }
 
-export function ExcerptPlayer({ callId, passages, transcript, hits, waveform, mock }: {
+export function ExcerptPlayer({ callId, passages, transcript, hits, waveform, mock, gloss, factSegments = [], focus }: {
   callId: string; passages: Evidence[]; transcript: Transcript | null; hits: KeywordHit[]; waveform: WaveformPeaks | null; mock: boolean;
+  /** segment id → Standard German gloss of the fact quoted there */
+  gloss?: Map<string, string>;
+  /** segments cited by the facts shown next to the excerpt, so a click on a fact always has a line to land on */
+  factSegments?: string[];
+  /** set by a click on a fact: highlight that line and, if it belongs to a passage, select it for the player */
+  focus?: { segs: string[]; n: number } | null;
 }) {
-  const lines = useMemo(() => buildLines(passages, transcript), [passages, transcript]);
-  const [sel, setSel] = useState(0);
+  const lines = useMemo(() => buildLines(passages, transcript, factSegments), [passages, transcript, factSegments]);
+  // The player's passage: the last line clicked here, unless a fact was clicked since then (focus.n is newer).
+  const [pick, setPick] = useState<{ i: number; n: number }>({ i: 0, n: -1 });
+  const focusPassage = useMemo(() => {
+    if (!focus) return null;
+    const hit = lines.find((l) => !("gap" in l) && l.segment && focus.segs.includes(l.segment));
+    return hit && !("gap" in hit) ? hit.passage : null;
+  }, [focus, lines]);
+  const sel = focus && focus.n > pick.n && focusPassage != null ? focusPassage : pick.i;
+  const setSel = (i: number) => setPick({ i, n: focus?.n ?? -1 });
+  const listRef = useRef<HTMLOListElement>(null);
   const p = passages[Math.min(sel, passages.length - 1)];
+  const hasGloss = !!gloss && lines.some((l) => !("gap" in l) && l.segment && gloss.has(l.segment));
+  const focused = new Set(focus?.segs ?? []);
+
+  // A fact was clicked: bring its line into view.
+  useEffect(() => {
+    if (!focus) return;
+    listRef.current?.querySelector<HTMLElement>(`[data-seg="${focus.segs[0]}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focus?.n]);
+
+  const cols = hasGloss ? "sm:grid-cols-[5.5rem_3rem_minmax(0,1fr)_minmax(0,1fr)]" : "sm:grid-cols-[5.5rem_3rem_minmax(0,1fr)]";
+  const noTimes = p != null && (p.start_s == null || p.end_s == null);
 
   return (
     <div className="space-y-4">
-      <ol className="max-h-56 space-y-1 overflow-y-auto pr-1 text-[15px] leading-relaxed" aria-label="What was said">
+      {hasGloss && (
+        <div className={cn("hidden gap-x-3 px-2 sm:grid", cols)} aria-hidden>
+          <span /><span /><span className="eyebrow">Swiss German (said)</span><span className="eyebrow">Standard German (gloss)</span>
+        </div>
+      )}
+      <ol ref={listRef} className="max-h-64 space-y-0.5 overflow-y-auto pr-1 text-body" aria-label="What was said">
         {lines.map((l) => {
-          if ("gap" in l) return <li key={l.key} aria-hidden className="pl-2 text-muted-foreground sm:pl-[8.5rem]">…</li>;
-          const cited = l.passage != null;
-          const active = cited && l.passage === sel;
+          if ("gap" in l) return <li key={l.key} aria-hidden className="pl-2 text-muted-foreground sm:pl-[9.5rem]">…</li>;
+          const active = l.passage != null && l.passage === sel;
+          const g = l.segment ? gloss?.get(l.segment) : undefined;
+          const isFocus = l.segment != null && focused.has(l.segment);
           const row = (
             <>
-              <span className="w-20 shrink-0 font-medium" style={cited ? { color: SPEAKER_COLOR[l.speaker] } : undefined}>{speakerName(l.speaker)}</span>
-              <span className="tabular w-12 shrink-0 text-muted-foreground">{fmtTime(l.start)}</span>
-              <span lang="gsw" className="min-w-0 basis-full sm:basis-0 sm:flex-1">“<Underlined text={l.text} words={hits.filter((h) => h.segment_id === l.segment).map((h) => h.matched_text)} />”</span>
+              <span className="font-medium" style={l.cited ? { color: SPEAKER_COLOR[l.speaker] } : undefined}>{speakerLabel(l.speaker)}</span>
+              <span className="tabular text-muted-foreground">{fmtTime(l.start)}</span>
+              <span lang="gsw" className="min-w-0">“<Underlined text={l.text} words={hits.filter((h) => h.segment_id === l.segment).map((h) => h.matched_text)} />”</span>
+              {hasGloss && <span lang="de" className="min-w-0 font-normal text-muted-foreground">{g ? `“${g}”` : ""}</span>}
             </>
           );
+          const cls = cn("grid w-full grid-cols-[5.5rem_3rem_minmax(0,1fr)] gap-x-3 rounded-md px-2 py-1 text-left", cols,
+            isFocus && `jumped ring-1 ring-foreground/50`);
           return (
-            <li key={l.key}>
-              {cited ? (
-                <button type="button" onClick={() => setSel(l.passage!)} aria-pressed={active}
-                  title="Play this passage" className={cn("flex w-full flex-wrap gap-x-2 rounded-md px-2 py-0.5 text-left font-semibold transition-colors sm:flex-nowrap",
-                    active ? "bg-primary/12" : "hover:bg-muted")}>{row}</button>
+            <li key={`${l.key}-${isFocus ? focus?.n : 0}`} data-seg={l.segment ?? undefined}>
+              {l.passage != null ? (
+                <button type="button" onClick={() => setSel(l.passage!)} aria-pressed={active} title="Play this passage"
+                  className={cn(cls, "font-semibold transition-colors", active ? "bg-primary/12" : "hover:bg-muted")}>{row}</button>
               ) : (
-                <div className="flex flex-wrap gap-x-2 px-2 py-0.5 text-muted-foreground sm:flex-nowrap">{row}</div>
+                <div className={cn(cls, l.cited ? "font-semibold" : "text-muted-foreground")}>{row}</div>
               )}
             </li>
           );
         })}
       </ol>
-      {p && p.start_s != null && p.end_s != null && (
-        <WavePlayer key={`${sel}`} url={snippetUrl(callId, p.snippet_path)} start={p.start_s} end={p.end_s} waveform={waveform} mock={mock} />
+      {p && !noTimes && (
+        <WavePlayer key={`${sel}`} url={snippetUrl(callId, p.snippet_path)} start={p.start_s!} end={p.end_s!} waveform={waveform} mock={mock} />
+      )}
+      {noTimes && (
+        <p className="rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
+          No audio timestamps: this run used the reference transcripts. The 20-second passage player appears with the speech-recognition run.
+        </p>
       )}
     </div>
   );
@@ -140,20 +184,20 @@ function WavePlayer({ url, start, end, waveform, mock }: { url: string | null; s
             {bars.map((v, i) => {
               const pos = (i + 0.5) / BARS;
               const cited = pos >= at(start) && pos <= at(end);
-              const played = !unavailable && pos <= t / total;
-              return <span key={i} className={cn("flex-1 rounded-full", played ? "bg-foreground" : cited ? "bg-primary" : "bg-muted-foreground/35")}
+              const played = !unavailable && t > 0 && pos <= t / total;
+              return <span key={i} className={cn("flex-1 rounded-full", cited ? "bg-foreground" : played ? "bg-muted-foreground" : "bg-muted-foreground/35", cited && played && "opacity-60")}
                 style={{ height: `${Math.max(8, v * 100)}%` }} />;
             })}
           </div>
         ) : (
           <div className="relative h-1.5 rounded-full bg-muted" aria-hidden>
-            <div className="absolute inset-y-0 rounded-full bg-primary/50" style={{ left: `${at(start) * 100}%`, width: `${(at(end) - at(start)) * 100}%` }} />
+            <div className="absolute inset-y-0 rounded-full bg-foreground/50" style={{ left: `${at(start) * 100}%`, width: `${(at(end) - at(start)) * 100}%` }} />
             <div className="player-progress absolute inset-y-0 left-0 rounded-full bg-foreground" style={{ width: `${(t / total) * 100}%` }} />
           </div>
         )}
         <div className="tabular mt-1 flex justify-between gap-2 text-[11px] text-muted-foreground">
           <span>{fmtTime(off + t)}</span>
-          <span className="truncate">{unavailable && `${noAudio} · `}<span className="text-link">■</span> the cited words</span>
+          <span className="truncate">{unavailable && `${noAudio} · `}<span className="text-foreground">■</span> the cited words</span>
           <span>{fmtTime(off + total)}</span>
         </div>
       </div>

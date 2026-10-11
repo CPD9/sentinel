@@ -1,5 +1,5 @@
 "use client";
-// Sensitivity: one focal panel (the alarm threshold, every call as a dot on it, and what changes if you save), then the
+// Sensitivity: one focal panel (the alert line, every call as a dot on it, and what changes if you save), then the
 // test-set trade-off, then three one-line folds (advanced thresholds, suggestions from feedback, change log).
 // The unsaved draft is shared with the suggestions' Preview via SettingsDraftProvider; nothing is saved until "Save changes".
 import { AlertTriangle, ArrowRight, CheckCircle2, ChevronRight, Save } from "lucide-react";
@@ -61,8 +61,8 @@ export function Tuning() {
       {/* title row with the actions, always in the same place */}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">Sensitivity</h1>
-          <p className="text-sm text-muted-foreground">How strict Sentinel is. Drag, see which calls change, then save.</p>
+          <h2 className="sr-only">Threshold</h2>
+          <p className="text-sm text-muted-foreground">Drag the alert line, see which calls change, then save.</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           {patch && <span className="flex items-center gap-1.5 text-sm font-medium text-link"><span className="size-2 rounded-full bg-primary" aria-hidden />Unsaved changes</span>}
@@ -83,7 +83,7 @@ export function Tuning() {
       <section aria-labelledby="alarm-h" className="elevated grid gap-6 rounded-2xl p-5 lg:grid-cols-[minmax(0,36rem)_minmax(0,1fr)] lg:gap-8">
         <div className="min-w-0 space-y-3">
           <div className="flex items-baseline justify-between gap-4">
-            <h2 id="alarm-h" className="flex items-center gap-1 text-base font-semibold"><label htmlFor="th-alarm">Alarm threshold</label><InfoTip term="alarm_threshold" /></h2>
+            <h2 id="alarm-h" className="flex items-center gap-1 text-base font-semibold"><label htmlFor="th-alarm">Alert line</label><InfoTip term="alarm_threshold" /></h2>
             <p className="tabular text-3xl font-semibold tracking-tight">{pct(draft.alarm)}<span className={cn("ml-2 text-xs font-normal", patch?.thresholds?.alarm != null ? "text-link" : "text-muted-foreground")}>saved {pct(saved.data.alarm)}</span></p>
           </div>
           {calls.status === "loading" && !calls.data ? <SkeletonBlock rows={1} /> : (
@@ -99,16 +99,16 @@ export function Tuning() {
       <section aria-labelledby="tradeoff-h" className="surface-tint space-y-2 rounded-2xl p-5">
         <h3 id="tradeoff-h" className="text-sm font-semibold">How strictness trades off on the test set</h3>
         <p className="flex flex-wrap items-center gap-x-1 text-xs text-muted-foreground">
-          Precision<InfoTip term="precision" /> and recall<InfoTip term="recall" /> at every alarm threshold
+          Precision<InfoTip term="precision" /> and recall<InfoTip term="recall" /> at every alert line
           {report.data ? `, measured on ${report.data.overall.n} ${report.data.split} calls${report.data.is_mock ? " (MOCK curve)" : ""}` : ""}. The solid line is your draft.
         </p>
         {curve ? <CurveChart curve={curve} dragged={draft.alarm} />
           : report.status === "loading" ? <div className="skeleton h-24" /> : <p className="text-sm text-muted-foreground">No curve yet: it appears after the first evaluation run.</p>}
       </section>
 
-      <Fold title="Advanced" hint={`review threshold ${pct(draft.review)}, confidence gate ${pct(draft.confidence_gate)}`}>
+      <Fold title="Advanced" hint={`review line ${pct(draft.review)}, confidence gate ${pct(draft.confidence_gate)}`}>
         <div className="grid gap-6 md:grid-cols-2">
-          <SmallSlider k="review" term="review_threshold" title="Review threshold" help="From this risk up to the alarm threshold, a person decides." value={draft.review} saved={saved.data.review} onChange={(v) => set("review", v)} />
+          <SmallSlider k="review" term="review_threshold" title="Review line" help="From this risk up to the alert line, a person decides." value={draft.review} saved={saved.data.review} onChange={(v) => set("review", v)} />
           <SmallSlider k="confidence_gate" term="confidence_gate" title="Confidence gate" help="Below this confidence, a call with some risk always goes to a person." value={draft.confidence_gate} saved={saved.data.confidence_gate} onChange={(v) => set("confidence_gate", v)} />
         </div>
       </Fold>
@@ -137,8 +137,8 @@ function Impact({ calls, known, patch, sim }: { calls: CallListItem[]; known: Se
   const wBefore = drafting ? data!.workload.before.flagged_per_100 : share(base);
   const wAfter = drafting ? data!.workload.after.flagged_per_100 : wBefore;
   const items: { key: string; label: string; before: number; after: number; tone: string; unit?: string }[] = [
-    { key: "alarm", label: "Alarms", before: before.alarm, after: after.alarm, tone: "text-alarm" },
-    { key: "review", label: "To review", before: before.review, after: after.review, tone: "text-review" },
+    { key: "alarm", label: "Alert", before: before.alarm, after: after.alarm, tone: "text-alarm" },
+    { key: "review", label: "Review", before: before.review, after: after.review, tone: "text-review" },
     { key: "no_alert", label: "No alert", before: before.no_alert, after: after.no_alert, tone: "" },
     { key: "workload", label: "Need a person", before: Math.round(wBefore), after: wAfter, tone: "", unit: " %" },
   ];

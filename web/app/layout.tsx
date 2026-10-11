@@ -18,7 +18,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
           <TopNav />
-          <main className="mx-auto max-w-[1400px] px-4 py-6">{children}</main>
+          <main className="mx-auto max-w-[1600px] px-4 pb-10 pt-4 sm:px-6">{children}</main>
         </ThemeProvider>
       </body>
     </html>

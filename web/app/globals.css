@@ -2,21 +2,21 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* Calm, high-contrast. Colour carries meaning: red/amber/grey = decision, violet = interactive,
-   criterion and speaker colours = categories. Inspired by uxpeak (dark) and Proton (light). */
+/* Design tokens. Calm, precise, data first (after Nik's dark v2, design 04). Colour carries meaning only:
+   red / amber / grey = decision, criterion and speaker colours = categories. The interactive accent is "ink":
+   near-white on dark, graphite on light. No violet anywhere. Dark is the default (projector + Nik's look). */
 :root {
-  /* Light theme: calm, faintly violet-tinted (after Proton's light list section). */
-  --background: #f7f6fb;
-  --foreground: #1a1530;
+  /* Light theme (toggle). */
+  --background: #f5f5f3;
+  --foreground: #16181d;
   --card: #ffffff;
-  --muted: #efedf6;
-  --muted-foreground: #5b5870;
-  --border: #e2dfec;
-  --ring: #6d4aff;
-  /* Violet = "you can click this". Never used for a decision. */
-  --primary: #6d4aff;
+  --muted: #ebebe8;
+  --muted-foreground: #565b64;
+  --border: #dcdcd7;
+  --ring: #1d4ed8;
+  --primary: #1c232c;           /* ink: primary buttons, selection, active nav */
   --primary-foreground: #ffffff;
-  --link: #5b3ae6;
+  --link: #1c232c;
 
   --alarm: #b3261e;      --alarm-bg: #fbe4e2;
   --review: #8a5a00;     --review-bg: #fcefc9;
@@ -26,10 +26,9 @@
 
   --advisor: #1f4fd8;
   --customer: #b45309;
-  --unknown: #6b7280;
+  --unknown: #5f6672;
 
-  /* Okabe–Ito based criterion palette (colour-blind safe). control_evasion moved off purple to cyan,
-     so no criterion can be confused with the violet accent. */
+  /* Okabe–Ito based criterion palette (colour-blind safe). */
   --c-insider_trading: #0072b2;
   --c-credential_sharing: #d55e00;
   --c-third_party_disclosure: #009e73;
@@ -38,39 +37,48 @@
   --c-payment_card_data: #b88a00;
   --c-other: #6b7280;
 
-  --tint: #eeebf6;
+  --tint: #ecece9;
   --gauge-review: #d68f0e;
   --gauge-alarm: #d33a2c;
-  --shadow-card: 0 1px 2px rgba(26, 21, 48, 0.06), 0 12px 32px -16px rgba(26, 21, 48, 0.22);
+  --shadow-card: 0 1px 2px rgba(22, 24, 29, 0.06), 0 12px 32px -16px rgba(22, 24, 29, 0.2);
 
   --lane-bg: #ffffff;
-  --grid: #e6e3ee;
-  --axis: #5b5870;
-  --trace: #1a1530;
+  --grid: #e4e4e0;
+  --axis: #565b64;
+  --trace: #16181d;
+
+  /* Radius, motion. Spacing follows Tailwind's 4 px scale; type scale lives in @theme below. */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-panel: 20px;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --dur-fast: 140ms;
+  --dur-base: 220ms;
+  --dur-slow: 420ms;
 }
 
 .dark {
-  /* Dark theme (default): near-black with a violet tint, after uxpeak. */
-  --background: #0b0a10;
-  --foreground: #f5f5f7;
-  --card: #16141e;
-  --muted: #221f2d;
-  --muted-foreground: #8a8f98;
-  --border: #2a2736;
-  --ring: #a78bfa;
-  --primary: #7c3aed;
-  --primary-foreground: #ffffff;
-  --link: #a78bfa;
+  /* Dark theme (default): neutral near-black panels as in Nik's design 04. */
+  --background: #111111;
+  --foreground: #f2f2f2;
+  --card: #1e1e1e;
+  --muted: #2a2a2a;
+  --muted-foreground: #a6a6a6;
+  --border: #323232;
+  --ring: #8ab4ff;
+  --primary: #f2f2f2;           /* ink on dark = near-white (Nik's white pill buttons) */
+  --primary-foreground: #111111;
+  --link: #f2f2f2;
 
-  --alarm: #ff8a80;      --alarm-bg: #3d1a18;
-  --review: #f5c451;     --review-bg: #3a2c08;
-  --noalert: #aab0bc;    --noalert-bg: #262a33;
+  --alarm: #ff7f73;      --alarm-bg: #3a1a17;
+  --review: #f4c04f;     --review-bg: #352a0c;
+  --noalert: #b3b3b3;    --noalert-bg: #2a2a2a;
   --ok: #6fd19a;         --ok-bg: #12301f;
   --info: #8fb0ff;       --info-bg: #17254a;
 
-  --advisor: #7aa2ff;
+  --advisor: #8fb0ff;
   --customer: #f0a24b;
-  --unknown: #9aa1ae;
+  --unknown: #a6a6a6;
 
   --c-insider_trading: #4f9cf9;
   --c-credential_sharing: #ff8f40;
@@ -78,17 +86,17 @@
   --c-documentation_concealment: #e79ac4;
   --c-control_evasion: #5ee0f0;
   --c-payment_card_data: #e8bb2e;
-  --c-other: #9aa1ae;
+  --c-other: #a6a6a6;
 
-  --tint: #17151f;
-  --gauge-review: #f5c451;
-  --gauge-alarm: #ff8a80;
-  --shadow-card: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 0 0 1px rgba(255, 255, 255, 0.06), 0 16px 32px -20px rgba(0, 0, 0, 0.8);
+  --tint: #181818;
+  --gauge-review: #f4c04f;
+  --gauge-alarm: #ff7f73;
+  --shadow-card: 0 0 0 1px rgba(255, 255, 255, 0.04), 0 16px 32px -20px rgba(0, 0, 0, 0.8);
 
-  --lane-bg: #110f18;
-  --grid: #262330;
-  --axis: #8a8f98;
-  --trace: #f5f5f7;
+  --lane-bg: #161616;
+  --grid: #2b2b2b;
+  --axis: #a6a6a6;
+  --trace: #f2f2f2;
 }
 
 @theme inline {
@@ -117,9 +125,16 @@
   --color-advisor: var(--advisor);
   --color-customer: var(--customer);
   --color-unknown: var(--unknown);
+  /* Type scale (projector first): label 12 · body 15 · lead 18 · title 24 · headline 32 · display 44 */
+  --text-label: 0.75rem;   --text-label--line-height: 1rem;
+  --text-body: 0.9375rem;  --text-body--line-height: 1.5rem;
+  --text-lead: 1.125rem;   --text-lead--line-height: 1.6rem;
+  --text-title: 1.5rem;    --text-title--line-height: 2rem;
+  --text-headline: 2rem;   --text-headline--line-height: 2.4rem;
+  --text-display: 2.75rem; --text-display--line-height: 1;
 }
 
-html { color-scheme: light; accent-color: var(--primary); }  /* sliders + checkboxes in the violet accent */
+html { color-scheme: light; accent-color: var(--primary); }  /* sliders + checkboxes in the ink accent */
 html.dark { color-scheme: dark; }
 body { background: var(--background); color: var(--foreground); font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
 *:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
@@ -164,3 +179,15 @@ body { background: var(--background); color: var(--foreground); font-family: var
 .sens-range:focus-visible::-moz-range-thumb { outline: 2px solid var(--ring); outline-offset: 2px; }
 .call-dot { transition: background-color 200ms ease-out, border-color 200ms ease-out; }
 @media (prefers-reduced-motion: reduce) { .sens-range::-webkit-slider-thumb, .call-dot { transition: none; } }
+
+/* Section labels (Nik: small caps, tracked). */
+.eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-foreground); }
+
+/* Page mount: content rises in, staged by --i. No motion when the user asks for less. */
+.stage-in { animation: rise var(--dur-slow) var(--ease-out) both; animation-delay: calc(var(--i, 0) * 60ms); }
+@media (prefers-reduced-motion: reduce) { .stage-in { animation: none; } }
+
+/* A transcript line the officer jumped to: a short highlight pulse, then a steady mark. */
+@keyframes jump { from { background: color-mix(in srgb, var(--foreground) 22%, transparent); } }
+.jumped { animation: jump 900ms var(--ease-out) both; }
+@media (prefers-reduced-motion: reduce) { .jumped { animation: none; } }
