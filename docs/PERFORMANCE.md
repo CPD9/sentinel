@@ -27,7 +27,7 @@ bypassed, one file at a time; model load and one 10 s warm-up decode are timed s
 | files | all 62 case calls | 6-file sample spread over the length range |
 | mean audio length | 279 s (4.7 min) | 286 s |
 | **transcription time per file, mean** | **5.5 s** | **62.3 s** |
-| median / p90 / min / max | 5.1 / 10.3 / 2.8 / 11.3 s | 51.8 / 68.6 / 33.4 / 133.7 s |
+| median / p90 (nearest rank) / min / max | 5.1 / 10.3 / 2.8 / 11.3 s | 51.8 / 133.7 / 33.4 / 133.7 s (n = 6: p90 = the max) |
 | real-time factor (overall) | **0.020** | **0.218** |
 | model load (once) / warm-up | 1.9 s / 0.9 s | 2.7 s / 4.5 s |
 | GPU memory | +2.6 GB next to the running Apertus server | n/a |

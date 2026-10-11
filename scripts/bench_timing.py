@@ -62,7 +62,15 @@ def _load(p: Path | None) -> dict | None:
 def cmd_report(a) -> int:
     gpu, cpu, st = _load(a.gpu), _load(a.cpu), _load(a.stages)
     reh = [_load(p) for p in a.rehearsal or []]
-    gs, cs = gpu["summary"], cpu["summary"]
+    gs, cs = dict(gpu["summary"]), dict(cpu["summary"])
+    for summ, raw in ((gs, gpu), (cs, cpu)):        # recompute from the per-file rows (one percentile definition)
+        summ["decode_s"] = stats([r["decode_s"] for r in raw["files"]])
+        summ["audio_s"] = stats([r["duration_s"] for r in raw["files"]])
+        summ["rtf_per_file"] = stats([r["rtf"] for r in raw["files"]])
+    if st:
+        st = dict(st)
+        st["stages"] = {k: stats([c["stages"][k] for c in st["calls"] if k in c["stages"]]) for k in st["stages"]}
+        st["per_call_s"] = stats([c["elapsed_s"] for c in st["calls"] if c.get("elapsed_s") is not None])
     asr_gpu = {
         "device": f"{gs['device']}/{gs['compute_type']}", "gpu": a.gpu_name, "model": gs["model"],
         "files": gs["files"], "model_load_s": gs["model_load_s"], "warmup_s": gs["warmup_s"],
