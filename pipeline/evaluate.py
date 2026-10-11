@@ -257,6 +257,13 @@ def score_decisions(decisions: dict[str, str], eval_manifest: Path = EVAL_MANIFE
     return out
 
 
+def escalation_targets(call_ids: list[str], eval_manifest: Path = EVAL_MANIFEST) -> dict[str, bool]:
+    """Gold "needs escalation" (alarm or review) per call, for OFFLINE fitting on tuning data only
+    (scripts/learn_conditions.py, inside cross-validation folds). The pipeline never calls this at inference."""
+    labels = _call_labels(_load(eval_manifest))
+    return {c: labels[c]["label"] in FLAGGED for c in call_ids}
+
+
 def escalation_auc(scores: dict[str, float], n_resamples: int = 2000, seed: int = 20261011,
                    eval_manifest: Path = EVAL_MANIFEST) -> dict:
     """Threshold-free ranking quality of a per-call score for escalation (gold alarm/review vs no_alert): AUC overall
