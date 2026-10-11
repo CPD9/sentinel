@@ -12,6 +12,7 @@ import type { ConventionSet, QualityReport } from "@/lib/types";
 import { useAsync } from "@/lib/use-async";
 import { AblationChart, GroupBars, LatencyBars, METRICS, ReliabilityDiagram, WerChart, type MetricKey } from "./charts";
 import { Headline } from "./headline";
+import { kindOf } from "./kind";
 import { BigMetric, MetricBar } from "./metric";
 import { cn } from "@/lib/utils";
 import { DECISION_LABEL } from "@/lib/explain";
@@ -19,27 +20,20 @@ import { DECISION_LABEL } from "@/lib/explain";
 export function QualityView() {
   const list = useAsync(getQualityReports, "q-list");
   const [picked, setId] = useState<string | null>(null);
-  const id = picked ?? list.data?.[0]?.report_id ?? null;
+  // Open the UNSEEN report first: that is the honest headline; tuned-on numbers are optimistic by construction.
+  const reports = useAsync(async () => Promise.all((await getQualityReports()).map((x) => getQualityReport(x.report_id))), "q-all");
+  const unseenFirst = reports.data?.find((r) => kindOf(r).unseen)?.report_id;
+  const id = picked ?? unseenFirst ?? list.data?.[0]?.report_id ?? null;
   const report = useAsync(() => (id ? getQualityReport(id) : Promise.reject(new Error("none"))), `q:${id}`);
   useReportMock("quality", report.data);
 
-  const SPLIT_LABEL: Record<string, string> = { test: "Unseen calls (final test set)", holdout: "Unseen calls (holdout)", dev: "Tuned-on calls (dev)" };
   return (
     <div className="stage-in space-y-6">
       <div className="space-y-1">
         <h1 className="text-headline font-semibold tracking-tight">Quality</h1>
         <p className="text-body text-muted-foreground">How well the system finds fraud, on calls it has never seen. Three ways of counting are shown together, each with the range the true value likely lies in.</p>
       </div>
-      {list.data && list.data.length > 1 && (
-        <div role="group" aria-label="Which calls" className="flex flex-wrap gap-2">
-          {list.data.map((r) => (
-            <button key={r.report_id} type="button" aria-pressed={r.report_id === id} onClick={() => setId(r.report_id)} title={`${r.mode} transcripts · ${r.system} · ${fmtDateTime(r.created_at)}`}
-              className={cn("h-10 rounded-full border px-4 text-sm font-medium", r.report_id === id ? "border-primary bg-primary text-primary-foreground" : "border-foreground/50 hover:bg-muted")}>
-              {SPLIT_LABEL[r.split] ?? r.split} · {r.mode === "asr" ? "speech recognition" : "reference transcripts"}
-            </button>
-          ))}
-        </div>
-      )}
+      {reports.data && reports.data.length > 1 && <Compare reports={reports.data} active={id} onPick={setId} />}
       {list.status === "loading" && !list.data && <SkeletonBlock rows={6} />}
       {list.status === "error" && !list.data && <ErrorCard error={list.error} onRetry={list.reload} />}
       {list.data && list.data.length === 0 && (
@@ -61,8 +55,8 @@ function Report({ r }: { r: QualityReport }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2">
-        {r.split === "test" && <Pill><Lock className="size-3.5" aria-hidden />Final test set · locked</Pill>}
-        {r.split === "dev" && <Pill tone="review">Tuned on these calls: numbers are optimistic</Pill>}
+        {kindOf(r).unseen ? <Pill><Lock className="size-3.5" aria-hidden />Unseen: run once with the frozen settings</Pill>
+          : <Pill tone="review">Tuned on these calls ({kindOf(r).label}): numbers are optimistic</Pill>}
         <Pill tone={small ? "review" : undefined}>{r.overall.n} calls{small ? " · small sample, read the ranges" : ""}</Pill>
         <Pill>{r.mode === "asr" ? "speech-recognition transcripts" : "reference transcripts"}</Pill>
         {r.is_mock && <Pill tone="mock">Mock data</Pill>}
@@ -187,6 +181,29 @@ function StrictDetail({ cs }: { cs: ConventionSet }) {
       </div>
       <p className="text-xs text-muted-foreground">“Said no alert” here includes reviews: in the strict count only an alert counts as flagged.</p>
     </section>
+  );
+}
+
+/** Tuned-on vs unseen, side by side: the same two numbers for every report, each one a button that opens it. */
+function Compare({ reports, active, onPick }: { reports: QualityReport[]; active: string | null; onPick: (id: string) => void }) {
+  const sorted = [...reports].sort((a, b) => Number(kindOf(b).unseen) - Number(kindOf(a).unseen));
+  const p = (m: { value: number | null; ci_low: number | null; ci_high: number | null }) =>
+    m.value == null ? "n/a" : `${Math.round(m.value * 100)}%${m.ci_low != null ? ` (${Math.round(m.ci_low * 100)}–${Math.round(m.ci_high! * 100)})` : ""}`;
+  return (
+    <div role="group" aria-label="Reports" className="grid gap-3 md:grid-cols-3">
+      {sorted.map((r) => {
+        const k = kindOf(r), on = r.report_id === active, e = r.overall.escalation;
+        return (
+          <button key={r.report_id} type="button" aria-pressed={on} onClick={() => onPick(r.report_id)}
+            className={cn("rounded-2xl border p-4 text-left transition-colors", on ? "border-foreground bg-muted" : "border-border hover:bg-muted/60")}>
+            <p className={cn("text-sm font-semibold", k.unseen ? "" : "text-review")}>{k.unseen ? "Unseen" : "Tuned on"} · {k.label}</p>
+            <p className="text-xs text-muted-foreground">{r.overall.n} calls · {r.mode === "asr" ? "speech recognition" : "reference transcripts"}</p>
+            <p className="tabular mt-2 text-sm">Calls needing a person that were flagged: <b>{e.tp} of {e.tp + e.fn}</b> {p(e.recall)}</p>
+            <p className="tabular text-sm">Flagged calls that needed a person: <b>{p(e.precision)}</b></p>
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
