@@ -81,6 +81,14 @@ def _decision_source() -> str:
         return "rules"
 
 
+def _judge_mode() -> str:
+    """config/thresholds.json "judge_mode": "single" (one general verdict, default) or "multi" (one check per criterion)."""
+    try:
+        return json.loads((dec.CONFIG_DIR / "thresholds.json").read_text(encoding="utf-8")).get("judge_mode", "single")
+    except Exception:
+        return "single"
+
+
 def _escalate(trace: DecisionTrace, findings: list[Finding]) -> str:
     """no_alert -> review after a stage error. Rewrites the trace (decision, path) and regenerates the narrative and
     why-not texts from it, so trace, result and narrative never disagree. Returns the new narrative."""
@@ -201,11 +209,16 @@ def _run(audio_path, call_id, ev: _Events, P, mode, no_llm, config, do_trigger) 
 
     judged = None
     if not errors and not no_llm and _decision_source() == "direct_judge":     # --no-llm: never call the judge
-        judged, errs = ev.stage("judge", lambda: stages.run_judge(transcript))
+        judged, errs = ev.stage("judge", lambda: stages.run_judge(transcript, _judge_mode()))
         errors += errs
         if judged is not None:
             stages.apply_judge(trace, judged, config)
-            write_json_atomic(P["judge"] / f"{call_id}.json", judged.to_dict())
+            jd = judged.to_dict()
+            if getattr(judged, "checks", None):            # multi-check: every criterion's own answer, for the UI
+                jd["checks"] = [{"criterion": c.criterion, "decision": c.decision, "risk": c.risk, "reason": c.reason,
+                                 "citations": [x.__dict__ for x in c.citations]} for c in judged.checks]
+                jd["failed_checks"] = list(getattr(judged, "failed_checks", []))
+            write_json_atomic(P["judge"] / f"{call_id}.json", jd)
     findings = (stages.judge_findings(judged, transcript, trace) if judged is not None
                 else stages.build_findings(trace, transcript))
     audio_ok = mode == "asr" and transcript.duration_s is not None
