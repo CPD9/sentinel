@@ -111,9 +111,12 @@ def figure(body: dict) -> None:
     from make_figures import INK, JUDGE, MULTI, MUTED, save  # same style as the other result figures
 
     st = (body.get("pipeline_stages") or {}).get("stages", {})
+    reh = [r for r in body.get("rehearsal") or [] if r.get("pipeline_wall_s") and r.get("label", "").count("warm") == 0]
     rows = [("ASR (A40 GPU)", body["asr_gpu"]["decode_s_per_file"], JUDGE)]
     rows += [(k, st[k], MULTI) for k in STAGE_ORDER if k in st and k != "asr" and st[k].get("median", 0) >= 0.05]
-    fig, ax = plt.subplots(figsize=(7.2, 0.42 * len(rows) + 1.2))
+    fig, axes = plt.subplots(1, 2 if reh else 1, figsize=(11 if reh else 7.2, 0.42 * len(rows) + 1.4),
+                             gridspec_kw={"width_ratios": [1.5, 1]} if reh else None)
+    ax = axes[0] if reh else axes
     for i, (name, s, col) in enumerate(rows):
         ax.barh(i, s["median"], color=col, height=0.6)
         ax.plot([s["min"], s["p90"]], [i, i], color=INK, lw=1)
@@ -122,12 +125,28 @@ def figure(body: dict) -> None:
     ax.invert_yaxis()
     ax.set_xlabel("seconds per call (bar = median, line = min to p90)")
     pc = (body.get("pipeline_stages") or {}).get("per_call_s", {})
-    ax.set_title(f"Time per call by stage · {body['asr_gpu']['files']} calls ASR, "
-                 f"{(body.get('pipeline_stages') or {}).get('calls_n', 0)} calls pipeline"
-                 + (f" · median {pc['median']:.0f} s per call end to end" if pc else ""),
+    ax.set_title(f"Per call, one at a time · ASR: {body['asr_gpu']['files']} calls · pipeline: "
+                 f"{(body.get('pipeline_stages') or {}).get('calls_n', 0)} calls, median {pc.get('median', 0):.0f} s + ASR",
                  fontsize=9.5, color=MUTED, loc="left")
     ax.set_xlim(0, max(s["p90"] for _, s, _ in rows) * 1.45)
     ax.grid(axis="y", visible=False)
+    if reh:
+        bx = axes[1]
+        reh = sorted(reh, key=lambda r: r["workers"])
+        y = range(len(reh))
+        pod = [r["pod_asr"]["total_s"] / 60 if r.get("pod_asr") else 0 for r in reh]
+        pipe = [r["pipeline_wall_s"] / 60 for r in reh]
+        bx.barh(y, pod, color=JUDGE, height=0.6, label="Pod ASR (FLAC upload + GPU decode)")
+        bx.barh(y, pipe, left=pod, color=MULTI, height=0.6, label="pipeline on the laptop")
+        for i, (a_, b_) in enumerate(zip(pod, pipe)):
+            bx.text(a_ + b_ + 0.2, i, f"{a_ + b_:.1f} min", va="center", fontsize=8.5, color=INK)
+        bx.set_yticks(list(y), [f"{r['workers']} workers" for r in reh])
+        bx.invert_yaxis()
+        bx.set_xlabel(f"minutes for {reh[0]['files']} calls ({reh[0].get('audio_s_total', 0) / 60:.0f} min of audio)")
+        bx.set_title("End to end, new set of calls", fontsize=9.5, color=MUTED, loc="left")
+        bx.set_xlim(0, max(a_ + b_ for a_, b_ in zip(pod, pipe)) * 1.3)
+        bx.grid(axis="y", visible=False)
+        bx.legend(loc="upper center", bbox_to_anchor=(0.5, -0.16), ncol=2, fontsize=7.5, frameon=False)
     save(fig, "timing")
 
 

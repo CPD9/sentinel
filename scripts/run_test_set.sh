@@ -7,7 +7,7 @@
 # Given the organisers' packet folder (with 01_Audio/ and Auswahl.json), it takes the audio from 01_Audio and writes
 # their result files (export/Ergebnisse.csv, Ergebnisse.jsonl, Laufprotokoll.json; scripts/export_organiser.py).
 #
-#   --workers N   calls in parallel on the laptop (default 6, the fastest setting with 0 stage errors in the rehearsal)
+#   --workers N   calls in parallel on the laptop (default 8, the fastest of 4 / 6 / 8 with 0 stage errors, docs/PERFORMANCE.md)
 #   --labels F    {"<file name>": "alarm|review|no_alert"} or CSV file,label; read only after predictions exist
 #   --run-dir D   where everything goes (default ~/Developer/sentinel-runs/testset_<timestamp>)
 #   --wav         upload WAV instead of lossless FLAC     --cpu   skip the Pod, decode on the laptop CPU (slow)
@@ -16,7 +16,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SRC=${1:?usage: scripts/run_test_set.sh <audio_folder> [--workers N] [--labels F] [--run-dir D] [--wav] [--cpu]}
 shift
-WORKERS=6; LABELS=""; RUN=""; FMT=flac; CPU=0
+WORKERS=8; LABELS=""; RUN=""; FMT=flac; CPU=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --workers) WORKERS=$2; shift 2 ;;
