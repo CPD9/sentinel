@@ -17,12 +17,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ExcerptPlayer } from "@/components/inbox/excerpt-player";
 import { CRITERION_LABEL, criterionColor } from "@/lib/colors";
 import {
-  COMPONENT_WORDS, DECISION_LABEL, METHOD_LABEL, blockingFailure, concerns, factSentence, methods, officerWords, plainReason, score, speakerLabel, stripTemplate, topRule, unsureLine,
+  COMPONENT_WORDS, DECISION_LABEL, METHOD_LABEL, blockingFailure, isJudgePath, concerns, factSentence, methods, officerWords, plainReason, score, speakerLabel, stripTemplate, topRule, unsureLine,
 } from "@/lib/explain";
-import { getMethods } from "@/lib/data";
-import { fmtDateTime } from "@/lib/format";
+import { getJudge, getMethods, snippetUrl } from "@/lib/data";
+import { fmtDateTime, fmtTime } from "@/lib/format";
 
-import type { AnalysisArtifact, CallResult, Criterion, Decision, DecisionTrace, Fact, RuleResult, Thresholds, Transcript } from "@/lib/types";
+import type { AnalysisArtifact, CallResult, Criterion, Decision, DecisionTrace, Fact, JudgeVerdict, RuleResult, Thresholds, Transcript } from "@/lib/types";
 import { useAsync, type Loadable } from "@/lib/use-async";
 import { cn } from "@/lib/utils";
 import { ActionBar } from "./action-bar";
@@ -81,6 +81,8 @@ export function CallSummary({ meta, result, trace, analysis, transcript, thresho
   compact?: boolean;
 }) {
   const t = trace.data ?? null;
+  const judge = useAsync(() => getJudge(result.call_id), `judge:${result.call_id}`).data ?? null;
+  const judgePath = isJudgePath(t?.decision_path);
   const th = thresholds ?? t?.thresholds ?? null;
   const decision = result.decision;
   // A failed step is always shown, next to the evidence. It replaces the reason only when it decided the call
@@ -112,7 +114,7 @@ export function CallSummary({ meta, result, trace, analysis, transcript, thresho
     for (const f of t?.facts ?? []) if (f.gloss_de && f.segment_ids[0] && !m.has(f.segment_ids[0])) m.set(f.segment_ids[0], f.gloss_de);
     return m;
   }, [t]);
-  const factSegments = useMemo(() => leadFacts.slice(0, compact ? 3 : 6).flatMap((f) => f.segment_ids), [leadFacts, compact]);
+  const factSegments = useMemo(() => [...(judge?.citations ?? []).flatMap((c) => c.segment_ids), ...leadFacts.slice(0, compact ? 3 : 6).flatMap((f) => f.segment_ids)], [leadFacts, compact, judge]);
 
   const reason = t ? plainReason(t) : null;
   const heading = decision === "alarm" ? "Why this was flagged" : decision === "review" ? "Why a person must look" : "Why it was not flagged";
@@ -129,6 +131,14 @@ export function CallSummary({ meta, result, trace, analysis, transcript, thresho
             <p className="text-lead font-semibold">A processing step failed before the decision, so the call was not fully analysed. A person decides.</p>
           ) : trace.status === "loading" && !t ? <Skeleton className="h-14" /> : !t ? (
             <p className="text-lead font-semibold">{findings[0]?.reason ?? "No decision trace is available for this call."}</p>
+          ) : judgePath && judge ? (
+            <>
+              <p className="text-lead font-semibold leading-snug">
+                {judge.decision === "no_alert" ? "The AI judge found no violation." : `${CRITERION_LABEL[judge.criterion as Criterion] ?? judge.criterion}: the AI judge ${judge.decision === "alarm" ? "flags this call" : "asks a person to look"}.`}
+              </p>
+              <p lang="de" className="text-sm leading-relaxed">“{judge.reason}”</p>
+              {decision === "review" && <p className="text-sm font-medium text-review">{unsureLine(t!)}</p>}
+            </>
           ) : decision === "no_alert" ? (
             <>
               <p className="text-lead font-semibold leading-snug">
@@ -192,7 +202,8 @@ export function CallSummary({ meta, result, trace, analysis, transcript, thresho
       {(t || !broken) && (
         <div className="grid gap-x-10 gap-y-6 border-t border-border pt-5 lg:grid-cols-2">
           <section aria-labelledby="facts" className="space-y-3">
-            <Eyebrow id="facts">Evidence: what the AI found<InfoTip term="fact" /></Eyebrow>
+            {judge && <JudgeBlock judge={judge} result={result} transcript={transcript.data ?? null} onCite={cite} />}
+            <Eyebrow id="facts">{judge ? "Facts behind the rules (the why)" : "Evidence: what the AI found"}<InfoTip term="fact" /></Eyebrow>
             {trace.status === "loading" && !t ? <Skeleton className="h-24" /> : !t ? (
               <p className="text-sm text-muted-foreground">No decision trace, so the extracted facts are not available.</p>
             ) : leadFacts.length === 0 ? (
@@ -416,5 +427,39 @@ function MethodStrip({ callId, decision, compact }: { callId: string; decision: 
       </ol>
       <p className="text-[11px] text-muted-foreground">From the strategy comparison run on the same calls; the shipped decision is the hybrid (outlined).</p>
     </section>
+  );
+}
+
+/** The AI judge's verdict and the passages it cites: quote → segment → time → snippet. Citations it could not ground
+ *  in the transcript are marked, never hidden. */
+function JudgeBlock({ judge, result, transcript, onCite }: { judge: JudgeVerdict; result: CallResult; transcript: Transcript | null; onCite: (segs: string[]) => void }) {
+  const seg = new Map((transcript?.segments ?? []).map((x) => [x.id, x]));
+  const snippetOf = new Map<string, string>();
+  for (const f of result.findings) for (const e of f.evidence) if (e.snippet_path) for (const id of e.segment_ids) if (!snippetOf.has(id)) snippetOf.set(id, e.snippet_path);
+  const tone = judge.decision === "alarm" ? "text-alarm" : judge.decision === "review" ? "text-review" : "text-noalert";
+  return (
+    <div className="space-y-2 rounded-xl border border-border p-4">
+      <p className="eyebrow flex flex-wrap items-center gap-2">Evidence: what the AI judge cited
+        <span className={cn("normal-case tracking-normal", tone)}>· verdict {DECISION_LABEL[judge.decision]}{judge.risk > 0 ? `, risk ${score(judge.risk)}` : ""}</span></p>
+      {judge.citations.length === 0 ? <p className="text-sm text-muted-foreground">The judge cited no passage{judge.decision === "no_alert" ? " (nothing to flag)" : ""}.</p> : (
+        <ol className="space-y-1.5">
+          {judge.citations.map((c) => {
+            const s0 = c.segment_ids.map((i) => seg.get(i)).find(Boolean);
+            const sn = c.segment_ids.map((i) => snippetOf.get(i)).find(Boolean) ?? null;
+            const url = sn ? snippetUrl(result.call_id, sn) : null;
+            return (
+              <li key={c.fact_id} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-sm">
+                <button type="button" onClick={() => onCite(c.segment_ids)} className="min-w-0 flex-1 text-left hover:underline" title="Show this passage in the transcript">
+                  <span className="mr-1.5 text-xs font-semibold text-muted-foreground">{speakerLabel(c.speaker ?? s0?.speaker)}</span><span lang="de">“{c.quote}”</span>{!c.valid && <span className="ml-2 text-xs font-medium text-review">not found in the transcript</span>}
+                </button>
+                <span className="tabular font-mono text-[11px] text-muted-foreground">{c.segment_ids.join(", ")} · {s0?.start_s != null ? fmtTime(s0.start_s) : "–"}</span>
+                {url && <a href={url} className="text-xs underline underline-offset-2">passage ±10 s</a>}
+              </li>
+            );
+          })}
+        </ol>
+      )}
+      {judge.version && <p className="font-mono text-[11px] text-muted-foreground">{judge.version}</p>}
+    </div>
   );
 }

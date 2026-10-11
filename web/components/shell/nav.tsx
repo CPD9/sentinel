@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 
 // Nik's designs 05–07: three destinations. Settings holds Threshold | Keywords as tabs.
 const LINKS = [
-  { href: "/overview", label: "Overview", match: (p: string) => p.startsWith("/overview") || p.startsWith("/how-it-runs") },
+  { href: "/overview", label: "Overview", match: (p: string) => p.startsWith("/overview") || p.startsWith("/how-it-runs") || p.startsWith("/model-card") },
   { href: "/", label: "Alerts", match: (p: string) => p === "/" || p.startsWith("/calls") },
   { href: "/quality", label: "Quality", match: (p: string) => p.startsWith("/quality") },
   { href: "/settings/threshold", label: "Settings", match: (p: string) => p.startsWith("/settings") },

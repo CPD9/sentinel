@@ -6,8 +6,17 @@ import type { ConfidenceBreakdown, Criterion, Decision, DecisionTrace, Fact, Rul
 
 export const DECISION_LABEL: Record<Decision, string> = { alarm: "Alert", review: "Review", no_alert: "No alert" };
 
-/** Advisor / Customer when diarisation knows the role; otherwise just "Speaker" (we never invent a person). */
-export const speakerLabel = (s: Speaker) => (s === "advisor" ? "Advisor" : s === "customer" ? "Customer" : "Speaker");
+/** The ONE place speaker names are made (hook for ml/speakers): Advisor / Customer when the role is known; a diarisation
+ *  id ("spk_0", "speaker_1", "S1") becomes "Speaker 1, 2, …"; anything else is "Speaker". We never invent a person. */
+export const speakerLabel = (s: Speaker | string | null | undefined) => {
+  if (s === "advisor") return "Advisor";
+  if (s === "customer") return "Customer";
+  const v = String(s ?? "");
+  const zeroBased = /^(?:spk|speaker)[_-]?(\d+)$/i.exec(v)?.[1];          // pyannote style: SPEAKER_00, spk_0
+  if (zeroBased != null) return `Speaker ${Number(zeroBased) + 1}`;
+  const oneBased = /^s(\d+)$/i.exec(v)?.[1];                               // S1, S2
+  return oneBased != null ? `Speaker ${Number(oneBased)}` : "Speaker";
+};
 
 const ACT_VERB: Record<string, string> = {
   request: "asked for", disclose: "disclosed", warn: "warned about", refuse: "refused to give",
@@ -64,7 +73,10 @@ const PATH_UNSURE: Record<string, string> = {
   contradictory_evidence: "methods disagree",
   low_confidence: "confidence below the gate",
   review_band: "risk between the review and alert line",
+  judge_review: "the AI judge asks a person to look",
+  keyword_review: "keywords heard in several places (the judge found no criterion)",
 };
+export const isJudgePath = (p: string | null | undefined) => !!p && (p.startsWith("judge_") || p === "keyword_review");
 
 /** "Unsure: risk between the review and alert line · noisy audio" — why a Review is a Review. */
 export function unsureLine(t: DecisionTrace): string {

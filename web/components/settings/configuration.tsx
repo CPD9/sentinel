@@ -98,7 +98,10 @@ function Keywords() {
             <select aria-label="Family" value={fam} onChange={(e) => setFamily(e.target.value)} className="h-11 rounded-xl border border-border bg-background px-3 text-body">
               {Object.entries(draft.families).map(([k, f]) => <option key={k} value={k}>{familyLabel(k, f)}</option>)}
             </select>
-            <button type="button" onClick={add} className="inline-flex h-11 items-center rounded-full border border-foreground/60 px-6 font-semibold hover:bg-muted">Add</button>
+            <button type="button" onClick={add} disabled={!newWord.trim()} title={newWord.trim() ? undefined : "Type a word first"}
+              className="inline-flex h-11 items-center rounded-full border border-foreground/60 px-6 font-semibold hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40">
+              Add to {familyLabel(fam, draft.families[fam])}
+            </button>
           </div>
           <label className="flex flex-wrap items-center gap-3 pt-2 text-sm text-muted-foreground">Match strictness
             <input type="range" min={0.5} max={1} step={0.01} value={draft.fuzzy_threshold} onChange={(e) => mutate((d) => { d.fuzzy_threshold = +e.target.value; })} />
@@ -117,8 +120,9 @@ function Keywords() {
           : (
             <>
               <p className="text-lead">{changes.join(". ")}{changes.length ? " " : ""}
-                {preview.loading ? <span className="text-muted-foreground">…</span> : <>changes <b>{changed.length} call{changed.length === 1 ? "" : "s"}</b>.</>}
+                {preview.loading ? <span className="text-muted-foreground">…</span> : preview.data?.note ? <span className="text-muted-foreground">— its hit counts are updated on the left.</span> : <>changes <b>{changed.length} call{changed.length === 1 ? "" : "s"}</b>.</>}
               </p>
+              {preview.data?.note && <p className="text-sm text-review">{preview.data.note}</p>}
               {changed.length > 0 && (
                 <ul className="divide-y divide-border border-y border-border">
                   {changed.map((c, i) => (

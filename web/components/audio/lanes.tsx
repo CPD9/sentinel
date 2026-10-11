@@ -41,7 +41,8 @@ export function AudioLanes({ a, result, initialWindow }: { a: AnalysisArtifact; 
   const [optional, setOptional] = useState(false);
   const overlayRef = useRef<HTMLDivElement>(null);
 
-  const plotW = Math.max(0, outerW - LABEL_W - RIGHT_W);
+  // never wait forever on a narrow screen: once measured, draw at least at the lanes' minimum width (they scroll)
+  const plotW = outerW <= 0 ? 0 : Math.max(760 - LABEL_W - RIGHT_W, outerW - LABEL_W - RIGHT_W);
   const scale: Scale = { t0: view.t0, t1: view.t1, w: plotW };
   const span = view.t1 - view.t0;
 
@@ -107,6 +108,7 @@ export function AudioLanes({ a, result, initialWindow }: { a: AnalysisArtifact; 
   const ht = hover;
 
   if (plotW <= 0) return <div ref={outerRef} className="skeleton h-96" aria-busy="true" />;
+
 
   return (
     <div className="space-y-4">

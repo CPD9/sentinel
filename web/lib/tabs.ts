@@ -3,7 +3,7 @@
 export const CALL_TABS = [
   { value: "reasoning", label: "Reasoning" },
   { value: "audio", label: "Audio analysis" },
-  { value: "audit", label: "Audit" },
+  { value: "audit", label: "Audit record" },
 ] as const;
 export type TabValue = (typeof CALL_TABS)[number]["value"];
 export const isTab = (v: string | undefined): v is TabValue => CALL_TABS.some((t) => t.value === v);

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useCallback } from "react";
 import { CallAudioProvider, useCallAudio } from "./audio-context";
 import { CallHeader, CallSummary } from "./call-summary";
+import { CallCopilot } from "@/components/copilot/call-copilot";
 import { AuditTab } from "./tabs/audit-tab";
 import { AudioTab } from "./tabs/audio-tab";
 import { ReasoningTab } from "./tabs/reasoning-tab";
@@ -105,6 +106,9 @@ function Body({ result, tab, sel }: { result: CallResult; tab: TabValue; sel: { 
         <TranscriptTab result={result} trace={trace} transcript={transcript} focusSeg={sel.seg} />
       </section>
 
+      {/* copilot slot (web/copilot): renders nothing until that PR lands */}
+      <CallCopilot callId={id} result={result} trace={trace.data ?? null} transcript={transcript.data ?? null} onCite={onCite} />
+
       <section aria-labelledby="details-h" className="space-y-3 pt-2">
         <div>
           <h2 id="details-h" className="text-title font-semibold tracking-tight">Details</h2>
@@ -123,7 +127,7 @@ function Body({ result, tab, sel }: { result: CallResult; tab: TabValue; sel: { 
             ))}
           </ul>
         </nav>
-        <section aria-label={tab}>
+        <section aria-label={tab} className="overflow-x-auto">
           {tab === "reasoning" && <ReasoningTab result={result} trace={trace} />}
           {tab === "audio" && <AudioTab result={result} analysis={analysis} selectedWindow={sel.win} />}
           {tab === "audit" && <AuditTab result={result} trace={trace} analysis={analysis} transcript={transcript} />}

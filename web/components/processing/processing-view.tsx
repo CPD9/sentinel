@@ -7,7 +7,9 @@ import { useEffect, useMemo, useReducer, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { DecisionBadge } from "@/components/shell/badges";
 import { EmptyState } from "@/components/shell/states";
-import { getAnalysis, getCall, getTrace, getTranscript, isFixtures, isLocalRun, subscribeCallEvents, type StreamStatus } from "@/lib/data";
+import { useRouter } from "next/navigation";
+import { UploadButton, useWavUpload } from "@/components/inbox/upload";
+import { getAnalysis, getCall, getTrace, getTranscript, isFixtures, isLocalRun, isUploadedCall, liveUpload, subscribeCallEvents, type StreamStatus } from "@/lib/data";
 import { CRITERION_LABEL } from "@/lib/colors";
 import { DECISION_LABEL, TEMPLATE_PREFIX } from "@/lib/explain";
 import { useAsync } from "@/lib/use-async";
@@ -17,9 +19,9 @@ import { STAGES } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 type StageState = { state: "waiting" | "running" | "done" | "failed"; elapsed?: number | null; cached?: boolean | null; message?: string | null; startedAt?: number };
-interface Model { stages: Record<string, StageState>; log: ProcessingEvent[]; decision: Decision | null; finished: boolean }
+interface Model { stages: Record<string, StageState>; log: ProcessingEvent[]; decision: Decision | null; finished: boolean; notices: string[] }
 
-const init = (): Model => ({ stages: Object.fromEntries(STAGES.map((s) => [s, { state: "waiting" as const }])), log: [], decision: null, finished: false });
+const init = (): Model => ({ stages: Object.fromEntries(STAGES.map((s) => [s, { state: "waiting" as const }])), log: [], decision: null, finished: false, notices: [] });
 
 function reduce(m: Model, e: ProcessingEvent | "reset"): Model {
   if (e === "reset") return init();
@@ -32,6 +34,7 @@ function reduce(m: Model, e: ProcessingEvent | "reset"): Model {
     if (e.event === "stage_failed") next.stages[e.stage] = { ...prev, state: "failed", elapsed: e.elapsed_s, message: e.message };
   }
   if (e.event === "job_finished") { next.finished = true; next.decision = e.decision; }
+  if (e.event === "notice" && e.message) next.notices = [...m.notices, e.message];
   return next;
 }
 
@@ -69,7 +72,17 @@ export function ProcessingView({ callId, inline = false, onFinished }: { callId:
     return { result: call?.kind === "result" ? call.data : null, trace, transcript, analysis };
   }, `proc-docs:${callId}:${m.finished}`);
   const produced = useMemo(() => producedBy(docs.data ?? null), [docs.data]);
-  const shown = STAGES.filter((st) => st !== "upload" && st !== "analysis");
+  const live = isUploadedCall(callId);
+  // the pipeline's real order: the audio check runs first, before speech to text; the AI judge right after decide
+  const shown: Stage[] = [...(live ? ["analysis" as Stage] : []), ...STAGES.filter((st) => st !== "upload" && st !== "analysis" && st !== "judge")
+    .flatMap((st) => (st === "decide" ? [st, "judge" as Stage] : [st]))];
+  // a live upload opens its call page by itself once the decision is in
+  const router = useRouter();
+  useEffect(() => {
+    if (!live || !m.finished || inline) return;
+    const t = setTimeout(() => router.push(`/calls/${callId}`), 1800);
+    return () => clearTimeout(t);
+  }, [live, m.finished, inline, router, callId]);
 
   return (
     <div className="stage-in space-y-5">
@@ -78,12 +91,15 @@ export function ProcessingView({ callId, inline = false, onFinished }: { callId:
           <Link href={`/calls/${callId}`} className="text-sm text-muted-foreground hover:text-foreground">← Call {callId}</Link>
           <h1 className="text-headline font-semibold tracking-tight">How <span className="font-mono">{callId}</span> was processed</h1>
           <p className="text-body text-muted-foreground">
-            {isLocalRun ? "Replay of the recorded run: each step with what it produced. Times appear only where the run recorded them; this is not live."
+            {live ? "Live: this uploaded call is being transcribed and checked right now, on our own servers (about a minute). The call opens by itself when the decision is in."
+              : isLocalRun ? "Replay of the recorded run: each step with what it produced. Times appear only where the run recorded them; this is not live."
               : isFixtures ? "MOCK replay from fixtures." : "Live steps from the pipeline. A failed step never ends as “no alert”: the call goes to review."}
           </p>
         </div>
       )}
 
+      {!live && !inline && liveUpload && <LiveUploadButton />}
+      {m.notices.map((n, i) => <p key={i} role="alert" className="rounded-xl border border-review bg-review-bg px-4 py-3 text-sm font-medium text-review">{n}</p>)}
       {status === "reconnecting" && <div role="status" className="rounded-md border border-review bg-review-bg px-3 py-2 text-sm text-review">Reconnecting…</div>}
       {status === "failed" && (
         <div role="alert" className="flex items-center justify-between gap-3 rounded-md border border-alarm bg-alarm-bg px-3 py-2 text-sm text-alarm">
@@ -141,9 +157,21 @@ export function ProcessingView({ callId, inline = false, onFinished }: { callId:
   );
 }
 
+/** "Upload a call live": the real pipeline on a .wav from this machine (local-run fallback, one at a time). */
+function LiveUploadButton() {
+  const upload = useWavUpload(() => {});
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <UploadButton upload={upload} label="Upload a call live" />
+      <span className="text-xs text-muted-foreground">or keep the recorded replay below</span>
+    </div>
+  );
+}
+
 const STAGE_LABEL: Partial<Record<Stage, string>> = {
+  analysis: "Audio check",
   asr: "Speech to text", diarize: "Who is speaking", keywords: "Keywords", extract: "AI facts", validate: "Evidence check",
-  rules: "Rules", confidence: "Confidence", decide: "Decision", narrate: "Explanation", snippets: "Audio passages", trigger: "Report",
+  rules: "Rules", confidence: "Confidence", decide: "Decision", judge: "AI judge", narrate: "Explanation", snippets: "Audio passages", trigger: "Report",
 };
 
 type Docs = { result: CallResult | null; trace: DecisionTrace | null; transcript: Transcript | null; analysis: AnalysisArtifact | null } | null;
@@ -168,6 +196,9 @@ function producedBy(d: Docs): Partial<Record<Stage, string>> {
     out.rules = fired.length ? fired.map((r) => `${CRITERION_LABEL[r.criterion] ?? r.criterion} fired (${Math.round(r.risk * 100)})`).join(", ") : `no rule fired (highest ${Math.round(Math.max(0, ...trace.rules.map((r) => r.risk)) * 100)})`;
     out.confidence = trace.confidence_breakdown ? `${Math.round(trace.confidence_breakdown.value * 100)} vs gate ${Math.round(trace.confidence_breakdown.gate * 100)}` : "not computed";
     out.decide = `${DECISION_LABEL[trace.decision]} (${trace.decision_path.replaceAll("_", " ")})`;
+    const verdict: Record<string, string> = { judge_alarm: "verdict: Alert", judge_review: "verdict: Review", judge_no_alert: "verdict: No alert",
+      keyword_review: "verdict: No alert (keywords in several passages sent it to Review)" };
+    if (verdict[trace.decision_path]) out.judge = verdict[trace.decision_path];
   }
   if (result) {
     out.narrate = result.narrative.startsWith(TEMPLATE_PREFIX) ? "template text (no LLM narrative in this run)" : "written after the decision was locked";
