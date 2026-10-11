@@ -64,7 +64,9 @@ const PATH_UNSURE: Record<string, string> = {
   contradictory_evidence: "methods disagree",
   low_confidence: "confidence below the gate",
   review_band: "risk between the review and alert line",
+  judge_review: "the AI judge asks a person to look",
 };
+export const isJudgePath = (p: string | null | undefined) => !!p && p.startsWith("judge_");
 
 /** "Unsure: risk between the review and alert line · noisy audio" — why a Review is a Review. */
 export function unsureLine(t: DecisionTrace): string {

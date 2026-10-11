@@ -226,6 +226,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ path: string[] 
   }
   if (b === "events") return new Response(null, { status: 204 });
   if (b === "strategies") return strategies(id);
+  if (b === "judge") { const f = path.join(RUN, "judge", `${id}.json`); return existsSync(f) ? json(readJson(f)) : err(404, "not_available", "No AI judge verdict for this call in this run."); }
   return err(404, "not_found", `No route /${p.join("/")}`);
 }
 

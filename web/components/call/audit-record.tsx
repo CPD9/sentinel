@@ -6,7 +6,7 @@
 //   confidence breakdown · run, models, revisions, prompt, rules, thresholds · integrity checks · stage errors
 import { Printer } from "lucide-react";
 import { CRITERION_LABEL } from "@/lib/colors";
-import { getFeedback, getRunInfo, snippetUrl } from "@/lib/data";
+import { getFeedback, getJudge, getRunInfo, snippetUrl } from "@/lib/data";
 import { COMPONENT_WORDS, DECISION_LABEL, actLabel, infoLabel, score, speakerLabel } from "@/lib/explain";
 import { fmtDateTime, fmtRange } from "@/lib/format";
 import type { CallResult, DecisionTrace, Fact, Transcript } from "@/lib/types";
@@ -20,6 +20,9 @@ const PATH_TEXT: Record<string, string> = {
   alarm: "Step 2: a fired rule with verified facts at or above the alert line",
   review_band: "Step 3: risk between the review line and the alert line",
   no_alert: "Step 4: no rule reached the review line",
+  judge_alarm: "AI judge: its verdict decides (alert, with at least one cited passage); facts and rules stay as the why",
+  judge_review: "AI judge: its verdict decides (review: a person looks); facts and rules stay as the why",
+  judge_no_alert: "AI judge: its verdict decides (no violation found); facts and rules stay as the why",
 };
 
 /** "apertus-8b@/…/snapshots/a411d83…" → { name: "apertus-8b", rev: "a411d838600b" }. */
@@ -34,6 +37,7 @@ function splitVersion(v: string | null | undefined): { name: string; rev: string
 export function AuditRecord({ result, trace, transcript }: { result: CallResult; trace: DecisionTrace | null; transcript: Transcript | null }) {
   const run = useAsync(getRunInfo, "run-info");
   const fb = useAsync(getFeedback, "feedback");
+  const judge = useAsync(() => getJudge(result.call_id), `judge:${result.call_id}`).data ?? null;
   const verdict = fb.data?.find((e) => e.call_id === result.call_id) ?? null;
   const seg = new Map((transcript?.segments ?? []).map((s) => [s.id, s]));
   const facts = new Map((trace?.facts ?? []).map((f) => [f.fact_id, f]));
@@ -81,6 +85,36 @@ export function AuditRecord({ result, trace, transcript }: { result: CallResult;
           ["Officer verdict", verdict ? `${verdict.verdict.replace("_", " ")} · ${fmtDateTime(verdict.ts)}${verdict.note ? ` · “${verdict.note}”` : ""}` : "none recorded"],
         ]} />
       </Section>
+
+      {judge && (
+        <Section title="1b · AI judge">
+          <Rows rows={[
+            ["Verdict", `${DECISION_LABEL[judge.decision]} · ${CRITERION_LABEL[judge.criterion as keyof typeof CRITERION_LABEL] ?? judge.criterion} · risk ${score(judge.risk)}`],
+            ["Reason (as written by the judge)", judge.reason],
+            ["Judge version", judge.version ?? "not recorded"],
+          ]} />
+          {judge.citations.length > 0 && (
+            <table className="w-full text-sm">
+              <thead className="text-left text-xs text-muted-foreground"><tr><th className="py-1 pr-3 font-medium">Citation</th><th className="py-1 pr-3 font-medium">Quote</th><th className="py-1 pr-3 font-medium">Segment</th><th className="py-1 pr-3 font-medium">Time</th><th className="py-1 font-medium">Snippet</th></tr></thead>
+              <tbody className="divide-y divide-border align-top">
+                {judge.citations.map((c) => {
+                  const sn = c.segment_ids.map((x) => snippetOf.get(x)).find(Boolean) ?? null;
+                  const url = sn ? snippetUrl(result.call_id, sn) : null;
+                  return (
+                    <tr key={c.fact_id}>
+                      <td className="py-1.5 pr-3 font-mono text-xs">{c.fact_id}{!c.valid && " (not grounded)"}</td>
+                      <td className="py-1.5 pr-3" lang="de">“{c.quote}”</td>
+                      <td className="py-1.5 pr-3 font-mono text-xs">{c.segment_ids.join(", ")}</td>
+                      <td className="tabular py-1.5 pr-3 text-xs">{ts(c.segment_ids)}</td>
+                      <td className="py-1.5 font-mono text-xs">{sn ? (url ? <a href={url} className="underline underline-offset-2">{sn.split("/").pop()}</a> : sn.split("/").pop()) : "not cut"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </Section>
+      )}
 
       <Section title="2 · Rules, facts and evidence">
         {!trace ? <p className="text-sm text-muted-foreground">No decision trace for this call, so the rule inputs are not recorded.</p>

@@ -8,7 +8,7 @@ import { approxSimulate, patchComponents, samePatch, type WhatifCalls } from "./
 import type {
   AnalysisArtifact, ApiErrorBody, ApplyResponse, AuditEntry, CallListItem, CallResult, DecisionTrace, FeedbackEntry,
   Decision, KeywordsConfig, Patch, PreviewRequest, PreviewResponse, ProcessingEvent, QualityReport, QualityReportSummary,
-  MethodsResponse, QualityEvidence, ReportResponse, Stage, RerunResponse, RulesConfig, SimulationResult, SuggestionsResponse, Thresholds, Transcript, Verdict,
+  JudgeVerdict, MethodsResponse, QualityEvidence, ReportResponse, Stage, RerunResponse, RulesConfig, SimulationResult, SuggestionsResponse, Thresholds, Transcript, Verdict,
 } from "./types";
 import { CRITERIA, EVENT_TYPES, verdictAllowed } from "./types";
 
@@ -373,6 +373,13 @@ const notBuilt = (what: string, route: string) => new ApiError(404, "not_availab
 export async function getQualityEvidence(): Promise<QualityEvidence | null> {
   if (isFixtures) return null;
   try { return (await getJson<QualityEvidence>(api("/evidence/quality"))).data; }
+  catch (e) { if (e instanceof ApiError && (e.status === 404 || e.status === 405)) return null; throw e; }
+}
+
+/** The AI judge's verdict and citations for one call; null when the run has no judge file for it. */
+export async function getJudge(id: string): Promise<JudgeVerdict | null> {
+  if (isFixtures) return null;
+  try { return (await getJson<JudgeVerdict>(api(`/calls/${encodeURIComponent(id)}/judge`))).data; }
   catch (e) { if (e instanceof ApiError && (e.status === 404 || e.status === 405)) return null; throw e; }
 }
 

@@ -29,7 +29,7 @@ export const CRITERION_BY_FAMILY: Record<string, Criterion> = {
 
 export const STAGES = [
   "upload", "asr", "diarize", "keywords", "extract", "validate", "rules",
-  "confidence", "decide", "narrate", "snippets", "analysis", "trigger",
+  "confidence", "decide", "narrate", "snippets", "analysis", "trigger", "judge",
 ] as const;
 export type Stage = (typeof STAGES)[number];
 
@@ -95,7 +95,9 @@ export type InfoType = "credentials" | "nonpublic_info" | "client_data" | "other
 export const CONFIDENCE_COMPONENTS = ["asr", "threshold_proximity", "conflicts", "missing_evidence", "audio_quality"] as const;
 export type DecisionPath =
   | "stage_error" | "missing_evidence" | "contradictory_evidence" | "low_confidence"
-  | "alarm" | "review_band" | "no_alert";
+  | "alarm" | "review_band" | "no_alert"
+  // decision_source "direct_judge": the AI judge's verdict decides; facts and rules stay as the why (pipeline/schemas.py)
+  | "judge_alarm" | "judge_review" | "judge_no_alert";
 export interface Fact {
   fact_id: string;
   speaker: Speaker;
@@ -214,6 +216,9 @@ export interface QualityEvidence {
   strategies: { tuning_set: string | null; rows: { id: string; strategy: string | null; description: string | null; n: number | null; esc_f1: number | null; ci: [number, number] | null }[] } | null;
   auc: { value: number; run_id: string | null; note: string } | null;
 }
+
+// ---- The AI judge's verdict on one call (<run>/judge/<call_id>.json): its citations are Fact-shaped, ids j001…
+export interface JudgeVerdict { decision: Decision; criterion: string; risk: number; reason: string; citations: Fact[]; version: string | null }
 
 // ---- How each detection method decided (strategy comparison run, scripts/strategy_lab.py)
 export interface MethodDecision { id: string; decision: Decision | null; risk: number | null; reason: string | null; criteria: string[]; error: boolean }
