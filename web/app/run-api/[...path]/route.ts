@@ -134,6 +134,28 @@ function strategies(id: string): Response {
   return json({ call_id: id, run: "strategy_lab_t4", default: defaults?.default ?? null, top3: defaults?.top3?.map((t) => t.id) ?? [], methods });
 }
 
+// ---- evidence behind the Quality page: 3-fold CV per fix step with the flag-all baseline (artifacts/metrics/crossval.json),
+// the strategy comparison on reference transcripts (artifacts/bench/strategy_lab_t4/summary.json), and the risk-score AUC
+// stated in the final report's notes. Metrics only; no labels and no per-call gold leave the files.
+function qualityEvidence() {
+  type Fold = { esc_f1?: number };
+  type Row = { label: string; folds?: Record<string, Fold>; cv_mean?: number; cv_min?: number; cv_max?: number; all62_in_sample?: { esc_f1?: number }; flag_all_baseline?: Record<string, number> };
+  const cv = readJson<{ rows?: Row[] }>(path.join(ART, "metrics", "crossval.json"));
+  type Strat = { strategy?: string; description?: string; n?: number; esc_f1?: number; ci95?: { esc_f1?: [number, number] } };
+  const lab = readJson<{ tuning_set?: string; strategies?: Record<string, Strat> }>(path.join(ART, "bench", "strategy_lab_t4", "summary.json"));
+  const fin = readJson<{ notes?: string[]; run_id?: string }>(path.join(ART, "quality", "final_report.json"));
+  const aucNote = (fin?.notes ?? []).find((n) => /AUC/i.test(n)) ?? null;
+  const auc = aucNote ? Number(/AUC[^0-9]*([0-9]+\.[0-9]+)/i.exec(aucNote)?.[1] ?? NaN) : NaN;
+  return {
+    crossval: (cv?.rows ?? []).map((r) => ({
+      label: r.label, folds: Object.fromEntries(Object.entries(r.folds ?? {}).map(([k, v]) => [k, v.esc_f1 ?? null])),
+      cv_mean: r.cv_mean ?? null, cv_min: r.cv_min ?? null, cv_max: r.cv_max ?? null, all62: r.all62_in_sample?.esc_f1 ?? null, flag_all: r.flag_all_baseline ?? null,
+    })),
+    strategies: lab ? { tuning_set: lab.tuning_set ?? null, rows: Object.entries(lab.strategies ?? {}).map(([sid, v]) => ({ id: sid, strategy: v.strategy ?? null, description: v.description ?? null, n: v.n ?? null, esc_f1: v.esc_f1 ?? null, ci: v.ci95?.esc_f1 ?? null })) } : null,
+    auc: Number.isFinite(auc) ? { value: auc, run_id: fin?.run_id ?? null, note: aucNote } : null,
+  };
+}
+
 // ---- feedback in memory (this server only)
 const feedback = new Map<string, Record<string, unknown>>();
 const VERDICTS = ["false_alarm", "missed", "correct", "escalate"];
@@ -155,6 +177,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ path: string[] 
     const k = readJson(path.join(REPO, "config", "keywords.json"));
     return k ? json(k) : err(404, "not_available", "keywords.json not found");
   }
+  if (a === "evidence" && id === "quality") return json(qualityEvidence());
   if (a === "quality") {
     const dir = path.join(ART, "quality");
     type Rep = { report_id?: string; run_id?: string; split?: string; mode?: string; system?: string; created_at?: string; is_mock?: boolean };

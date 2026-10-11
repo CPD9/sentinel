@@ -204,6 +204,17 @@ export interface CallListItem {
   decision_path?: DecisionPath | null;  // why the decision came out this way (from the trace); docs/API.md GET /calls
   reason?: string | null;               // the top finding's reason, one line
 }
+// ---- Evidence behind the Quality page (local-run fallback: GET /evidence/quality)
+export interface CrossvalRow {
+  label: string; folds: Record<string, number | null>; cv_mean: number | null; cv_min: number | null; cv_max: number | null;
+  all62: number | null; flag_all: Record<string, number> | null;
+}
+export interface QualityEvidence {
+  crossval: CrossvalRow[];
+  strategies: { tuning_set: string | null; rows: { id: string; strategy: string | null; description: string | null; n: number | null; esc_f1: number | null; ci: [number, number] | null }[] } | null;
+  auc: { value: number; run_id: string | null; note: string } | null;
+}
+
 // ---- How each detection method decided (strategy comparison run, scripts/strategy_lab.py)
 export interface MethodDecision { id: string; decision: Decision | null; risk: number | null; reason: string | null; criteria: string[]; error: boolean }
 export interface MethodsResponse { call_id: string; run: string; default: string | null; top3: string[]; methods: MethodDecision[] }
@@ -258,7 +269,7 @@ export interface QualityReport {
   system: string;
   provider: string;
   mode: Mode;
-  split: "dev" | "holdout" | "test";
+  split: "dev" | "holdout" | "test" | "all";   // "all" = every case call, tuned on them: in-sample
   bootstrap: Bootstrap;
   overall: ConventionSet;
   breakdowns: Record<string, Record<string, ConventionSet>>;

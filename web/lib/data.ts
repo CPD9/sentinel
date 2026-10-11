@@ -8,7 +8,7 @@ import { approxSimulate, patchComponents, samePatch, type WhatifCalls } from "./
 import type {
   AnalysisArtifact, ApiErrorBody, ApplyResponse, AuditEntry, CallListItem, CallResult, DecisionTrace, FeedbackEntry,
   Decision, KeywordsConfig, Patch, PreviewRequest, PreviewResponse, ProcessingEvent, QualityReport, QualityReportSummary,
-  MethodsResponse, ReportResponse, Stage, RerunResponse, RulesConfig, SimulationResult, SuggestionsResponse, Thresholds, Transcript, Verdict,
+  MethodsResponse, QualityEvidence, ReportResponse, Stage, RerunResponse, RulesConfig, SimulationResult, SuggestionsResponse, Thresholds, Transcript, Verdict,
 } from "./types";
 import { CRITERIA, EVENT_TYPES, verdictAllowed } from "./types";
 
@@ -364,6 +364,13 @@ function persistFeedback() {
 /** The checked-in API may not have the what-if routes yet (docs/API.md "What-if, feedback and suggestions"): 404/405 means "not built". */
 const routeMissing = (e: unknown) => e instanceof ApiError && (e.status === 404 || e.status === 405);
 const notBuilt = (what: string, route: string) => new ApiError(404, "not_available", `${what}: not available on this server yet (${route} is not implemented).`);
+
+/** CV, baselines and AUC behind the Quality page. null when the server has none (fixtures, or an API without the route). */
+export async function getQualityEvidence(): Promise<QualityEvidence | null> {
+  if (isFixtures) return null;
+  try { return (await getJson<QualityEvidence>(api("/evidence/quality"))).data; }
+  catch (e) { if (e instanceof ApiError && (e.status === 404 || e.status === 405)) return null; throw e; }
+}
 
 /** How each detection method decided on this call (strategy comparison run). null when the server or call has none. */
 export async function getMethods(id: string): Promise<MethodsResponse | null> {

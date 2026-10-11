@@ -13,6 +13,7 @@ import { useAsync } from "@/lib/use-async";
 import { AblationChart, GroupBars, LatencyBars, METRICS, ReliabilityDiagram, WerChart, type MetricKey } from "./charts";
 import { Headline } from "./headline";
 import { kindOf } from "./kind";
+import { Prove } from "./prove";
 import { BigMetric, MetricBar } from "./metric";
 import { cn } from "@/lib/utils";
 import { DECISION_LABEL } from "@/lib/explain";
@@ -31,9 +32,10 @@ export function QualityView() {
     <div className="stage-in space-y-6">
       <div className="space-y-1">
         <h1 className="text-headline font-semibold tracking-tight">Quality</h1>
-        <p className="text-body text-muted-foreground">How well the system finds fraud, on calls it has never seen. Three ways of counting are shown together, each with the range the true value likely lies in.</p>
+        <p className="text-body text-muted-foreground">How well the system finds fraud. The cross-validated number comes first; every other number says whether the system was tuned on those calls or never saw them.</p>
       </div>
-      {reports.data && reports.data.length > 1 && <Compare reports={reports.data} active={id} onPick={setId} />}
+      {reports.data && <Prove reports={reports.data} />}
+      {reports.data && reports.data.length > 1 && <><h2 className="eyebrow pt-2">Each report in detail</h2><Compare reports={reports.data} active={id} onPick={setId} /></>}
       {list.status === "loading" && !list.data && <SkeletonBlock rows={6} />}
       {list.status === "error" && !list.data && <ErrorCard error={list.error} onRetry={list.reload} />}
       {list.data && list.data.length === 0 && (
@@ -196,7 +198,7 @@ function Compare({ reports, active, onPick }: { reports: QualityReport[]; active
         return (
           <button key={r.report_id} type="button" aria-pressed={on} onClick={() => onPick(r.report_id)}
             className={cn("rounded-2xl border p-4 text-left transition-colors", on ? "border-foreground bg-muted" : "border-border hover:bg-muted/60")}>
-            <p className={cn("text-sm font-semibold", k.unseen ? "" : "text-review")}>{k.unseen ? "Unseen" : "Tuned on"} · {k.label}</p>
+            <p className={cn("text-sm font-semibold", k.unseen ? "" : "text-review")}>{k.inSample ? "In-sample" : k.unseen ? "Unseen" : "Tuned on"} · {k.label}</p>
             <p className="text-xs text-muted-foreground">{r.overall.n} calls · {r.mode === "asr" ? "speech recognition" : "reference transcripts"}</p>
             <p className="tabular mt-2 text-sm">Calls needing a person that were flagged: <b>{e.tp} of {e.tp + e.fn}</b> {p(e.recall)}</p>
             <p className="tabular text-sm">Flagged calls that needed a person: <b>{p(e.precision)}</b></p>
