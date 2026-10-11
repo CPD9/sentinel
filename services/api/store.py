@@ -105,6 +105,14 @@ def _iso_mtime(path: Path) -> str:
     return datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def find_out_dir(run_dir: Path) -> Path | None:
+    """The run's output folder: out/, else the one out*/ folder that has results/ (a run shared as e.g. out_jules/)."""
+    if (run_dir / "out" / "results").is_dir():
+        return run_dir / "out"
+    found = sorted(p for p in run_dir.glob("out*") if (p / "results").is_dir())
+    return found[0] if len(found) == 1 else None
+
+
 class ArtifactStore:
     """Read-only access to one pipeline run, in the layout process_call writes (docs/API.md "Files"):
 
@@ -126,7 +134,7 @@ class ArtifactStore:
 
     def __init__(self, run_dir: Path):
         self.run_dir = Path(run_dir)
-        self.out = self.run_dir / "out"
+        self.out = find_out_dir(self.run_dir) or self.run_dir / "out"
         self.art = self.run_dir / "artifacts"
         self.feedback_path: Path | None = self.out / "feedback.jsonl"
         manifest = _read_json(self.art / "manifests" / "inference.json") or _read_json(INFERENCE_MANIFEST) or {}
@@ -183,7 +191,15 @@ class ArtifactStore:
             return _read_json(self.art / "analysis" / call_id / "analysis.json")
         folder = "transcripts" if kind == "transcript" else "traces"
         # ASR runs write transcripts/ and traces/; runs on reference transcripts write *_reference/ instead
-        return _read_json(self.art / folder / f"{call_id}.json") or _read_json(self.art / f"{folder}_reference" / f"{call_id}.json")
+        # (pipeline/runner.py _paths). Read only the folder that belongs to the call's result, never the other mode's
+        # document: it would come from another run (other segment ids, other facts, other decision).
+        if self._is_reference_run(call_id):
+            folder += "_reference"
+        return _read_json(self.art / folder / f"{call_id}.json")
+
+    def _is_reference_run(self, call_id: str) -> bool:
+        result = self.get_result(call_id) or {}
+        return str((result.get("versions") or {}).get("asr") or "").startswith("reference")
 
     def get_events(self, call_id: str) -> list[dict] | None:
         """Finished runs keep no event log; the API synthesizes a short one from the result."""

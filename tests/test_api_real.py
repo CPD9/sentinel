@@ -136,3 +136,23 @@ def test_snippet_name_cannot_leave_the_call_folder(run):
     (run / "out" / "snippets" / "call_r02").mkdir(parents=True)
     shutil.copy(run / "out" / "snippets" / "call_r01" / "f0_e0.wav", run / "out" / "snippets" / "call_r02" / "x.wav")
     assert deps.store.snippet_path("call_r01", "x.wav") is None
+
+
+def test_a_run_shared_as_out_star_is_found(run):
+    (run / "out").rename(run / "out_jules")                     # e.g. a run handed over as out_jules/
+    assert ArtifactStore(run).out.name == "out_jules"
+    deps.store.use(ArtifactStore(run))
+    assert [r["call_id"] for r in client.get("/api/calls").json()] == ["call_r01", "call_r02"]
+
+
+def test_reference_runs_never_mix_in_asr_documents(run):
+    res = run / "out" / "results" / "call_r01.json"
+    doc = json.loads(res.read_text(encoding="utf-8"))
+    doc["versions"]["asr"] = "reference-transcript"           # this result ran on reference transcripts
+    res.write_text(json.dumps(doc), encoding="utf-8")
+    # only the ASR-run documents exist: they belong to another run, so they are not served
+    assert_error(client.get("/api/calls/call_r01/trace"), 404, "not_available")
+    ref = run / "artifacts" / "traces_reference"
+    ref.mkdir()
+    shutil.copy(run / "artifacts" / "traces" / "call_r01.json", ref / "call_r01.json")
+    assert client.get("/api/calls/call_r01/trace").status_code == 200

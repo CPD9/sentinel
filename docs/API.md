@@ -198,12 +198,12 @@ Implementation notes (`services/api/`, run with `SENTINEL_FIXTURES=1 python -m s
 
 `SENTINEL_RUN_DIR=<folder with out/ and artifacts/> python -m services.api` serves one finished run in the layout of
 "Files" above. Swapping the folder (e.g. for a run with calibrated thresholds) only needs a restart.
-- `GET /calls` builds one row per `out/results/<id>.json`: status `error` when the result has stage errors, else
+- `GET /calls` builds one row per `out/results/<id>.json` (a run handed over as one `out*/` folder, e.g. `out_jules/`, is found too): status `error` when the result has stage errors, else
   `done`; criteria from the findings, risk-descending; `duration_s` and `variant` from the label-free
   `artifacts/manifests/inference.json` (of the run, else of the repo), else the transcript's duration; `updated_at` =
   the result file's modification time. Half-written `.tmp` files are skipped. No label file is ever opened.
-- Transcripts and traces come from `artifacts/{transcripts,traces}/`, falling back to `*_reference/` for runs on
-  reference transcripts. Analysis: `artifacts/analysis/<id>/analysis.json`. Quality reports: `artifacts/quality/*.json`.
+- Transcripts and traces come from `artifacts/{transcripts,traces}/`, or only from `*_reference/` when the result says it
+  ran on reference transcripts (`versions.asr` starts with `reference`), so documents of two runs are never mixed. Analysis: `artifacts/analysis/<id>/analysis.json`. Quality reports: `artifacts/quality/*.json`.
 - `/audio` serves `artifacts/audio/<id>.wav`, `/snippets/{name}` serves `out/snippets/<id>/<name>`, both
   `audio/wav` with `Range` (206, 416 when out of range).
 - `/feedback`: `POST` appends to the run's `out/feedback.jsonl` (`append_feedback`), `GET` reads the latest verdict per

@@ -43,10 +43,17 @@ const shortTime = (iso: string | null) => {
 };
 
 export function CallList({ calls, selected, stages }: { calls: CallListItem[] | null; selected: string | null; stages: Record<string, string> }) {
-  // No alert starts folded; it opens by itself when the selected call is in it (e.g. a shared link to a cleared call).
+  // No alert starts folded. When a call gets selected (also via a shared link), its group opens once; after that the
+  // officer can still fold it. (Adjusting state while rendering, the React pattern for "react to a prop change".)
   const [open, setOpen] = useState<Record<Group, boolean>>({ alarm: true, review: true, no_alert: false, processing: true });
-  const selectedGroup = calls?.find((c) => c.call_id === selected);
-  const isOpen = (g: Group) => open[g] || (selectedGroup != null && groupOf(selectedGroup) === g);
+  const [revealed, setRevealed] = useState<string | null>(null);
+  const selectedRow = calls?.find((c) => c.call_id === selected);
+  if (selectedRow && revealed !== selectedRow.call_id) {
+    setRevealed(selectedRow.call_id);
+    const g = groupOf(selectedRow);
+    if (!open[g]) setOpen({ ...open, [g]: true });
+  }
+  const isOpen = (g: Group) => open[g];
 
   if (!calls) {
     return (

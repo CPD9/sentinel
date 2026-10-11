@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 from typing import Any, Callable
 
-from .store import CALL_ID_RE, ArtifactStore, FixtureStore
+from .store import CALL_ID_RE, ArtifactStore, FixtureStore, find_out_dir
 
 log = logging.getLogger("sentinel.api")
 
@@ -31,9 +31,9 @@ def make_store() -> FixtureStore | ArtifactStore:
     run_dir = os.environ.get("SENTINEL_RUN_DIR")
     if run_dir:
         path = Path(run_dir).expanduser()
-        if not (path / "out" / "results").is_dir():
-            raise RuntimeError(f"SENTINEL_RUN_DIR={path} has no out/results/ folder: point it at the folder that "
-                               "contains out/ and artifacts/ (the pipeline's output).")
+        if find_out_dir(path) is None:
+            raise RuntimeError(f"SENTINEL_RUN_DIR={path} has no out/results/ folder (or exactly one out*/results/): "
+                               "point it at the folder that contains out/ and artifacts/ (the pipeline's output).")
         log.info("serving the pipeline run in %s", path)
         return ArtifactStore(path)
     raise RuntimeError("Choose the data: SENTINEL_FIXTURES=1 (MOCK fixtures) or "
