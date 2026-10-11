@@ -25,6 +25,7 @@ import { SuggestionsCard } from "./suggestions-card";
 import { ThresholdTrack } from "./threshold-track";
 import { WorkloadMeter } from "./workload-meter";
 import { PRESETS } from "@/lib/presets";
+import { OutcomeCounts } from "@/components/quality/outcome-counts";
 
 const errText = (e: unknown) => (e instanceof ApiError ? (Array.isArray(e.detail) ? e.detail.join("; ") : `${e.code}: ${e.detail}`) : String(e));
 const DECIDED = (c: CallListItem) => (c.status === "done" || c.status === "error") && c.decision != null;
@@ -129,6 +130,8 @@ export function Tuning() {
           </div>
         </section>
       </div>
+
+      <OutcomeCounts />
 
       {/* the trade-off, quieter */}
       <section aria-labelledby="tradeoff-h" className="surface-tint space-y-2 rounded-2xl p-5">

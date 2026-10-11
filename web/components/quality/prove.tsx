@@ -137,6 +137,7 @@ function JudgeProve({ ev, reports }: { ev: QualityEvidence; reports: QualityRepo
           {e && fin ? (
             <>
               <p className="text-headline font-semibold leading-tight">{e.fp === 0 ? "0 false alarms" : `${e.fp} false alarm${e.fp === 1 ? "" : "s"}`} in {fin.overall.n} calls</p>
+              <p className="tabular text-lead"><b>{e.fn}</b> missed case{e.fn === 1 ? "" : "s"} · <b>{e.fp}</b> false alarm{e.fp === 1 ? "" : "s"} · <b>{e.tp}</b> caught</p>
               <p className="text-lead">but it finds <b className="tabular">{e.tp} of {e.tp + e.fn}</b> calls that need a person: recall <b className="tabular">{f2(e.recall.value)}</b>{range(e.recall.ci_low != null ? [e.recall.ci_low, e.recall.ci_high!] : null)}.</p>
               <p className="text-sm text-muted-foreground">{zeroShot ? "Zero-shot: no parameter was tuned on these calls, so these numbers are effectively unseen. " : ""}The independent test is the jury&rsquo;s hidden set.</p>
             </>

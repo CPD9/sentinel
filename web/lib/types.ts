@@ -301,7 +301,8 @@ export interface RuleConfig { criterion: Criterion; enabled: boolean; [param: st
 export interface RulesConfig { version: string; rules: RuleConfig[] }
 export interface PreviewRequest { thresholds?: Thresholds; keywords?: KeywordsConfig; rules?: RulesConfig }
 export interface PreviewResponse {
-  decision_counts: { before: Record<string, number>; after: Record<string, number> };
+  decision_counts: { before: Record<string, number>; after: Record<string, number> } | null;   // null: decisions cannot be previewed on this run (see note)
+  note?: string;
   changed: { call_id: string; decision_before: Decision; decision_after: Decision; risk_before: number; risk_after: number }[];
   keyword_hit_counts: Record<string, Record<string, number>>;
   rule_fire_counts: Record<string, number>;

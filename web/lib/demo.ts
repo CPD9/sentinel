@@ -1,7 +1,7 @@
 // Demo mode for the jury: a keyboard-driven path (→ / ←) over the SAME real screens, hitting the four required moments
 // in order. No separate pages and no staged data: each step is a real URL plus one line telling the presenter what to show.
 // The call ids default to the final ASR run (pipeline_asr_final); set NEXT_PUBLIC_DEMO_ALERT / NEXT_PUBLIC_DEMO_HARMLESS for another run.
-export const DEMO_ALERT = process.env.NEXT_PUBLIC_DEMO_ALERT || "call_022";   // an alert with snippets in the final ASR run
+export const DEMO_ALERT = process.env.NEXT_PUBLIC_DEMO_ALERT || "call_041";   // insider trading before the quarterly figures: the AI judge alert, as in the case brief
 export const DEMO_HARMLESS = process.env.NEXT_PUBLIC_DEMO_HARMLESS || "call_026";
 
 export interface DemoStep { href: string; moment: string; title: string; say: string; live?: string }

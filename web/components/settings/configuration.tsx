@@ -120,8 +120,9 @@ function Keywords() {
           : (
             <>
               <p className="text-lead">{changes.join(". ")}{changes.length ? " " : ""}
-                {preview.loading ? <span className="text-muted-foreground">…</span> : <>changes <b>{changed.length} call{changed.length === 1 ? "" : "s"}</b>.</>}
+                {preview.loading ? <span className="text-muted-foreground">…</span> : preview.data?.note ? <span className="text-muted-foreground">— its hit counts are updated on the left.</span> : <>changes <b>{changed.length} call{changed.length === 1 ? "" : "s"}</b>.</>}
               </p>
+              {preview.data?.note && <p className="text-sm text-review">{preview.data.note}</p>}
               {changed.length > 0 && (
                 <ul className="divide-y divide-border border-y border-border">
                   {changed.map((c, i) => (

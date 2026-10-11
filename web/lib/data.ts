@@ -472,8 +472,9 @@ async function simulateViaPreview(patch: Patch): Promise<SimulationResult> {
     }
   }
   const p = await previewSettings(req);
+  if (!p.decision_counts) throw new ApiError(409, "baseline_mismatch", p.note ?? "Decisions cannot be previewed on this run.");
   const full = (c: Record<string, number>) => ({ alarm: c.alarm ?? 0, review: c.review ?? 0, no_alert: c.no_alert ?? 0 }) as Record<Decision, number>;
-  const before = full(p.decision_counts.before), after = full(p.decision_counts.after);
+  const before = full(p.decision_counts.before), after = full(p.decision_counts.after);   // checked above
   const load = (c: Record<Decision, number>) => {
     const n = c.alarm + c.review + c.no_alert, per = (x: number) => (n ? Math.round((10000 * x) / n) / 100 : 0);
     return { n, alarms_per_100: per(c.alarm), reviews_per_100: per(c.review), flagged_per_100: per(c.alarm + c.review) };

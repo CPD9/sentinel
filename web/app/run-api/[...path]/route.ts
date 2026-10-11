@@ -105,7 +105,23 @@ async function ask(req: Record<string, unknown>): Promise<HelperOut> {
   return JSON.parse(line) as HelperOut;
 }
 const answer = (out: HelperOut) => (out.ok !== undefined ? json(out.ok) : err(out.error?.status ?? 500, out.error?.status === 422 ? "invalid" : "internal", out.error?.detail ?? "simulation failed"));
-const simulate = async (patch: unknown) => answer(await ask({ patch, feedback: [...feedback.values()] }));
+/** The simulator re-decides with the pipeline's decide step. If its baseline does not reproduce this run's own decisions
+ *  (e.g. a run decided by the AI judge while the simulator re-decides with facts → rules), its numbers would be invented:
+ *  refuse with a plain reason instead. */
+function baselineMismatch(out: HelperOut): string | null {
+  const before = (out.ok as { counts?: { before?: Record<string, number> } } | undefined)?.counts?.before;
+  if (!before) return null;
+  const run: Record<string, number> = { alarm: 0, review: 0, no_alert: 0 };
+  for (const c of calls()) run[c.decision] = (run[c.decision] ?? 0) + 1;
+  const same = ["alarm", "review", "no_alert"].every((k) => (before[k] ?? 0) === (run[k] ?? 0));
+  const n = (k: number, w: string) => `${k} ${w}${k === 1 ? "" : "s"}`;
+  return same ? null : `This preview cannot re-decide this run yet: its decisions come from the AI judge (${n(run.alarm, "alert")}, ${n(run.review, "review")}), while the preview re-decides with facts → rules (${n(before.alarm ?? 0, "alert")}, ${n(before.review ?? 0, "review")}). The judge threshold preview comes with the judge-threshold update.`;
+}
+const simulate = async (patch: unknown) => {
+  const out = await ask({ patch, feedback: [...feedback.values()] });
+  const why = out.ok !== undefined ? baselineMismatch(out) : null;
+  return why ? err(409, "baseline_mismatch", why) : answer(out);
+};
 
 /** POST /settings/preview (docs/API.md) from the exact simulator + the pipeline's own keyword matcher. */
 async function preview(body: Record<string, unknown> | null): Promise<Response> {
@@ -115,9 +131,12 @@ async function preview(body: Record<string, unknown> | null): Promise<Response> 
   if (body?.rules) patch.rules = body.rules;
   const sim = await ask({ patch, feedback: [] });
   if (sim.ok === undefined) return answer(sim);
+  const why = baselineMismatch(sim);
   const kwDoc = body?.keywords ?? readJson(path.join(REPO, "config", "keywords.json"));
   const hits = await ask({ op: "hits", keywords: kwDoc });
   if (hits.ok === undefined) return answer(hits);
+  // keyword hit counts are the pipeline's own matcher and valid on any run; only the decision flips depend on the simulator
+  if (why) return json({ decision_counts: null, changed: [], keyword_hit_counts: hits.ok, rule_fire_counts: {}, note: why });
   const r = sim.ok as { counts: { before: Record<string, number>; after: Record<string, number> }; flipped: { call_id: string; before: string; after: string; risk_before: number; risk_after: number }[] };
   return json({
     decision_counts: r.counts,

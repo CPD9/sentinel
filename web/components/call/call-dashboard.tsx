@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useCallback } from "react";
 import { CallAudioProvider, useCallAudio } from "./audio-context";
 import { CallHeader, CallSummary } from "./call-summary";
+import { CallCopilot } from "@/components/copilot/call-copilot";
 import { AuditTab } from "./tabs/audit-tab";
 import { AudioTab } from "./tabs/audio-tab";
 import { ReasoningTab } from "./tabs/reasoning-tab";
@@ -104,6 +105,9 @@ function Body({ result, tab, sel }: { result: CallResult; tab: TabValue; sel: { 
         <h2 id="transcript-h" className="text-title font-semibold tracking-tight">Transcript</h2>
         <TranscriptTab result={result} trace={trace} transcript={transcript} focusSeg={sel.seg} />
       </section>
+
+      {/* copilot slot (web/copilot): renders nothing until that PR lands */}
+      <CallCopilot callId={id} result={result} trace={trace.data ?? null} transcript={transcript.data ?? null} onCite={onCite} />
 
       <section aria-labelledby="details-h" className="space-y-3 pt-2">
         <div>

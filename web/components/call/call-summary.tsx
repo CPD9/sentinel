@@ -450,7 +450,7 @@ function JudgeBlock({ judge, result, transcript, onCite }: { judge: JudgeVerdict
             return (
               <li key={c.fact_id} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-sm">
                 <button type="button" onClick={() => onCite(c.segment_ids)} className="min-w-0 flex-1 text-left hover:underline" title="Show this passage in the transcript">
-                  <span lang="de">“{c.quote}”</span>{!c.valid && <span className="ml-2 text-xs font-medium text-review">not found in the transcript</span>}
+                  <span className="mr-1.5 text-xs font-semibold text-muted-foreground">{speakerLabel(c.speaker ?? s0?.speaker)}</span><span lang="de">“{c.quote}”</span>{!c.valid && <span className="ml-2 text-xs font-medium text-review">not found in the transcript</span>}
                 </button>
                 <span className="tabular font-mono text-[11px] text-muted-foreground">{c.segment_ids.join(", ")} · {s0?.start_s != null ? fmtTime(s0.start_s) : "–"}</span>
                 {url && <a href={url} className="text-xs underline underline-offset-2">passage ±10 s</a>}
