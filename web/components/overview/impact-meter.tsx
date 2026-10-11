@@ -21,11 +21,17 @@ export function ImpactMeter() {
   const [minManual, setMinManual] = useState(6);
   const [minFlagged, setMinFlagged] = useState(1.5);     // the officer plays the ±10 s passage and reads the reason
   const ev = useAsync(getQualityEvidence, "q-evidence");
-  // escalation recall, cross-validated: mean over the three held-out folds of the shipped configuration
-  const recall = useMemo(() => {
+  // escalation recall of the SHIPPED method, cross-validated out-of-fold (metrics/conditions_cv.json); the older
+  // facts → rules cross-validation (metrics/crossval.json) is only the fallback for runs before the judge
+  const { recall, recallSource } = useMemo(() => {
+    const m = ev.data?.methods;
+    if (m?.rows.length) {
+      const row = m.ship_rule_pass ? m.rows.find((r) => /conditions/i.test(r.name)) : m.rows.find((r) => /^S4 alone$/i.test(r.name));
+      if (row?.oof?.esc_r != null) return { recall: row.oof.esc_r, recallSource: `${m.ship_rule_pass ? "AI judge + learned conditions" : "AI judge"} (shipped), 3-fold cross-validation, out-of-fold` };
+    }
     const fin = ev.data?.crossval.find((r) => r.label === "final");
     const xs = Object.values(fin?.recall_folds ?? {}).filter((x): x is number => x != null);
-    return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
+    return xs.length ? { recall: xs.reduce((a, b) => a + b, 0) / xs.length, recallSource: "facts → rules, mean of 3 held-out folds" } : { recall: null, recallSource: "" };
   }, [ev.data]);
   const [preset, setPreset] = useState<number | null>(null);    // null = the run as decided
   const patch = preset == null || !saved.data ? null : { thresholds: { alarm: Math.max(PRESETS[preset].alarm, saved.data.review + 0.01) } };
@@ -64,8 +70,8 @@ export function ImpactMeter() {
             {" "}vs <b className="tabular text-headline">{fmt(recall * 100)}</b> with Sentinel.
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Today: a random sample finds risky calls at the sample rate. With Sentinel: escalation recall {fmt(recall, 2)}, cross-validated (mean of 3 held-out folds,
-            shipped setting; it does not follow the presets, which would need the gold labels). Small samples: read it as a range, not a promise.
+            Today: a random sample finds risky calls at the sample rate. With Sentinel: escalation recall {fmt(recall, 2)} of the {recallSource}.
+            It does not follow the presets (that would need the gold labels). Small samples: read it as a range, not a promise.
           </p>
         </div>
       )}

@@ -24,6 +24,8 @@ const REPO = path.resolve(process.cwd(), "..");
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
 const err = (status: number, error: string, detail: string | string[]) => json({ error, detail }, status);
 const readJson = <T,>(p: string): T | null => { try { return JSON.parse(readFileSync(p, "utf8")) as T; } catch { return null; } };
+/** Python's json writes Infinity/NaN for unbounded thresholds; read them as null instead of failing the whole file. */
+const readJsonLenient = <T,>(p: string): T | null => { try { return JSON.parse(readFileSync(p, "utf8").replace(/-?\bInfinity\b|\bNaN\b/g, "null")) as T; } catch { return null; } };
 const safeId = (s: string) => /^[A-Za-z0-9_-]{1,80}$/.test(s);
 const inside = (root: string, p: string) => path.resolve(p).startsWith(path.resolve(root) + path.sep);
 
@@ -147,7 +149,17 @@ function qualityEvidence() {
   const fin = readJson<{ notes?: string[]; run_id?: string }>(path.join(ART, "quality", "final_report.json"));
   const aucNote = (fin?.notes ?? []).find((n) => /AUC/i.test(n)) ?? null;
   const auc = aucNote ? Number(/AUC[^0-9]*([0-9]+\.[0-9]+)/i.exec(aucNote)?.[1] ?? NaN) : NaN;
+  // judge evaluation (AUC with 95% CI per scorer) and the method comparison under one CV protocol (conditions_cv)
+  type Oof = { esc_p?: number | null; esc_r?: number | null; esc_f1?: number | null; bacc?: number | null; review_load?: number | null; false_alarms?: number | null };
+  const je = readJsonLenient<{ scorers?: Record<string, { auc?: { auc?: number; ci95?: [number, number]; n?: number } }>; citations_valid?: number; citations_total?: number; judge_version?: string }>(path.join(ART, "metrics", "judge_eval.json"));
+  const cc = readJson<{ methods?: Record<string, { oof?: Oof; cv_bacc_mean?: number; cv_bacc_range?: [number, number] }>; ship_rule_pass?: boolean }>(path.join(ART, "metrics", "conditions_cv.json"));
+  const out = {
+    judge_eval: je ? { auc: Object.fromEntries(Object.entries(je.scorers ?? {}).map(([k, v]) => [k, { value: v.auc?.auc ?? null, ci: v.auc?.ci95 ?? null, n: v.auc?.n ?? null }])),
+      citations_valid: je.citations_valid ?? null, citations_total: je.citations_total ?? null, judge_version: je.judge_version ?? null } : null,
+    methods: cc ? { ship_rule_pass: cc.ship_rule_pass ?? null, rows: Object.entries(cc.methods ?? {}).map(([name, v]) => ({ name, oof: v.oof ?? null, cv_bacc: v.cv_bacc_mean ?? null, cv_bacc_range: v.cv_bacc_range ?? null })) } : null,
+  };
   return {
+    ...out,
     crossval: (cv?.rows ?? []).map((r) => ({
       label: r.label, folds: Object.fromEntries(Object.entries(r.folds ?? {}).map(([k, v]) => [k, v.esc_f1 ?? null])),
       recall_folds: Object.fromEntries(Object.entries(r.folds ?? {}).map(([k, v]) => [k, v.esc_r ?? null])),
