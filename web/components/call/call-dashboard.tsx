@@ -123,7 +123,7 @@ function Body({ result, tab, sel }: { result: CallResult; tab: TabValue; sel: { 
             ))}
           </ul>
         </nav>
-        <section aria-label={tab}>
+        <section aria-label={tab} className="overflow-x-auto">
           {tab === "reasoning" && <ReasoningTab result={result} trace={trace} />}
           {tab === "audio" && <AudioTab result={result} analysis={analysis} selectedWindow={sel.win} />}
           {tab === "audit" && <AuditTab result={result} trace={trace} analysis={analysis} transcript={transcript} />}

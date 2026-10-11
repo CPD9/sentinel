@@ -4,6 +4,7 @@
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useSyncExternalStore } from "react";
+import { CopyButton } from "@/components/ui/copy-button";
 import { DEMO_STEPS, demoStep, setDemoStep } from "@/lib/demo";
 import { cn } from "@/lib/utils";
 
@@ -40,7 +41,7 @@ export function DemoBar() {
           <summary className="cursor-pointer text-muted-foreground">Optional: run it live in the terminal (~1 min per call)</summary>
           <div className="mt-2 flex items-start gap-2">
             <code className="block min-w-0 flex-1 break-all font-mono">{s.live}</code>
-            <button type="button" onClick={() => void navigator.clipboard?.writeText(s.live!).catch(() => {})} className="shrink-0 rounded-full border border-border px-2 py-0.5 hover:bg-muted">copy</button>
+            <CopyButton text={s.live} />
           </div>
         </details>
       )}

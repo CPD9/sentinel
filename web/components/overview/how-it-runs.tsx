@@ -2,6 +2,7 @@
 // How it runs: the self-hosted pipeline, where it runs tonight vs. in production, the guarantees, the operating concept,
 // and the versions of the run on screen (read from a real result, not typed in).
 import Link from "next/link";
+import { CopyButton } from "@/components/ui/copy-button";
 import { getCall, getCalls } from "@/lib/data";
 import { useAsync } from "@/lib/use-async";
 
@@ -116,7 +117,7 @@ function RunYourCalls() {
           <p className="eyebrow">One command, from the repository root</p>
           <div className="flex items-start gap-2 rounded-xl bg-muted p-3">
             <code className="min-w-0 flex-1 break-all font-mono text-sm">{CMD}</code>
-            <button type="button" onClick={() => void navigator.clipboard?.writeText(CMD).catch(() => {})} className="shrink-0 rounded-full border border-border px-2.5 py-0.5 text-xs hover:bg-background">copy</button>
+            <CopyButton text={CMD} />
           </div>
           <p className="text-sm text-muted-foreground">
             Needs two settings in <code className="font-mono">.env</code>: <code className="font-mono">ASR_MODEL_PATH</code> (the Swiss German Whisper model,
