@@ -6,6 +6,9 @@ defaults:
   fire_at: 0.5            # a rule "fires" when it has a supporting fact and risk >= fire_at
   keyword_boost: 0.05     # added when a family keyword hit sits in a supporting fact's cited segments
   keyword_only_risk: 0.15 # risk from family hits alone (no supporting fact); can never alarm (needs a fact)
+  # ASR transcripts only: risk from family hits alone (null = keyword_only_risk). Never an alarm (needs a fact).
+  # Measured 11 Oct on all 62 calls: no setting helped (best escalation balanced accuracy 0.51 with or without), so off.
+  keyword_only_risk_asr: null
   # Counter-evidence: a valid fact in the rule's scope with one of these acts, at or after the supporting fact
   # (and not sharing its segments), multiplies the fact's risk by (1 - discount). "self" = the fact's own
   # non-empty counter_evidence text.

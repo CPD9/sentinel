@@ -34,6 +34,9 @@ def env(tmp_path, monkeypatch):
     monkeypatch.delitem(sys.modules, "pipeline.extract", raising=False)
     monkeypatch.setattr(stages, "run_analysis", lambda *a, **k: (None, [], False))
     monkeypatch.setattr(stages, "run_asr", lambda audio, cid, **k: (asr_transcript(cid), []))
+    from pipeline import runner
+    monkeypatch.setattr(runner, "_decision_source", lambda: "rules")     # judge-path tests switch it on themselves
+    monkeypatch.setattr(stages, "run_judge", lambda t: pytest.fail("judge must not run in rules mode"))
     return types.SimpleNamespace(wav=make_wav(tmp_path / "a.wav"), art=tmp_path / "art", out=tmp_path / "out")
 
 
@@ -288,3 +291,45 @@ def test_post_decision_escalation_rewrites_trace(env, monkeypatch):
     assert trace["decision"] == r["decision"] == "review" and trace["decision_path"] == "stage_error"
     from pipeline.schemas import DecisionTrace
     assert DecisionTrace.validate(trace) == []
+
+
+def fake_judge(monkeypatch, decision, cites, risk=0.9, boom=None):
+    from pipeline import judge, runner
+    from pipeline.validate import validate_facts
+    monkeypatch.setattr(runner, "_decision_source", lambda: "direct_judge")
+
+    def run_judge(t):
+        if boom:
+            return None, [StageError("judge", str(boom))]
+        facts = [Fact(f"j{i:03d}", "customer", "other", "other", [sid], q) for i, (sid, q) in enumerate(cites, 1)]
+        return judge.JudgeResult(decision, "credential_sharing", risk, "reads out an active password",
+                                 validate_facts(facts, t)), []
+    monkeypatch.setattr(stages, "run_judge", run_judge)
+
+
+def test_judge_alarm_with_validated_citation_decides_and_cuts_its_snippet(env, monkeypatch):
+    fake_extract(monkeypatch, [])                       # facts -> rules alone would be no_alert
+    fake_judge(monkeypatch, "alarm", [("S3", "Mis Passwort isch Sunneblueme")])
+    r = run(env)
+    assert r["decision"] == "alarm" and r["stage_errors"] == [] and validate_call_result(r) == []
+    ev = r["findings"][0]["evidence"][0]
+    assert ev["segment_ids"] == ["S3"] and ev["start_s"] == 20.0 and ev["snippet_path"].endswith(".wav")
+    trace = json.loads((env.art / "traces" / "call_t1.json").read_text())
+    assert trace["decision_path"] == "judge_alarm" and trace["rules"]               # rules stay as the why
+    assert json.loads((env.out / "judge" / "call_t1.json").read_text())["decision"] == "alarm"
+
+
+def test_judge_alarm_without_a_valid_citation_is_review_never_alarm(env, monkeypatch):
+    fake_extract(monkeypatch, [])
+    fake_judge(monkeypatch, "alarm", [("S3", "words that were never said in this call at all")])
+    r = run(env)
+    assert r["decision"] == "review"
+    trace = json.loads((env.art / "traces" / "call_t1.json").read_text())
+    assert trace["decision_path"] == "judge_review" and trace["why_not_flagged"] and trace["what_would_change"]
+
+
+def test_judge_failure_is_review_with_stage_error(env, monkeypatch):
+    fake_extract(monkeypatch, [])
+    fake_judge(monkeypatch, "no_alert", [], boom="judge unreachable")
+    r = run(env)
+    assert r["decision"] == "review" and [e["stage"] for e in r["stage_errors"]] == ["judge"]

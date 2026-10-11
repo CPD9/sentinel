@@ -22,5 +22,7 @@
       "asr_missing_stats": 0.5
     }
   },
-  "_calibrated": "calibration_20261011T020303Z: grid over dev + Testset_30 ASR-mode traces, objective mean(dev, test) escalation F1 = 0.3908; holdout not used"
+  "_calibrated": "calibration_20261011T020303Z: grid over dev + Testset_30 ASR-mode traces, objective mean(dev, test) escalation F1 = 0.3908; holdout not used",
+  "decision_source": "direct_judge",
+  "_decision_source": "direct_judge (S4, pipeline/judge.py) decides; facts -> rules stay in the trace as the why. 11 Oct 2026, all 62 calls, ASR mode: judge AUC 0.63 [0.53, 0.74] vs facts -> rules 0.36; balanced accuracy 0.63 (dev 0.66, test 0.58, holdout 0.67; no tuned parameter). Set to 'rules' for the facts -> rules decision."
 }
