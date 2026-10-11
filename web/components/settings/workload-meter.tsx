@@ -14,7 +14,7 @@ export function WorkloadMeter({ before, after, delta }: { before: Workload; afte
       {([["Now", before], ["With draft", after]] as const).map(([label, w]) => (
         <div key={label} className="grid grid-cols-[4.5rem_1fr_auto] items-center gap-2 text-xs">
           <span className="text-muted-foreground">{label}</span>
-          <div role="img" aria-label={`${label}: ${w.alarms_per_100} alarms and ${w.reviews_per_100} reviews per 100 calls`}
+          <div role="img" aria-label={`${label}: ${w.alarms_per_100} alerts and ${w.reviews_per_100} reviews per 100 calls`}
             className="flex h-3 overflow-hidden rounded-sm bg-muted">
             <div className="bg-alarm" style={{ width: `${Math.min(100, w.alarms_per_100)}%` }} />
             <div className="border-l border-background bg-review" style={{ width: `${Math.min(100 - Math.min(100, w.alarms_per_100), w.reviews_per_100)}%` }} />
@@ -23,7 +23,7 @@ export function WorkloadMeter({ before, after, delta }: { before: Workload; afte
         </div>
       ))}
       <p className={`text-xs ${delta < 0 ? "text-ok" : delta > 0 ? "text-review" : "text-muted-foreground"}`}>{line}</p>
-      <p className="text-[11px] text-muted-foreground"><span className="inline-block size-2 rounded-sm bg-alarm align-middle" /> alarms <span className="ml-2 inline-block size-2 rounded-sm bg-review align-middle" /> reviews · over {after.n} calls with a decision</p>
+      <p className="text-[11px] text-muted-foreground"><span className="inline-block size-2 rounded-sm bg-alarm align-middle" /> alerts <span className="ml-2 inline-block size-2 rounded-sm bg-review align-middle" /> reviews · over {after.n} calls with a decision</p>
     </section>
   );
 }
