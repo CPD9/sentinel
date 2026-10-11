@@ -1,10 +1,10 @@
 """Figures for docs/RESULTS.md and the README -> docs/assets/results/*.png + *.svg.
 
     python scripts/make_figures.py --judge-run ~/Developer/sentinel-runs/s4t_0551_final \
-        --rules-run ~/Developer/sentinel-runs/asr_fix_0452
+        --rules-run ~/Developer/sentinel-runs/asr_fix_0452 --multi-run ~/Developer/sentinel-runs/mc_0656_final
 
   ladder.*          AUC vs gold escalation with the dialogue-group bootstrap CI, per decision method (chance = 0.5)
-  roc.*             ROC curves, facts -> rules vs the direct judge, all 62 calls, ASR mode
+  roc.*             ROC curves, facts -> rules vs the single and the multi-check judge, all 62 calls, ASR mode
   threshold_curve.* false alarms, missed cases and review load over the review threshold (judge risk)
   asr_wer.*         word and character error rate of the final ASR transcripts vs the reference scripts, per split
                     and clean / noisy (Whisper writes Swiss German speech mostly in Standard German, so WER is high)
@@ -31,7 +31,7 @@ from pipeline.reference import reference_transcript  # noqa: E402
 OUT = REPO_ROOT / "docs" / "assets" / "results"
 METRICS = REPO_ROOT / "artifacts" / "metrics"
 INK, MUTED, GRID = "#1f2933", "#7b8794", "#e4e7eb"
-JUDGE, RULES, KW, WARN = "#1f6feb", "#c2410c", "#6b7280", "#b42318"
+JUDGE, RULES, KW, WARN, MULTI = "#1f6feb", "#c2410c", "#6b7280", "#b42318", "#0f766e"
 plt.rcParams.update({"font.size": 10, "axes.edgecolor": MUTED, "axes.labelcolor": INK, "xtick.color": INK,
                      "ytick.color": INK, "axes.spines.top": False, "axes.spines.right": False,
                      "axes.grid": True, "grid.color": GRID, "grid.linewidth": 0.8, "figure.dpi": 160})
@@ -67,20 +67,18 @@ def roc(scores: dict[str, float]) -> list[tuple[float, float]]:
     return pts
 
 
-def fig_ladder(judge: dict, rules: dict, prefix: dict | None) -> None:
+def fig_ladder(judge: dict, rules: dict, prefix: dict | None, multi: dict | None = None) -> None:
     rows = []
     if prefix:
         rows.append(("facts → rules, pre-fix (T5)", evaluate.escalation_auc(prefix), RULES))
     rows += [("facts → rules (ASR fix)", evaluate.escalation_auc(rules), RULES),
-             ("keywords only", None, KW), ("direct judge S4 (shipped)", evaluate.escalation_auc(judge), JUDGE)]
+             ("keywords only", None, KW),
+             ("single judge S4" if multi else "direct judge S4 (shipped)", evaluate.escalation_auc(judge), JUDGE)]
     je = json.loads((METRICS / "judge_eval.json").read_text(encoding="utf-8"))["scorers"] if (METRICS / "judge_eval.json").is_file() else {}
     kw = je.get("keywords only (hit segments)", {}).get("auc")
     rows = [(n, a if a is not None else kw, c) for n, a, c in rows if (a if a is not None else kw)]
-    mc = METRICS / "multi_check_eval.json"
-    if mc.is_file():
-        r = json.loads(mc.read_text(encoding="utf-8"))["rows"][1]
-        rows.append(("multi-check judge (not shipped)" if not json.loads(mc.read_text())["gate_pass"] else
-                     "multi-check judge", {"auc": r["auc"], "ci95": r["auc_ci95"]}, "#7c3aed"))
+    if multi:
+        rows.append(("multi-check judge (shipped)", evaluate.escalation_auc(multi), MULTI))
     fig, ax = plt.subplots(figsize=(7.2, 0.62 * len(rows) + 1.2))
     for i, (name, a, col) in enumerate(rows):
         lo, hi = a["ci95"]
@@ -98,12 +96,14 @@ def fig_ladder(judge: dict, rules: dict, prefix: dict | None) -> None:
     save(fig, "ladder")
 
 
-def fig_roc(judge: dict, rules: dict) -> None:
+def fig_roc(judge: dict, rules: dict, multi: dict | None = None) -> None:
     fig, ax = plt.subplots(figsize=(4.8, 4.6))
-    for name, sc, col in (("direct judge (S4)", judge, JUDGE), ("facts → rules", rules, RULES)):
+    curves = [("multi-check judge", multi, MULTI)] if multi else []
+    curves += [("single judge (S4)", judge, JUDGE), ("facts → rules", rules, RULES)]
+    for name, sc, col in curves:
         a = evaluate.escalation_auc(sc)
         xs, ys = zip(*roc(sc))
-        ax.plot(xs, ys, color=col, lw=2, drawstyle="steps-post",
+        ax.plot(xs, ys, color=col, lw=2, marker="o", ms=3,
                 label=f"{name}: AUC {a['auc']:.2f} [{a['ci95'][0]:.2f}, {a['ci95'][1]:.2f}]")
     ax.plot([0, 1], [0, 1], color=WARN, ls="--", lw=1, label="chance")
     ax.set_xlabel("false positive rate (harmless calls flagged)")
@@ -172,14 +172,16 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--judge-run", type=Path, required=True)
     ap.add_argument("--rules-run", type=Path, required=True)
+    ap.add_argument("--multi-run", type=Path, default=None, help="run folder of the multi-check judge")
     ap.add_argument("--prefix-pred", type=Path, default=REPO_ROOT / "artifacts" / "predictions" / "pipeline_asr_final.json")
     a = ap.parse_args(argv)
     judge, rules = judge_scores(a.judge_run), rules_scores(a.rules_run)
     prefix = None
     if a.prefix_pred.is_file():
         prefix = {c["call_id"]: c["risk_score"] for c in json.loads(a.prefix_pred.read_text(encoding="utf-8"))["calls"]}
-    fig_ladder(judge, rules, prefix)
-    fig_roc(judge, rules)
+    multi = judge_scores(a.multi_run) if a.multi_run else None
+    fig_ladder(judge, rules, prefix, multi)
+    fig_roc(judge, rules, multi)
     fig_threshold()
     fig_wer(a.judge_run)
     return 0

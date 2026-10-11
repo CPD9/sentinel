@@ -42,10 +42,10 @@ Banks record client phone calls, but people can only listen to a small sample of
 
 ## Results at a glance
 
-On all 62 case calls, from speech recognition to decision, the shipped direct judge ranks calls better than chance
-(AUC 0.63 [0.53, 0.74]), raises **no false alarm**, sends **15 %** of calls to a person and finds 9 of the 34 calls
-that need escalation (precision 1.00, recall 0.26). Its verdict has no tuned parameter, so these numbers are
-effectively unseen. Our first design, fact extraction plus hand-written rules, ranked calls worse than chance; we
+On all 62 case calls, from speech recognition to decision, the shipped multi-check judge ranks calls better than
+chance (AUC 0.69 [0.58, 0.80]), raises **no false alarm**, sends **21 %** of calls to a person and finds 13 of the 34
+calls that need escalation (precision 1.00, recall 0.38). It is zero-shot with no tuned parameter, so these numbers
+are effectively unseen. Our first design, fact extraction plus hand-written rules, ranked calls worse than chance; we
 report that too. Full report, method and limitations: [`docs/RESULTS.md`](docs/RESULTS.md).
 
 ![AUC ladder](docs/assets/results/ladder.png)

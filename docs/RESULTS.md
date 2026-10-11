@@ -8,17 +8,18 @@ Every number was computed on 11 Oct 2026 from the runs and files named; nothing 
 
 ![AUC ladder](assets/results/ladder.png)
 
-- **The shipped decision is a direct LLM judge (S4) on speech-recognition transcripts**: Apertus v1.5 8B, self-hosted,
-  reads the whole call, names the criterion and cites the lines; every citation is checked against the transcript.
-  On all 62 case calls it ranks better than chance (**AUC 0.63 [0.53, 0.74]**), raises **no false alarm**, sends
-  **15 % of calls** to a person, and finds **9 of the 34 calls that need escalation** (precision 1.00, recall 0.26).
-  Its verdict has **no tuned parameter**, so these numbers are effectively unseen; per split the balanced accuracy is
-  0.66 (dev), 0.58 (Testset_30), 0.67 (holdout).
+- **The shipped decision is a multi-check LLM judge on speech-recognition transcripts**: Apertus v1.5 8B, self-hosted,
+  checks the whole call once per compliance criterion, names the criterion and cites the lines; every citation is
+  checked against the transcript. On all 62 case calls it ranks better than chance (**AUC 0.69 [0.58, 0.80]**), raises
+  **no false alarm**, sends **21 % of calls** to a person, and finds **13 of the 34 calls that need escalation**
+  (precision 1.00, recall 0.38, balanced accuracy 0.69). It is zero-shot with **no tuned parameter**, so these numbers
+  are effectively unseen; per split the balanced accuracy is 0.69 (dev), 0.63 (Testset_30), 0.83 (holdout). The
+  single-prompt judge it replaced reached AUC 0.63 and found 9 of 34.
 - **The negative result**: our first design, LLM fact extraction followed by hand-written rules, ranks calls *worse
   than chance* (AUC 0.36–0.43). Its earlier escalation F1 numbers never beat the trivial "send everything to review"
   baseline. We report it because it shaped the final design and because it is the honest answer to "does it work".
 - **The adjustable threshold** acts on the judge's risk; one slider move or one keyword switch changes the number of
-  hits immediately (re-decision from cache in 27 ms for 62 calls).
+  hits immediately (re-decision from cache in under 30 ms for 62 calls).
 - **Limits**: 62 calls in 24 dialogue groups; recall is low; WER against the Swiss German scripts is about 0.6 (the ASR writes
   Standard German). The jury's hidden set is the independent test.
 
@@ -77,9 +78,10 @@ facts that capture the topic do not capture the violation.
 
 ## The direct judge
 
-One prompt per call (`pipeline/judge.py`): the criteria, the decision scale, and verbatim citations of at most 15 words
-with the line id; every citation goes through the same validator as the facts (27 of 29 valid on the 62 calls). The
-verdict decides; an alarm also needs a validated citation and confidence at the gate. Facts, rules and keyword hits
+First one prompt per call (`pipeline/judge.py`), then, shipped, one focused zero-shot check per criterion
+(`pipeline/judge_multi.py`, call risk = the maximum over the six checks): the criteria, the decision scale, and
+verbatim citations of at most 15 words with the line id; every citation goes through the same validator as the facts.
+The judge decides; an alarm also needs a validated citation and confidence at the gate. Facts, rules and keyword hits
 stay in every trace as the "why", and the snippets are cut from the judge's validated citations.
 
 | method (all 62, ASR mode) | AUC [95% CI] | balanced accuracy | escalation P / R | review load | false alarms |
@@ -87,7 +89,8 @@ stay in every trace as the "why", and the snippets are cut from the judge's vali
 | everything to review | 0.50 | 0.50 | 0.55 / 1.00 | 100 % | 0 |
 | keywords only | 0.57 [0.39, 0.73] | 0.51 (CV) | | | |
 | facts → rules | 0.36 [0.24, 0.51] | 0.46 (CV) | | 5 % | 0 |
-| **direct judge (shipped)** | **0.63 [0.53, 0.74]** | **0.63** | **1.00 / 0.26** | **15 %** | **0** |
+| single judge | 0.63 [0.53, 0.74] | 0.63 | 1.00 / 0.26 | 15 % | 0 |
+| **multi-check judge (shipped)** | **0.69 [0.58, 0.80]** | **0.69** | **1.00 / 0.38** | **21 %** | **0** |
 | judge + learned review conditions | = judge | 0.64 (CV) = judge alone | | | |
 
 A learned recall layer (depth-3 tree over judge risk, mined n-grams, keyword hits and fact flags, mined and fitted
@@ -98,16 +101,17 @@ added nothing. It is not shipped.
 
 ![Threshold curve](assets/results/threshold_curve.png)
 
-`config/thresholds.json`: alarm if the judge's risk ≥ 0.70 with a validated citation, review if ≥ 0.20 (these
-defaults reproduce the judge's own verdicts on all 62 calls). Lowering the review threshold to 0 sends everything to a
-person; raising it to 0.40 cuts the review load from 15 % to 6 % at 5 more missed cases; false alarms stay 0 along the
-whole curve. The keyword switch (`keyword_review`) lets keyword hits alone raise a call to review, never to alarm:
-with at least 2 hit segments per family it finds 5 more cases at 35 % review load.
+`config/thresholds.json`: alarm if the judge's risk ≥ 0.70 with a validated citation, review if ≥ 0.20 (for the
+single judge these defaults reproduce its own verdicts on all 62 calls). With the multi-check judge: 0 false alarms,
+21 missed of 34, 21 % review load at the defaults; raising the alarm/review cut to 0.70 halves the load (10 %) at 7
+more missed cases; lowering the review threshold to 0 sends everything to a person. The keyword switch
+(`keyword_review`) lets keyword hits alone raise a call to review, never to alarm: with at least 2 hit segments per
+family it finds 4 more cases at 40 % review load. False alarms stay 0 along the whole curve.
 
 ## Limitations
 
 - **n is small**: 62 calls in 24 dialogue groups; CIs are wide (AUC 0.53–0.74 for the judge).
-- **Recall is low**: the judge finds about a quarter of the calls that need escalation; it is precise, not thorough.
+- **Recall is low**: the judge finds 13 of the 34 calls that need escalation; it is precise, not thorough.
   A compliance team using it today would still sample the rest.
 - **Everything ran on rented hardware outside Switzerland** with fictional case data only. Real customer data needs the
   self-hosted Swiss or on-premise deployment described in the architecture; no data ever went to a cloud LLM API.
