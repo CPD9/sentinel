@@ -90,7 +90,10 @@ function Body({ result, tab, sel }: { result: CallResult; tab: TabValue; sel: { 
 
   return (
     <div className="space-y-6">
-      <BackLink />
+      <div className="flex items-center justify-between gap-3">
+        <BackLink />
+        <Link href={`/calls/${id}/processing`} className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">How this call was processed →</Link>
+      </div>
       <article aria-label={`Call ${id}`} className="stage-in elevated rounded-[var(--radius-panel)]">
         <CallHeader meta={{ call_id: id, updated_at: item?.updated_at ?? null, duration_s: item?.duration_s ?? analysis.data?.duration_s ?? null, is_mock: item?.is_mock ?? false }} decision={result.decision} />
         <CallSummary meta={{ call_id: id, updated_at: item?.updated_at ?? null, duration_s: item?.duration_s ?? null, is_mock: item?.is_mock ?? false }}

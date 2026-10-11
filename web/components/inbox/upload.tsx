@@ -3,7 +3,7 @@ import { Plus } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { ApiError, uploadCall } from "@/lib/data";
+import { ApiError, isLocalRun, uploadCall } from "@/lib/data";
 
 /** Upload of .wav files → POST /api/calls (one request per file). One file opens its live processing view. */
 export function useWavUpload(onUploaded: () => void) {
@@ -39,8 +39,8 @@ export function UploadButton({ upload }: { upload: ReturnType<typeof useWavUploa
     <div className="flex flex-col items-end gap-1">
       <input ref={input} type="file" accept=".wav,audio/wav" multiple hidden
         onChange={(e) => { if (e.target.files) void upload.send(e.target.files); e.target.value = ""; }} />
-      <Button variant="outline" size="sm" className="rounded-full" disabled={upload.busy} onClick={() => input.current?.click()}
-        title=".wav files; you can also drop them anywhere on this page"><Plus className="size-4" />{upload.busy ? "Uploading…" : "Analyse a call"}</Button>
+      <Button variant="outline" size="sm" className="rounded-full" disabled={upload.busy || isLocalRun} onClick={() => input.current?.click()}
+        title={isLocalRun ? "Read-only local run: uploading needs the API" : ".wav files; you can also drop them anywhere on this page"}><Plus className="size-4" />{upload.busy ? "Uploading…" : "Analyse a call"}</Button>
       {upload.msg && <span role="alert" className="max-w-xs text-xs text-alarm sm:text-right">{upload.msg}</span>}
     </div>
   );

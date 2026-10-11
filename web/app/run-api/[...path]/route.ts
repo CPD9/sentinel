@@ -45,11 +45,14 @@ function calls() {
     const res = readJson<{ decision: string; risk_score: number; confidence: number | null; findings: { criterion: string; risk: number }[]; stage_errors: unknown[] }>(path.join(RUN, "results", `${id}.json`));
     if (!res) return [];
     const an = readJson<{ duration_s?: number }>(path.join(ART, "analysis", id, "analysis.json"));
+    const tr = readJson<{ decision_path?: string }>(path.join(ART, `traces${suffix()}`, `${id}.json`));
+    const top = [...res.findings].sort((x, y) => y.risk - x.risk)[0] as { reason?: string } | undefined;
     return [{
       call_id: id, status: res.stage_errors.length ? "error" : "done", duration_s: an?.duration_s ?? null, variant: variants.get(id) ?? null,
       decision: res.decision, risk_score: res.risk_score, confidence: res.confidence,
       criteria: [...new Set(res.findings.filter((f) => f.risk >= review).map((f) => f.criterion))],
       n_stage_errors: res.stage_errors.length, updated_at: r?.created_at ?? null, is_mock: false,
+      decision_path: tr?.decision_path ?? null, reason: top?.reason ?? null,
     }];
   });
 }
@@ -116,6 +119,17 @@ async function preview(body: Record<string, unknown> | null): Promise<Response> 
   });
 }
 
+// ---- "how each method decided": the strategy comparison run (scripts/strategy_lab.py, T4). Decisions and reasons
+// per strategy only; the file carries no gold labels, and nothing else of it is passed on.
+function strategies(id: string): Response {
+  const lab = readJson<Record<string, Record<string, { decision?: string; risk?: number; reason?: string; criteria?: string[]; error?: boolean }>>>(path.join(ART, "bench", "strategy_lab_t4", "per_call.json"));
+  const row = lab?.[id];
+  if (!row) return err(404, "not_available", "This call is not in the strategy comparison run.");
+  const defaults = readJson<{ default?: string; top3?: { id: string; strategy: string; description: string }[] }>(path.join(REPO, "config", "strategy_defaults.json"));
+  const methods = Object.entries(row).map(([sid, v]) => ({ id: sid, decision: v.decision ?? null, risk: v.risk ?? null, reason: v.reason ?? null, criteria: v.criteria ?? [], error: !!v.error }));
+  return json({ call_id: id, run: "strategy_lab_t4", default: defaults?.default ?? null, top3: defaults?.top3?.map((t) => t.id) ?? [], methods });
+}
+
 // ---- feedback in memory (this server only)
 const feedback = new Map<string, Record<string, unknown>>();
 const VERDICTS = ["false_alarm", "missed", "correct", "escalate"];
@@ -126,7 +140,6 @@ export async function GET(req: Request, ctx: { params: Promise<{ path: string[] 
   const [a, id, b, name] = p;
   if (a === "run" && p.length === 1) return json({ ...run(), source: "local files (read-only fallback, not the API)" });
   if (a === "calls" && p.length === 1) return json(calls());
-  if (a === "capabilities") return json({ verdicts: VERDICTS, report: false });
   if (a === "feedback") return json([...feedback.values()]);
   if (a === "audit" || a === "events") return a === "audit" ? json([]) : new Response(null, { status: 204 });
   if (a === "settings" && id === "thresholds") {
@@ -139,10 +152,14 @@ export async function GET(req: Request, ctx: { params: Promise<{ path: string[] 
     return k ? json(k) : err(404, "not_available", "keywords.json not found");
   }
   if (a === "quality") {
-    const rep = readJson<{ report_id?: string; run_id?: string; split?: string; mode?: string; system?: string; created_at?: string }>(path.join(ART, "quality", "final_report.json"));
-    if (!rep?.report_id) return p.length === 1 ? json([]) : err(404, "not_found", "No quality report in this run yet.");
-    if (p.length === 1) return json([{ report_id: rep.report_id, run_id: rep.run_id, split: rep.split, mode: rep.mode, system: rep.system, created_at: rep.created_at, is_mock: false }]);
-    return id === rep.report_id ? json(rep) : err(404, "not_found", `Unknown report ${id}`);
+    const dir = path.join(ART, "quality");
+    type Rep = { report_id?: string; run_id?: string; split?: string; mode?: string; system?: string; created_at?: string; is_mock?: boolean };
+    const reps = (existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith(".json")) : [])
+      .map((f) => readJson<Rep>(path.join(dir, f))).filter((x): x is Rep => !!x?.report_id && !!x.created_at)
+      .sort((x, y) => String(y.created_at).localeCompare(String(x.created_at)));
+    if (p.length === 1) return json(reps.map((x) => ({ report_id: x.report_id, run_id: x.run_id, split: x.split, mode: x.mode, system: x.system, created_at: x.created_at, is_mock: !!x.is_mock })));
+    const hit = reps.find((x) => x.report_id === id);
+    return hit ? json(hit) : err(404, "not_found", `Unknown report ${id}`);
   }
   if (a !== "calls" || !id || !safeId(id)) return err(404, "not_found", `No route /${p.join("/")} in the local-run fallback.`);
   if (!existsSync(path.join(RUN, "results", `${id}.json`))) return err(404, "not_found", `Unknown call ${id}`);
@@ -160,6 +177,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ path: string[] 
     return inside(dir, f) && existsSync(f) ? fileResponse(f, req, "audio/wav") : err(404, "not_available", "No snippet.");
   }
   if (b === "events") return new Response(null, { status: 204 });
+  if (b === "strategies") return strategies(id);
   return err(404, "not_found", `No route /${p.join("/")}`);
 }
 
@@ -168,6 +186,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ path: string[]
   const [a] = (await ctx.params).path;
   const body = await req.json().catch(() => null) as Record<string, unknown> | null;
   if (a === "simulate") return simulate(body?.patch ?? {});
+  const segs = (await ctx.params).path;
+  if (a === "calls" && segs[2] === "report" && safeId(segs[1] ?? "")) return report(segs[1]);
   if (a === "settings" && (await ctx.params).path[1] === "preview") return preview(body);
   if (a === "feedback") {
     const { call_id, verdict, note } = (body ?? {}) as { call_id?: string; verdict?: string; note?: string };
@@ -179,6 +199,22 @@ export async function POST(req: Request, ctx: { params: Promise<{ path: string[]
     return json(entry, 201);
   }
   return err(409, "read_only", "This is the read-only local-run fallback: uploads and settings changes need the API.");
+}
+
+/** POST /calls/{id}/report, dry run only: the payloads pipeline/trigger.py would send, built in memory, nothing written or sent. */
+function report(id: string): Response {
+  const res = readJson<{ decision: string; findings: { criterion: string; risk: number; reason: string; evidence: { text: string; start_s: number | null }[] }[] }>(path.join(RUN, "results", `${id}.json`));
+  if (!res) return err(404, "not_found", `Unknown call ${id}`);
+  const fs = res.findings.filter((f) => f.risk > 0);
+  if (!fs.length) return err(409, "conflict", "No finding to report for this call.");
+  const fb = feedback.get(id);
+  const label = fb && (fb.verdict === "correct" || fb.verdict === "missed") ? "confirmed fraud" : res.decision;
+  const records = fs.map((f) => {
+    const t = f.evidence[0]?.start_s;
+    const quote = f.evidence[0]?.text ? ` Quote: "${f.evidence[0].text.slice(0, 300)}"` : "";
+    return { mode: "dry-run", payload: { url: `http://127.0.0.1/calls/${id}${t != null ? `?t=${Math.floor(t)}` : ""}`, title: `${label}: ${f.criterion} in ${id}`.slice(0, 200), description: `${f.reason} (risk ${f.risk.toFixed(2)}).${quote}`.slice(0, 2000) } };
+  });
+  return json({ call_id: id, dry_run: true, records, errors: [] }, 201);
 }
 
 export async function PUT() {

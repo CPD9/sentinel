@@ -25,7 +25,7 @@ export function fmtMetric(x: number | null | undefined, digits = 2): string {
 
 export function fmtSeconds(x: number | null | undefined): string {
   if (x == null) return "–";
-  return x < 1 ? `${(x * 1000).toFixed(0)} ms` : `${x.toFixed(1)} s`;
+  return x < 0.0005 ? "<1 ms" : x < 1 ? `${(x * 1000).toFixed(0)} ms` : `${x.toFixed(1)} s`;
 }
 
 export function fmtDateTime(iso: string | null | undefined): string {

@@ -17,11 +17,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ExcerptPlayer } from "@/components/inbox/excerpt-player";
 import { CRITERION_LABEL, criterionColor } from "@/lib/colors";
 import {
-  COMPONENT_WORDS, DECISION_LABEL, concerns, factSentence, methods, officerWords, plainReason, score, speakerLabel, stripTemplate, topRule, unsureLine,
+  COMPONENT_WORDS, DECISION_LABEL, METHOD_LABEL, concerns, factSentence, methods, officerWords, plainReason, score, speakerLabel, stripTemplate, topRule, unsureLine,
 } from "@/lib/explain";
+import { getMethods } from "@/lib/data";
 import { fmtDateTime } from "@/lib/format";
+
 import type { AnalysisArtifact, CallResult, Criterion, Decision, DecisionTrace, Fact, RuleResult, Thresholds, Transcript } from "@/lib/types";
-import type { Loadable } from "@/lib/use-async";
+import { useAsync, type Loadable } from "@/lib/use-async";
 import { cn } from "@/lib/utils";
 import { ActionBar } from "./action-bar";
 
@@ -204,6 +206,9 @@ export function CallSummary({ meta, result, trace, analysis, transcript, thresho
         </div>
       )}
 
+      {/* how each detection method decided (strategy comparison run) */}
+      {!broken && <MethodStrip callId={result.call_id} decision={decision} compact={compact} />}
+
       {/* counterfactual */}
       {t && !broken && (decision !== "alarm" || t.what_would_change) && (
         <div className="grid gap-4 border-t border-border pt-5 md:grid-cols-2">
@@ -367,6 +372,41 @@ function Counterfactual({ title, text, template }: { title: string; text: string
       <Eyebrow>{title}</Eyebrow>
       {text ? <p className="text-sm leading-relaxed">{officerWords(text)}</p> : <p className="text-sm text-muted-foreground">Not available for this call.</p>}
       {template && text && <p className="text-[11px] text-muted-foreground">Template text (no LLM narrative in this run).</p>}
+    </section>
+  );
+}
+
+/** "How each method decided": the five strategies of the comparison run on this call. Agreement is stated; any
+ *  disagreement is styled like a review (amber), because that is what it means for the officer. Missing → nothing. */
+function MethodStrip({ callId, decision, compact }: { callId: string; decision: Decision; compact?: boolean }) {
+  const m = useAsync(() => getMethods(callId), `methods:${callId}`);
+  if (!m.data) return null;
+  const rows = ["S1", "S2", "S3", "S4", "S8"].map((id) => m.data!.methods.find((x) => x.id === id)).filter((x): x is NonNullable<typeof x> => !!x && x.decision != null);
+  const differ = rows.filter((r) => r.decision !== decision);
+  const shipped = rows.find((r) => r.id === "S3");
+  const color = (d: Decision | null) => (d === "alarm" ? "text-alarm" : d === "review" ? "text-review" : "text-noalert");
+  return (
+    <section aria-labelledby="methods" className="space-y-3 border-t border-border pt-5">
+      <Eyebrow id="methods">How each method decided</Eyebrow>
+      <p className={cn("text-sm", differ.length ? "font-medium text-review" : "text-muted-foreground")}>
+        {differ.length === 0 ? `All ${rows.length} methods agree: ${DECISION_LABEL[decision]}.`
+          : `Methods disagree: ${differ.map((r) => `${METHOD_LABEL[r.id]?.name ?? r.id} says ${DECISION_LABEL[r.decision!]}`).join(", ")}. A person should double-check.`}
+        {shipped && shipped.decision !== decision && <span className="text-muted-foreground"> (The comparison run is older than this result.)</span>}
+      </p>
+      <ol className={cn("grid gap-2", compact ? "grid-cols-5" : "sm:grid-cols-5")}>
+        {rows.map((r) => {
+          const off = r.decision !== decision;
+          return (
+            <li key={r.id} title={`${METHOD_LABEL[r.id]?.how ?? ""}${r.reason ? ` — ${r.reason}` : ""}`}
+              className={cn("min-w-0 rounded-lg border px-3 py-2", off ? "border-dashed border-review bg-review-bg/40" : "border-border", r.id === "S3" && "ring-1 ring-foreground/40")}>
+              <p className="truncate text-xs text-muted-foreground">{METHOD_LABEL[r.id]?.name ?? r.id}</p>
+              <p className={cn("text-sm font-semibold", color(r.decision))}>{DECISION_LABEL[r.decision!]}{r.risk != null && r.risk > 0 && r.decision !== "no_alert" && <span className="tabular font-normal text-muted-foreground"> · {score(r.risk)}</span>}</p>
+              {!compact && r.reason && <p className="mt-0.5 line-clamp-2 text-[11px] text-muted-foreground">{officerWords(r.reason)}</p>}
+            </li>
+          );
+        })}
+      </ol>
+      <p className="text-[11px] text-muted-foreground">From the strategy comparison run on the same calls; the shipped decision is the hybrid (outlined).</p>
     </section>
   );
 }

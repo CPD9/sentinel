@@ -46,7 +46,7 @@ export const COMPONENT_WORDS: Record<string, { label: string; low: string; ok: s
   asr: { label: "Transcript on the evidence", low: "unclear transcript", ok: "clear", help: "How sure speech recognition is on the cited passages." },
   audio_quality: { label: "Audio quality", low: "noisy audio", ok: "clear", help: "Signal-to-noise of the recording." },
   missing_evidence: { label: "Evidence verified", low: "evidence not verified", ok: "all cited evidence found in the transcript", help: "Facts whose quote or speaker could not be matched to the transcript are dropped." },
-  conflicts: { label: "Methods and facts agree", low: "facts contradict each other", ok: "no contradictions", help: "Facts pointing in opposite directions lower confidence." },
+  conflicts: { label: "Facts agree with each other", low: "facts contradict each other", ok: "no contradictions", help: "Facts pointing in opposite directions lower confidence." },
   threshold_proximity: { label: "Distance to a line", low: "risk close to a line", ok: "clearly on one side", help: "A risk just above or below a line is less certain than one far from it." },
 };
 const LOW = 0.7;
@@ -97,3 +97,15 @@ export const officerWords = (s: string) =>
 
 /** 0–1 → "91" (risk and lines are shown as 0–100 numbers, never as "% fraud"). */
 export const score = (x: number | null | undefined) => (x == null ? "–" : String(Math.round(x * 100)));
+
+/** Officer names for the detection methods compared in the strategy lab (scripts/strategy_lab.py). */
+export const METHOD_LABEL: Record<string, { name: string; how: string }> = {
+  S1: { name: "Keywords only", how: "word lists, no AI" },
+  S2: { name: "AI facts only", how: "facts + rules, no keywords" },
+  S3: { name: "Hybrid (shipped)", how: "facts + keywords + rules" },
+  S4: { name: "Direct AI judge", how: "one LLM verdict on the whole call" },
+  S8: { name: "Majority vote", how: "S1 + S3 + S4; a split vote means review" },
+};
+
+/** The same "Unsure: …" line from the list row's decision_path alone (docs/API.md GET /calls), when no trace is loaded. */
+export const unsureFromPath = (p: string | null | undefined) => (p && PATH_UNSURE[p] ? `Unsure: ${PATH_UNSURE[p]}` : null);
