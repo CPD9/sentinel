@@ -109,3 +109,11 @@ export const METHOD_LABEL: Record<string, { name: string; how: string }> = {
 
 /** The same "Unsure: …" line from the list row's decision_path alone (docs/API.md GET /calls), when no trace is loaded. */
 export const unsureFromPath = (p: string | null | undefined) => (p && PATH_UNSURE[p] ? `Unsure: ${PATH_UNSURE[p]}` : null);
+
+/** Steps that run after the decision is locked (CLAUDE.md steps 9-11 + analysis): their failure never changes the decision
+ *  or removes its evidence. Only a failure that decided the call (decision_path "stage_error") blocks the reason. */
+export const POST_DECISION_STAGES = new Set(["narrate", "snippets", "analysis", "trigger", "report"]);
+export function blockingFailure(stageErrors: { stage: string }[], decisionPath: string | null | undefined): boolean {
+  if (decisionPath) return decisionPath === "stage_error";
+  return stageErrors.some((e) => !POST_DECISION_STAGES.has(e.stage.split(".")[0]));
+}

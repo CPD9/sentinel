@@ -17,7 +17,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ExcerptPlayer } from "@/components/inbox/excerpt-player";
 import { CRITERION_LABEL, criterionColor } from "@/lib/colors";
 import {
-  COMPONENT_WORDS, DECISION_LABEL, METHOD_LABEL, concerns, factSentence, methods, officerWords, plainReason, score, speakerLabel, stripTemplate, topRule, unsureLine,
+  COMPONENT_WORDS, DECISION_LABEL, METHOD_LABEL, blockingFailure, concerns, factSentence, methods, officerWords, plainReason, score, speakerLabel, stripTemplate, topRule, unsureLine,
 } from "@/lib/explain";
 import { getMethods } from "@/lib/data";
 import { fmtDateTime } from "@/lib/format";
@@ -83,7 +83,10 @@ export function CallSummary({ meta, result, trace, analysis, transcript, thresho
   const t = trace.data ?? null;
   const th = thresholds ?? t?.thresholds ?? null;
   const decision = result.decision;
-  const broken = result.stage_errors.length > 0;
+  // A failed step is always shown, next to the evidence. It replaces the reason only when it decided the call
+  // (decision_path "stage_error"); a failed trigger POST or snippet cut never hides a valid alert, its transcript or passages.
+  const errors = result.stage_errors;
+  const broken = blockingFailure(errors, t?.decision_path);
   const [focus, setFocus] = useState<{ segs: string[]; n: number } | null>(null);
   const cite = (segs: string[]) => { setFocus((f) => ({ segs, n: (f?.n ?? 0) + 1 })); onCite?.(segs); };
 
@@ -123,7 +126,7 @@ export function CallSummary({ meta, result, trace, analysis, transcript, thresho
         <section aria-labelledby="why" className="space-y-2">
           <Eyebrow id="why">{heading}</Eyebrow>
           {broken ? (
-            <p className="text-lead font-semibold">A processing step failed, so the call was not fully analysed. A person decides.</p>
+            <p className="text-lead font-semibold">A processing step failed before the decision, so the call was not fully analysed. A person decides.</p>
           ) : trace.status === "loading" && !t ? <Skeleton className="h-14" /> : !t ? (
             <p className="text-lead font-semibold">{findings[0]?.reason ?? "No decision trace is available for this call."}</p>
           ) : decision === "no_alert" ? (
@@ -144,7 +147,7 @@ export function CallSummary({ meta, result, trace, analysis, transcript, thresho
               {decision === "review" && <p className="text-sm font-medium text-review">{unsureLine(t)}</p>}
             </>
           )}
-          {result.findings[0] && !broken && (
+          {result.findings[0] && (
             <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
               <span aria-hidden className="inline-block size-2 rounded-full" style={{ background: criterionColor(findings[0].criterion) }} />
               Criterion: {CRITERION_LABEL[findings[0].criterion as Criterion] ?? findings[0].criterion}
@@ -154,16 +157,21 @@ export function CallSummary({ meta, result, trace, analysis, transcript, thresho
         <RiskBlock risk={broken && findings.length === 0 ? null : result.risk_score} confidence={result.confidence} th={th} decision={decision} trace={t} />
       </div>
 
-      {broken && (
-        <ul role="alert" className="space-y-1 rounded-lg border border-alarm/40 bg-alarm-bg px-3 py-2 text-sm text-alarm">
-          {result.stage_errors.map((e, i) => (
-            <li key={i} className="flex gap-2"><AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden /><span><code className="font-mono">{e.stage}</code>: {e.message}</span></li>
-          ))}
-        </ul>
+      {errors.length > 0 && (
+        <div role="alert" className="space-y-1 rounded-lg border border-alarm/40 bg-alarm-bg px-3 py-2 text-sm text-alarm">
+          <p className="font-semibold">
+            {broken ? "A step failed before the decision:" : `A step after the decision failed. The ${DECISION_LABEL[decision].toLowerCase()}, its evidence and the transcript below are complete.`}
+          </p>
+          <ul className="space-y-0.5">
+            {errors.map((e, i) => (
+              <li key={i} className="flex gap-2"><AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden /><span><code className="font-mono">{e.stage}</code>: {e.message}</span></li>
+            ))}
+          </ul>
+        </div>
       )}
 
-      {/* what was said */}
-      {!broken && (
+      {/* what was said: always, when there is anything to show (a failed step never hides real evidence) */}
+      {(passages.length > 0 || factSegments.length > 0 || !broken) && (
         <section aria-labelledby="said" className="space-y-3 border-t border-border pt-5">
           <Eyebrow id="said">What was said</Eyebrow>
           {passages.length === 0 && factSegments.length === 0 ? (
@@ -181,7 +189,7 @@ export function CallSummary({ meta, result, trace, analysis, transcript, thresho
       )}
 
       {/* evidence: facts first, then the rule, keywords, confidence */}
-      {!broken && (
+      {(t || !broken) && (
         <div className="grid gap-x-10 gap-y-6 border-t border-border pt-5 lg:grid-cols-2">
           <section aria-labelledby="facts" className="space-y-3">
             <Eyebrow id="facts">Evidence: what the AI found<InfoTip term="fact" /></Eyebrow>
@@ -207,10 +215,10 @@ export function CallSummary({ meta, result, trace, analysis, transcript, thresho
       )}
 
       {/* how each detection method decided (strategy comparison run) */}
-      {!broken && <MethodStrip callId={result.call_id} decision={decision} compact={compact} />}
+      {t && <MethodStrip callId={result.call_id} decision={decision} compact={compact} />}
 
       {/* counterfactual */}
-      {t && !broken && (decision !== "alarm" || t.what_would_change) && (
+      {t && (decision !== "alarm" || t.what_would_change) && (
         <div className="grid gap-4 border-t border-border pt-5 md:grid-cols-2">
           {decision !== "alarm" && <Counterfactual title="Why not flagged" text={t.why_not_flagged ?? stripTemplate(result.narrative).text} template={!t.why_not_flagged} />}
           {t.what_would_change && <Counterfactual title="What would change this" text={t.what_would_change} />}

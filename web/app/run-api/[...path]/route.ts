@@ -48,7 +48,8 @@ function calls() {
     const tr = readJson<{ decision_path?: string }>(path.join(ART, `traces${suffix()}`, `${id}.json`));
     const top = [...res.findings].sort((x, y) => y.risk - x.risk)[0] as { reason?: string } | undefined;
     return [{
-      call_id: id, status: res.stage_errors.length ? "error" : "done", duration_s: an?.duration_s ?? null, variant: variants.get(id) ?? null,
+      // a failed post-decision step (trigger, snippets) leaves the call "done"; only a decisive failure is "error"
+      call_id: id, status: tr?.decision_path === "stage_error" ? "error" : "done", duration_s: an?.duration_s ?? null, variant: variants.get(id) ?? null,
       decision: res.decision, risk_score: res.risk_score, confidence: res.confidence,
       criteria: [...new Set(res.findings.filter((f) => f.risk >= review).map((f) => f.criterion))],
       n_stage_errors: res.stage_errors.length, updated_at: r?.created_at ?? null, is_mock: false,
