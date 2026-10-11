@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { askCopilot, clipUrl, type CopilotCitation, type CopilotClaim, type CopilotEvent, type HistoryTurn } from "@/lib/data-copilot";
 import { fmtTime, humanize } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { speakerLabel } from "@/lib/explain";
 
 type Turn = {
   q: string; claims: CopilotClaim[]; dropped: string[]; status: "queued" | "running" | "done" | "error";
@@ -137,7 +138,7 @@ function TurnView({ turn, scope, onCite }: { turn: Turn; scope: "call" | "all"; 
 }
 
 function Citation({ c, scope, onCite }: { c: CopilotCitation; scope: "call" | "all"; onCite?: (segs: string[]) => void }) {
-  const label = `${scope === "all" ? `${c.call_id} · ` : ""}${c.start_s != null ? fmtTime(c.start_s) : c.segment_id} · ${c.speaker === "unknown" ? "speaker ?" : c.speaker}`;
+  const label = `${scope === "all" ? `${c.call_id} · ` : ""}${c.start_s != null ? fmtTime(c.start_s) : c.segment_id} · ${speakerLabel(c.speaker)}`;
   const title = `${c.segment_id}: “${c.text}”`;
   if (scope === "call")
     return (
