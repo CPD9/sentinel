@@ -172,7 +172,9 @@ function runReplay(id: string, onEvent: (e: ProcessingEvent) => void, onStatus: 
     if (cancelled) return;
     if (!detail || detail.kind !== "result") { onStatus("closed"); return; }
     const failed = new Map(detail.data.stage_errors.map((e) => [e.stage, e.message]));
-    const order: Stage[] = ["asr", "diarize", "keywords", "extract", "validate", "rules", "confidence", "decide", "narrate", "snippets", "trigger"];
+    // the AI judge runs right after decide (as in a live run); only when the recorded decision came from it
+    const judged = !!trace && (trace.decision_path.startsWith("judge_") || trace.decision_path === "keyword_review");
+    const order: Stage[] = ["asr", "diarize", "keywords", "extract", "validate", "rules", "confidence", "decide", ...(judged ? ["judge" as Stage] : []), "narrate", "snippets", "trigger"];
     const evs: Omit<ProcessingEvent, "seq" | "ts">[] = [{ event: "job_queued", call_id: id, stage: null, elapsed_s: null, cached: null, message: "replay of the recorded run", decision: null }];
     for (const st of order) {
       evs.push({ event: "stage_started", call_id: id, stage: st, elapsed_s: null, cached: null, message: null, decision: null });

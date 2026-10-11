@@ -73,8 +73,9 @@ export function ProcessingView({ callId, inline = false, onFinished }: { callId:
   }, `proc-docs:${callId}:${m.finished}`);
   const produced = useMemo(() => producedBy(docs.data ?? null), [docs.data]);
   const live = isUploadedCall(callId);
-  // the pipeline's real order: the audio check runs first, before speech to text
-  const shown: Stage[] = [...(live ? ["analysis" as Stage] : []), ...STAGES.filter((st) => st !== "upload" && st !== "analysis")];
+  // the pipeline's real order: the audio check runs first, before speech to text; the AI judge right after decide
+  const shown: Stage[] = [...(live ? ["analysis" as Stage] : []), ...STAGES.filter((st) => st !== "upload" && st !== "analysis" && st !== "judge")
+    .flatMap((st) => (st === "decide" ? [st, "judge" as Stage] : [st]))];
   // a live upload opens its call page by itself once the decision is in
   const router = useRouter();
   useEffect(() => {
@@ -170,7 +171,7 @@ function LiveUploadButton() {
 const STAGE_LABEL: Partial<Record<Stage, string>> = {
   analysis: "Audio check",
   asr: "Speech to text", diarize: "Who is speaking", keywords: "Keywords", extract: "AI facts", validate: "Evidence check",
-  rules: "Rules", confidence: "Confidence", decide: "Decision", narrate: "Explanation", snippets: "Audio passages", trigger: "Report",
+  rules: "Rules", confidence: "Confidence", decide: "Decision", judge: "AI judge", narrate: "Explanation", snippets: "Audio passages", trigger: "Report",
 };
 
 type Docs = { result: CallResult | null; trace: DecisionTrace | null; transcript: Transcript | null; analysis: AnalysisArtifact | null } | null;
@@ -195,6 +196,9 @@ function producedBy(d: Docs): Partial<Record<Stage, string>> {
     out.rules = fired.length ? fired.map((r) => `${CRITERION_LABEL[r.criterion] ?? r.criterion} fired (${Math.round(r.risk * 100)})`).join(", ") : `no rule fired (highest ${Math.round(Math.max(0, ...trace.rules.map((r) => r.risk)) * 100)})`;
     out.confidence = trace.confidence_breakdown ? `${Math.round(trace.confidence_breakdown.value * 100)} vs gate ${Math.round(trace.confidence_breakdown.gate * 100)}` : "not computed";
     out.decide = `${DECISION_LABEL[trace.decision]} (${trace.decision_path.replaceAll("_", " ")})`;
+    const verdict: Record<string, string> = { judge_alarm: "verdict: Alert", judge_review: "verdict: Review", judge_no_alert: "verdict: No alert",
+      keyword_review: "verdict: No alert (keywords in several passages sent it to Review)" };
+    if (verdict[trace.decision_path]) out.judge = verdict[trace.decision_path];
   }
   if (result) {
     out.narrate = result.narrative.startsWith(TEMPLATE_PREFIX) ? "template text (no LLM narrative in this run)" : "written after the decision was locked";
