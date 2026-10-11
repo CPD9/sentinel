@@ -321,4 +321,37 @@ def test_output_budget_per_prompt_and_truncation_is_named(tmp_path, v1_then_rest
     full.chat_with_metrics = lambda *a, **k: (lambda r: (r[0], metrics(output_tokens=3000)))(orig(*a, **k))
     with pytest.raises(ex.ExtractionError, match="truncated"):
         run(full, tmp=tmp_path)
-    assert full.calls[0]["max_tokens"] == 3000 and len(full.calls) == 1        # no repair call after a truncated reply
+    # no repair call after a truncated reply: the window is halved (5 -> 2 -> 1 segment) and fails fast on a single
+    # segment that still truncates
+    assert full.calls[0]["max_tokens"] == 3000 and len(full.calls) == 3
+
+
+def test_truncated_window_is_split_and_retried(tmp_path, v1_then_restore):
+    ex.set_prompt("v2")
+    t = tr([(f"T{i:03d}", "customer", f"Mis Passwort isch Nummer {i}") for i in range(1, 7)])
+    c = FakeClient([reply()])
+
+    def chat(messages, **k):
+        c.calls.append({"messages": messages})
+        ids = [line.split("]")[0][1:] for line in messages[-1]["content"].splitlines() if line.startswith("[T")]
+        if len(ids) > 3:                                    # too many facts for one reply: cut off
+            return '{"facts": [{"speaker": "customer"', metrics(output_tokens=3000)
+        return reply(*(raw_fact(segment_ids=[i], quote=f"Mis Passwort isch Nummer {int(i[1:])}") for i in ids)), metrics()
+
+    c.chat_with_metrics = chat
+    report = []
+    facts = run(c, t, tmp=tmp_path, report=report)
+    assert [f.segment_ids for f in facts] == [[f"T{i:03d}"] for i in range(1, 7)] and all(f.valid for f in facts)
+    assert [(r["n_segments"], r["split"]) for r in report] == [(3, True), (3, True)]
+    assert len(c.calls) == 3                                   # 6 segments truncated, then 3 + 3
+    c.calls.clear()
+    assert len(run(c, t, tmp=tmp_path)) == 6 and len(c.calls) == 1   # halves are cached; only the full window re-asks
+
+
+def test_unknown_speakers_are_shown_neutrally(tmp_path):
+    t = tr([(sid, "unknown", text) for sid, _, text in SEGS])
+    c = FakeClient([reply(raw_fact(speaker="customer"))])
+    (f,) = run(c, t, tmp=tmp_path)
+    user = c.calls[0]["messages"][-1]["content"]
+    assert "(unknown)" not in user and "[T004] (speaker) Mis Passwort" in user
+    assert f.valid and f.speaker == "customer"              # no speaker mismatch against an unknown segment

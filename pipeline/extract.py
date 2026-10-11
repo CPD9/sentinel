@@ -75,6 +75,10 @@ def set_prompt(name: str) -> None:
 VERSIONS: dict = {"llm": None, "prompt": PROMPT_VERSION_FULL, "provider": None, "self_hosted": None}
 
 
+class TruncatedReply(ValueError):
+    """The reply hit max_tokens: too many facts for one window. extract_facts splits the window and retries."""
+
+
 class ExtractionError(RuntimeError):
     pass
 
@@ -142,9 +146,15 @@ def _call(client, messages: list[dict], metrics: list[dict]) -> str:
     return text
 
 
+# ASR without diarization labels every segment "unknown"; shown as "(unknown)" Apertus answered {"facts": []} for every
+# window (28 dev calls, 11 Oct 2026). A neutral label lets the model attribute speakers from the content; the validator
+# never calls that a speaker mismatch on an "unknown" segment. Part of the cache key, so the empty replies are not reused.
+PROMPT_SPEAKER = {"unknown": "speaker"}
+
+
 def _window_raw(client, cache: DiskCache, window: list[TranscriptSegment]) -> dict:
     """{facts: [raw dicts], repaired, cached, metrics: [...]} for one window."""
-    segs = [{"id": s.id, "speaker": s.speaker, "text": s.text} for s in window]
+    segs = [{"id": s.id, "speaker": PROMPT_SPEAKER.get(s.speaker, s.speaker), "text": s.text} for s in window]
     key = extraction_cache_key(segs, client.model, client.model_revision, PROMPT_VERSION_FULL, provider=client.spec.name)
     hit = cache.get(key)
     if hit is not None:
@@ -159,7 +169,7 @@ def _window_raw(client, cache: DiskCache, window: list[TranscriptSegment]) -> di
     except ValueError as first:
         if metrics[-1].get("output_tokens") is not None and metrics[-1]["output_tokens"] >= max_output_tokens():
             # cut off at the token limit: a repair call would have to carry the whole reply and cannot fit the context
-            raise ExtractionError(f"model reply is not valid JSON: {first} (reply hit the max_tokens limit: truncated)") from None
+            raise TruncatedReply(f"model reply is not valid JSON: {first} (reply hit the max_tokens limit: truncated)") from None
         repaired = True
         messages += [{"role": "assistant", "content": text},
                      {"role": "user", "content": f"That answer was not usable ({first}). Answer again with ONLY the "
@@ -276,9 +286,24 @@ def extract_facts(transcript: Transcript, *, client=None, cache: DiskCache | Non
     pos = {s.id: i for i, s in enumerate(transcript.segments)}
     raw: list[Fact] = []
     for w, window in enumerate(make_windows(transcript.segments)):
-        res = _window_raw(client, cache, window)
-        if report is not None:
-            report.append({"window": w, "n_segments": len(window), "n_facts_raw": len(res["facts"]),
-                           "cached": res["cached"], "repaired": res["repaired"], "metrics": res["metrics"]})
-        raw += [check_span(to_fact(r, resolve), pos) for r in res["facts"]]
+        for res in _window_or_halves(client, cache, window):
+            if report is not None:
+                report.append({"window": w, "n_segments": res["n_segments"], "n_facts_raw": len(res["facts"]),
+                               "cached": res["cached"], "repaired": res["repaired"], "split": res["split"],
+                               "metrics": res["metrics"]})
+            raw += [check_span(to_fact(r, resolve), pos) for r in res["facts"]]
     return validate_facts(merge_facts(raw, transcript), transcript)
+
+
+def _window_or_halves(client, cache: DiskCache, window: list[TranscriptSegment], depth: int = 0) -> list[dict]:
+    """A window whose reply hits max_tokens (a model listing more facts than fit) is split in two halves and each
+    is extracted on its own, recursively; a single segment that still truncates is an ExtractionError. Windows
+    that fit are untouched, so their cache keys (and cached runs) stay valid."""
+    try:
+        return [{**_window_raw(client, cache, window), "n_segments": len(window), "split": depth > 0}]
+    except TruncatedReply as e:
+        if len(window) < 2:
+            raise ExtractionError(str(e)) from None
+        mid = len(window) // 2
+        return (_window_or_halves(client, cache, window[:mid], depth + 1)
+                + _window_or_halves(client, cache, window[mid:], depth + 1))

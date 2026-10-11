@@ -1,0 +1,58 @@
+name: CI
+
+# Runs on every PR and on every push to main. No GPU, no secrets, no case data or audio needed.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: Python tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # pipeline/snippets.py cuts evidence snippets with ffmpeg; the runner image doesn't ship it.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements-dev.txt
+            requirements-analysis.txt
+            services/api/requirements.txt
+      # ASR runtime only, same pins as requirements-asr.txt. torch/transformers are left out: no test uses them,
+      # they only serve ct2-transformers-converter (benchmark_asr.py fine-tune conversion).
+      - run: pip install -r requirements-dev.txt -r requirements-analysis.txt -r services/api/requirements.txt faster-whisper==1.2.1 ctranslate2==4.8.2 av==18.1.0
+      # test_test_split_is_locked reads artifacts/splits/dialogue_splits.json (built from the gitignored case data) and
+      # doesn't skip without it; deselected here until the test skips itself. Remove the deselect then.
+      # test_runtime_per_audio_minute is timing-based and flaky (cold numba start); uncomment its deselect if it fails.
+      - run: >-
+          python -m pytest
+          --deselect tests/test_run_cli.py::test_test_split_is_locked
+          # --deselect tests/test_audio_analysis.py::test_runtime_per_audio_minute
+
+  web:
+    name: Web lint, typecheck, build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build

@@ -1,11 +1,15 @@
 "use client";
-import { Plus, Save, X } from "lucide-react";
+import { Save, X } from "lucide-react";
+import Link from "next/link";
 import { Fragment, useState } from "react";
 import { ErrorCard, SkeletonBlock } from "@/components/shell/states";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { CRITERION_LABEL, criterionColor } from "@/lib/colors";
-import { ApiError, getKeywords, getRules, putKeywords, putRules } from "@/lib/data";
+import { InfoTip } from "@/components/ui/info-tip";
+import { ApiError, getKeywords, getRules, isFixtures, isLocalRun, putKeywords, putRules } from "@/lib/data";
+import { DECISION_LABEL } from "@/lib/explain";
+import { cn } from "@/lib/utils";
 import type { KeywordsConfig, RulesConfig } from "@/lib/types";
 import { useAsync } from "@/lib/use-async";
 import { usePreview } from "@/lib/use-preview";
@@ -18,88 +22,139 @@ export function Configuration() {
   return (
     <div className="space-y-8">
       <Keywords />
-      <Rules />
+      <details className="group rounded-2xl border border-border">
+        <summary className="flex cursor-pointer list-none items-center gap-2 px-5 py-3.5 text-sm font-semibold [&::-webkit-details-marker]:hidden">
+          <span aria-hidden className="transition-transform group-open:rotate-90 motion-reduce:transition-none">›</span>Checks
+          <span className="font-normal text-muted-foreground">one rule per kind of fraud (advanced)</span>
+        </summary>
+        <div className="border-t border-border p-5"><Rules /></div>
+      </details>
     </div>
   );
 }
 
+/** What changed between the saved keyword document and the draft, in officer words. */
+function describe(saved: KeywordsConfig, draft: KeywordsConfig): string[] {
+  const out: string[] = [];
+  const famLabel = (k: string) => (draft.families[k] ?? saved.families[k]) ? familyLabel(k, draft.families[k] ?? saved.families[k]) : k;
+  for (const [k, f] of Object.entries(draft.families)) {
+    const before = saved.families[k];
+    const words = (x?: KeywordsConfig["families"][string]) => new Set(x ? [...x.terms, ...Object.values(x.variants).flat()] : []);
+    const b = words(before), d = words(f);
+    for (const w of d) if (!b.has(w)) out.push(`Adding “${w}” to ${famLabel(k)}`);
+    for (const w of b) if (!d.has(w)) out.push(`Removing “${w}” from ${famLabel(k)}`);
+  }
+  if (draft.fuzzy_threshold !== saved.fuzzy_threshold) out.push(`Match strictness ${saved.fuzzy_threshold.toFixed(2)} → ${draft.fuzzy_threshold.toFixed(2)}`);
+  return out;
+}
+const familyLabel = (key: string, f: { criterion: string; label?: string }) => CRITERION_LABEL[f.criterion as keyof typeof CRITERION_LABEL] ?? f.label ?? key;
+
+// Settings → Keywords (Nik's design 07): the families as chips on the left, what the change would do on the right.
 function Keywords() {
   const saved = useAsync(getKeywords, "keywords");
   const [edited, setDraft] = useState<KeywordsConfig | null>(null);
   const draft = edited ?? saved.data;
   const [msg, setMsg] = useState<Msg>(null);
+  const [newWord, setNewWord] = useState("");
+  const [family, setFamily] = useState("");
   const preview = usePreview(draft ? { keywords: draft } : null);
 
   if (saved.status === "error" && !saved.data) return <ErrorCard error={saved.error} onRetry={saved.reload} />;
-  if (!draft) return <SkeletonBlock rows={5} />;
+  if (!draft || !saved.data) return <SkeletonBlock rows={5} />;
   const dirty = edited !== null && JSON.stringify(edited) !== JSON.stringify(saved.data);
-  const count = (family: string, term: string) => preview.data?.keyword_hit_counts[family]?.[term];
+  const changes = dirty ? describe(saved.data, draft) : [];
+  const count = (fam: string, term: string) => (preview.data ? preview.data.keyword_hit_counts[fam]?.[term] ?? 0 : undefined);
+  const known = (fam: string, w: string) => { const f = saved.data!.families[fam]; return !!f && (f.terms.includes(w) || Object.values(f.variants).some((v) => v.includes(w))); };
   const mutate = (fn: (d: KeywordsConfig) => void) => { setMsg(null); setDraft((prev) => { const n = structuredClone(prev ?? saved.data!); fn(n); return n; }); };
+  const fam = family || Object.keys(draft.families)[0];
+  const add = () => { const w = newWord.trim(); if (!w || !fam) return; mutate((d) => { const f = d.families[fam]; if (!f.terms.includes(w)) { f.terms.push(w); f.variants[w] ??= []; } }); setNewWord(""); };
+  const readOnly = isFixtures || isLocalRun;
+  const saveTitle = isLocalRun ? "Read-only local run: saving needs the API" : isFixtures ? "Disabled in fixtures mode (MOCK)" : undefined;
+  const changed = preview.data?.changed ?? [];
 
   return (
-    <section aria-labelledby="kw" className="space-y-3">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div><h2 id="kw" className="text-lg font-semibold">Keywords</h2>
-          <p className="max-w-prose text-sm text-muted-foreground">The words Sentinel listens for, grouped by kind of fraud, each with its Swiss German variants. The number next to a word is how many transcript passages match it across all processed calls, live while you edit. Keywords only point to passages; they are never shown to the language model.</p></div>
-        <div className="flex gap-2">
-          <Button size="sm" disabled={!dirty} onClick={async () => { try { const r = await putKeywords(draft); setMsg({ ok: true, text: `Saved. Re-running keywords, rules, confidence, decide for ${r.rerun.n_calls} calls.` }); setDraft(null); saved.reload(); } catch (e) { setMsg(fail(e)); } }}><Save className="size-4" />Save keywords</Button>
-          <Button size="sm" variant="outline" disabled={!dirty} onClick={() => setDraft(null)}>Reset</Button>
+    <section aria-label="Keywords" className="grid gap-5 lg:grid-cols-2">
+      <div className="elevated stage-in min-w-0 space-y-6 rounded-[var(--radius-panel)] p-6">
+        {Object.entries(draft.families).map(([name, f]) => (
+          <div key={name} className="space-y-2.5">
+            <h3 className="eyebrow flex items-center gap-2"><span aria-hidden className="inline-block size-2 rounded-full" style={{ background: criterionColor(f.criterion) }} />{familyLabel(name, f)}</h3>
+            <ul className="flex flex-wrap gap-2">
+              {f.terms.map((term) => (
+                <Fragment key={term}>
+                  <Chip word={term} hits={count(name, term)} fresh={!known(name, term)} onRemove={() => mutate((d) => { const x = d.families[name]; x.terms = x.terms.filter((t) => t !== term); delete x.variants[term]; })} />
+                  {(f.variants[term] ?? []).map((v) => (
+                    <Chip key={v} word={v} variantOf={term} hits={count(name, v)} fresh={!known(name, v)} onRemove={() => mutate((d) => { d.families[name].variants[term] = d.families[name].variants[term].filter((x) => x !== v); })} />
+                  ))}
+                </Fragment>
+              ))}
+            </ul>
+          </div>
+        ))}
+        <div className="space-y-2 border-t border-border pt-5">
+          <label htmlFor="kw-new" className="text-sm text-muted-foreground">Add a keyword</label>
+          <div className="flex flex-wrap gap-3">
+            <input id="kw-new" value={newWord} onChange={(e) => setNewWord(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} placeholder="e.g. nöd ufschriibe"
+              className="h-11 min-w-48 flex-1 rounded-xl border border-border bg-background px-4 text-body" />
+            <select aria-label="Family" value={fam} onChange={(e) => setFamily(e.target.value)} className="h-11 rounded-xl border border-border bg-background px-3 text-body">
+              {Object.entries(draft.families).map(([k, f]) => <option key={k} value={k}>{familyLabel(k, f)}</option>)}
+            </select>
+            <button type="button" onClick={add} className="inline-flex h-11 items-center rounded-full border border-foreground/60 px-6 font-semibold hover:bg-muted">Add</button>
+          </div>
+          <label className="flex flex-wrap items-center gap-3 pt-2 text-sm text-muted-foreground">Match strictness
+            <input type="range" min={0.5} max={1} step={0.01} value={draft.fuzzy_threshold} onChange={(e) => mutate((d) => { d.fuzzy_threshold = +e.target.value; })} />
+            <span className="tabular font-semibold text-foreground">{draft.fuzzy_threshold.toFixed(2)}</span>
+            <InfoTip term="match_strictness" />
+          </label>
         </div>
       </div>
-      <MsgBox m={msg} />
-      {preview.error && <p className="text-xs text-muted-foreground">Live counts unavailable — {preview.error}</p>}
-      <div className="space-y-1">
-        <label className="flex flex-wrap items-center gap-3 text-sm font-medium">Match strictness
-          <input type="range" min={0.5} max={1} step={0.01} value={draft.fuzzy_threshold} onChange={(e) => mutate((d) => { d.fuzzy_threshold = +e.target.value; })} />
-          <span className="tabular font-semibold">{draft.fuzzy_threshold.toFixed(2)}</span>
-        </label>
-        <p className="text-xs text-muted-foreground">How exactly a transcribed word must match a keyword to count. 1.00 = exact spelling only; lower values also catch dialect spellings and small transcription errors.</p>
-      </div>
-      <div className="grid gap-3 lg:grid-cols-2">
-        {Object.entries(draft.families).map(([name, f]) => (
-          <Card key={name}>
-            <CardHeader><div>
-              <CardTitle className="flex items-center gap-2 text-base"><span aria-hidden className="inline-block size-2.5 rounded-full" style={{ background: criterionColor(f.criterion) }} />{CRITERION_LABEL[f.criterion] ?? f.criterion}</CardTitle>
-              <CardDescription>family <span className="font-mono">{name}</span> · words and their Swiss German variants</CardDescription>
-            </div></CardHeader>
-            <CardContent className="space-y-3">
-              <ul className="space-y-2">
-                {f.terms.map((term) => (
-                  <li key={term} className="rounded-md border border-border p-2">
-                    <div className="flex items-center gap-2">
-                      <span lang="gsw" className="font-medium">{term}</span>
-                      <span className="tabular rounded bg-muted px-1.5 text-xs" title="matching segments across processed calls">{count(name, term) ?? "…"} hits</span>
-                      <button className="ml-auto text-muted-foreground hover:text-alarm" aria-label={`Remove term ${term}`} onClick={() => mutate((d) => { const fam = d.families[name]; fam.terms = fam.terms.filter((x) => x !== term); delete fam.variants[term]; })}><X className="size-4" /></button>
-                    </div>
-                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                      {(f.variants[term] ?? []).map((v) => (
-                        <span key={v} className="inline-flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-xs"><span lang="gsw">{v}</span>
-                          <span className="tabular text-muted-foreground">{count(name, v) ?? "…"}</span>
-                          <button aria-label={`Remove variant ${v}`} onClick={() => mutate((d) => { d.families[name].variants[term] = d.families[name].variants[term].filter((x) => x !== v); })}><X className="size-3" /></button></span>
-                      ))}
-                      <AddInput label={`Add variant of ${term}`} placeholder="+ variant" onAdd={(v) => mutate((d) => { const vs = (d.families[name].variants[term] ??= []); if (!vs.includes(v)) vs.push(v); })} />
-                    </div>
-                  </li>
-                ))}
-              </ul>
-              <AddInput label={`Add term to ${name}`} placeholder="+ word" onAdd={(v) => mutate((d) => { if (!d.families[name].terms.includes(v)) d.families[name].terms.push(v); })} />
-            </CardContent>
-          </Card>
-        ))}
+
+      <div className="elevated stage-in flex min-w-0 flex-col gap-5 rounded-[var(--radius-panel)] p-6" style={{ "--i": 1 } as React.CSSProperties} aria-live="polite">
+        <h3 className="eyebrow">What this change would do</h3>
+        <MsgBox m={msg} />
+        {!dirty ? (
+          <p className="text-body text-muted-foreground">Add or remove a word: every call of this run is checked again with the draft, and the calls whose decision changes are listed here. The small number on each word is how many transcript passages it matches.</p>
+        ) : preview.error ? <p role="alert" className="text-sm text-alarm">The effect could not be computed: {preview.error}</p>
+          : (
+            <>
+              <p className="text-lead">{changes.join(". ")}{changes.length ? " " : ""}
+                {preview.loading ? <span className="text-muted-foreground">…</span> : <>changes <b>{changed.length} call{changed.length === 1 ? "" : "s"}</b>.</>}
+              </p>
+              {changed.length > 0 && (
+                <ul className="divide-y divide-border border-y border-border">
+                  {changed.map((c, i) => (
+                    <li key={c.call_id} className="stage-in flex items-center justify-between gap-3 py-3" style={{ "--i": Math.min(i, 8) } as React.CSSProperties}>
+                      <Link href={`/calls/${c.call_id}`} className="font-mono underline-offset-2 hover:underline">{c.call_id}</Link>
+                      <span className="text-sm text-muted-foreground">{DECISION_LABEL[c.decision_before]} → <b className={c.decision_after === "alarm" ? "text-alarm" : c.decision_after === "review" ? "text-review" : "text-foreground"}>{DECISION_LABEL[c.decision_after]}</b></span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <p className="text-sm text-muted-foreground">Open any call to check the word is used suspiciously, not innocently. A keyword alone never raises an alert; it only adds weight next to a fact.</p>
+            </>
+          )}
+        <div className="mt-auto flex flex-wrap items-center gap-3 border-t border-border pt-5">
+          <button type="button" disabled={!dirty || readOnly} title={saveTitle}
+            onClick={async () => { try { const r = await putKeywords(draft); setMsg({ ok: true, text: `Saved. Keywords, checks and decisions are re-made for ${r.rerun.n_calls} calls.` }); setDraft(null); saved.reload(); } catch (e) { setMsg(fail(e)); } }}
+            className="inline-flex h-11 items-center gap-2 rounded-full bg-primary px-6 font-semibold text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"><Save className="size-4" aria-hidden />Save keywords</button>
+          <button type="button" disabled={!dirty} onClick={() => { setDraft(null); setMsg(null); }}
+            className="inline-flex h-11 items-center rounded-full border border-foreground/60 px-6 font-semibold hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40">Reset</button>
+          {dirty && readOnly && <span className="text-sm text-muted-foreground">{saveTitle}</span>}
+        </div>
       </div>
     </section>
   );
 }
 
-function AddInput({ label, placeholder, onAdd }: { label: string; placeholder: string; onAdd: (v: string) => void }) {
-  const [v, setV] = useState("");
-  const submit = () => { const t = v.trim(); if (t) { onAdd(t); setV(""); } };
+function Chip({ word, hits, fresh, variantOf, onRemove }: { word: string; hits: number | undefined; fresh: boolean; variantOf?: string; onRemove: () => void }) {
   return (
-    <span className="inline-flex items-center gap-1">
-      <input aria-label={label} placeholder={placeholder} value={v} onChange={(e) => setV(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit()}
-        className="h-7 w-28 rounded-md border border-border bg-card px-2 text-xs" />
-      <button type="button" aria-label={`Confirm: ${label}`} onClick={submit} className="rounded p-1 hover:bg-muted"><Plus className="size-3.5" /></button>
-    </span>
+    <li title={variantOf ? `Swiss German variant of “${variantOf}”` : undefined}
+      className={cn("stage-in inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-body",
+        fresh ? "bg-review text-[#1a1300] font-semibold" : variantOf ? "border border-dashed border-border" : "bg-muted")}>
+      <span lang="gsw">{word}</span>
+      <span className={cn("tabular text-xs", fresh ? "" : "text-muted-foreground")} aria-label={`${hits ?? "unknown"} matching passages`}>{hits ?? "…"}</span>
+      <button type="button" aria-label={`Remove ${word}`} onClick={onRemove} className="rounded-full p-0.5 hover:bg-foreground/10"><X className="size-3.5" /></button>
+      {fresh && <span className="text-xs">· new</span>}
+    </li>
   );
 }
 

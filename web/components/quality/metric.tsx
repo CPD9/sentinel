@@ -1,4 +1,6 @@
+import { InfoTip } from "@/components/ui/info-tip";
 import { fmtMetric } from "@/lib/format";
+import type { Term } from "@/lib/glossary";
 import type { Metric } from "@/lib/types";
 
 /** Point estimate with its bootstrap CI as an error bar on a 0–1 axis. null → "n/a (undefined)", never 0. */
@@ -26,6 +28,23 @@ export function MetricBar({ label, m }: { label: string; m: Metric }) {
           {has && <div className="absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-background bg-foreground" style={{ left: pctPos(m.value!) }} />}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Nik's design 06: a plain-language question, the answer as a big percentage, and the likely range under it. */
+export function BigMetric({ label, m, term }: { label: string; m: Metric; term?: Term }) {
+  const p = (v: number) => `${Math.round(v * 100)}%`;
+  return (
+    <div className="space-y-1.5">
+      <p className="eyebrow flex items-center gap-1">{label}{term && <InfoTip term={term} />}</p>
+      <p className="tabular text-headline font-semibold">{m.value == null ? "n/a" : p(m.value)}</p>
+      <div className="relative h-3" role="img" aria-label={m.value == null ? `${label}: undefined` : `${label} ${p(m.value)}${m.ci_low != null ? `, likely ${p(m.ci_low)} to ${p(m.ci_high!)}` : ""}`}>
+        <div className="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-muted" />
+        {m.ci_low != null && m.ci_high != null && <div className="absolute top-1/2 h-1 -translate-y-1/2 rounded-full bg-muted-foreground" style={{ left: `${m.ci_low * 100}%`, width: `${(m.ci_high - m.ci_low) * 100}%` }} />}
+        {m.value != null && <div className="absolute top-1/2 size-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-foreground" style={{ left: `${m.value * 100}%` }} />}
+      </div>
+      <p className="tabular text-xs text-muted-foreground">{m.value == null ? "undefined: no call in this group" : m.ci_low != null ? `likely range ${p(m.ci_low)} to ${p(m.ci_high!)}` : "no range computed"}</p>
     </div>
   );
 }

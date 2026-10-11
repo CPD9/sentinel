@@ -1,17 +1,18 @@
 "use client";
-// Sensitivity: one focal panel (the alarm threshold, every call as a dot on it, and what changes if you save), then the
+// Settings → Threshold (Nik's design 05): presets and the alert line with every call on it | what the change would do
+// (Now / After, the calls that flip, workload, Save / Reset), then the
 // test-set trade-off, then three one-line folds (advanced thresholds, suggestions from feedback, change log).
 // The unsaved draft is shared with the suggestions' Preview via SettingsDraftProvider; nothing is saved until "Save changes".
 import { AlertTriangle, ArrowRight, CheckCircle2, ChevronRight, Save } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { DecisionBadge } from "@/components/shell/badges";
 import { ErrorCard, SkeletonBlock } from "@/components/shell/states";
-import { Button } from "@/components/ui/button";
 import { InfoTip } from "@/components/ui/info-tip";
 import { Tween } from "@/components/ui/tween";
-import { ApiError, getCalls, getQualityReport, getQualityReports, getThresholds, isFixtures, saveDraft } from "@/lib/data";
-import { componentLabel, pct } from "@/lib/format";
+import { ApiError, getCalls, getQualityReport, getQualityReports, getThresholds, isFixtures, isLocalRun, saveDraft } from "@/lib/data";
+import { DECISION_LABEL, score } from "@/lib/explain";
 import type { Term } from "@/lib/glossary";
 import { useSettingsDraft } from "@/lib/settings-draft";
 import type { CallListItem, Decision, Patch, Thresholds } from "@/lib/types";
@@ -22,6 +23,7 @@ import { AuditLog } from "./audit-log";
 import { CurveChart } from "./curve-chart";
 import { SuggestionsCard } from "./suggestions-card";
 import { ThresholdTrack } from "./threshold-track";
+import { WorkloadMeter } from "./workload-meter";
 
 const errText = (e: unknown) => (e instanceof ApiError ? (Array.isArray(e.detail) ? e.detail.join("; ") : `${e.code}: ${e.detail}`) : String(e));
 const DECIDED = (c: CallListItem) => (c.status === "done" || c.status === "error") && c.decision != null;
@@ -36,6 +38,16 @@ export function Tuning() {
   const [epoch, setEpoch] = useState(0);              // bumps after a save/apply so suggestions and the change log reload
 
   const draft = d.thresholds ?? saved.data;
+  // Demo path: /settings/threshold?draft_alarm=0.5 opens with that alert line as an unsaved draft (nothing is saved).
+  const params = useSearchParams();
+  const wanted = params.get("draft_alarm");
+  const appliedDraft = useRef(false);
+  useEffect(() => {
+    if (appliedDraft.current || !wanted || !saved.data) return;
+    appliedDraft.current = true;
+    const v = Number(wanted);
+    if (v > saved.data.review && v <= 1) setThreshold(saved.data, "alarm", v);
+  }, [wanted, saved.data, setThreshold]);
   const patch = toPatch(saved.data);
   const sim = useSimulate(patch);
   const result = sim.data ?? sim.stale;
@@ -53,23 +65,15 @@ export function Tuning() {
       reset(); saved.reload(); calls.reload(); setEpoch((e) => e + 1);
     } catch (e) { setMsg({ ok: false, text: errText(e) }); }
   };
-  const curve = report.data?.threshold_curves.find((c) => c.param === "alarm_threshold");
+  const curve = report.data?.threshold_curves?.find((c) => c.param === "alarm_threshold");
   const decided = (calls.data ?? []).filter(DECIDED);
+
+  const readOnly = isFixtures || isLocalRun;
+  const saveTitle = isLocalRun ? "Read-only local run: saving needs the API" : isFixtures ? "Disabled in fixtures mode (MOCK)" : undefined;
 
   return (
     <div className="space-y-5">
-      {/* title row with the actions, always in the same place */}
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">Sensitivity</h1>
-          <p className="text-sm text-muted-foreground">How strict Sentinel is. Drag, see which calls change, then save.</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          {patch && <span className="flex items-center gap-1.5 text-sm font-medium text-link"><span className="size-2 rounded-full bg-primary" aria-hidden />Unsaved changes</span>}
-          <Button variant="outline" disabled={!patch} onClick={() => { reset(); setMsg(null); }}>Reset</Button>
-          <Button variant={patch ? "default" : "outline"} onClick={save} disabled={!patch}><Save className="size-4" aria-hidden />Save changes</Button>
-        </div>
-      </div>
+      <h2 className="sr-only">Threshold</h2>
       {isFixtures && (
         <p role="note" className="rounded-xl border border-review bg-review-bg px-3 py-2 text-xs text-review">
           MOCK: no settings files exist in fixtures. A hand-made draft is approximated over invented sample calls, and saving is disabled.
@@ -79,36 +83,66 @@ export function Tuning() {
         <p role={msg && !msg.ok ? "alert" : "status"} className={cn("rounded-xl border p-3 text-sm", msg && !msg.ok ? "border-alarm bg-alarm-bg text-alarm" : "border-ok bg-ok-bg text-ok")}>{msg?.text ?? applied}</p>
       )}
 
-      {/* the focal panel: the slider on the left, its effect on the right (stacked on narrow screens) */}
-      <section aria-labelledby="alarm-h" className="elevated grid gap-6 rounded-2xl p-5 lg:grid-cols-[minmax(0,36rem)_minmax(0,1fr)] lg:gap-8">
-        <div className="min-w-0 space-y-3">
-          <div className="flex items-baseline justify-between gap-4">
-            <h2 id="alarm-h" className="flex items-center gap-1 text-base font-semibold"><label htmlFor="th-alarm">Alarm threshold</label><InfoTip term="alarm_threshold" /></h2>
-            <p className="tabular text-3xl font-semibold tracking-tight">{pct(draft.alarm)}<span className={cn("ml-2 text-xs font-normal", patch?.thresholds?.alarm != null ? "text-link" : "text-muted-foreground")}>saved {pct(saved.data.alarm)}</span></p>
+      {/* Nik's design 05: the line on the left, what the change would do on the right */}
+      <div className="grid gap-5 lg:grid-cols-2">
+        <section aria-labelledby="alarm-h" className="elevated stage-in min-w-0 space-y-6 rounded-[var(--radius-panel)] p-6">
+          <div className="space-y-3">
+            <h3 className="eyebrow">Sensitivity preset</h3>
+            <div role="group" aria-label="Sensitivity preset" className="flex flex-wrap gap-3">
+              {PRESETS.map((pr) => {
+                const on = Math.abs(draft.alarm - pr.alarm) < 0.005;
+                return (
+                  <button key={pr.label} type="button" aria-pressed={on} title={`Alert line ${score(pr.alarm)}: ${pr.hint}`} onClick={() => set("alarm", Math.max(pr.alarm, draft.review + 0.01))}
+                    className={cn("h-11 rounded-full border px-6 text-body font-semibold transition-colors duration-[var(--dur-fast)]", on ? "border-primary bg-primary text-primary-foreground" : "border-foreground/60 hover:bg-muted")}>
+                    {pr.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
-          {calls.status === "loading" && !calls.data ? <SkeletonBlock rows={1} /> : (
-            <ThresholdTrack id="th-alarm" value={draft.alarm} saved={saved.data.alarm} review={draft.review} calls={decided} after={after} onChange={(v) => set("alarm", v)} />
-          )}
-        </div>
-        <div className="min-w-0 lg:border-l lg:border-border lg:pl-8">
+          <div className="space-y-3">
+            <div className="flex items-baseline justify-between gap-4">
+              <h3 id="alarm-h" className="eyebrow flex items-center gap-1"><label htmlFor="th-alarm">Where calls fall by risk score</label><InfoTip term="alarm_threshold" /></h3>
+              <p className="tabular text-headline font-semibold tracking-tight"><span className="text-body font-normal text-muted-foreground">alert line </span><Tween value={draft.alarm * 100} /></p>
+            </div>
+            {calls.status === "loading" && !calls.data ? <SkeletonBlock rows={1} /> : (
+              <ThresholdTrack id="th-alarm" value={draft.alarm} saved={saved.data.alarm} review={draft.review} calls={decided} after={after} onChange={(v) => set("alarm", v)} />
+            )}
+          </div>
+          <p className="text-body leading-relaxed">
+            <b>No alert</b> below {score(draft.review)}. <b>Review</b> from {score(draft.review)} to {score(draft.alarm)}: the system is unsure and a person decides.{" "}
+            <b>Alert</b> at {score(draft.alarm)} and above. <span className="text-muted-foreground">Saved setting: {score(saved.data.alarm)}.</span>
+          </p>
+        </section>
+
+        <section aria-label="What this change would do" className="elevated stage-in flex min-w-0 flex-col gap-5 rounded-[var(--radius-panel)] p-6" style={{ "--i": 1 } as React.CSSProperties}>
           <Impact calls={decided} known={new Set((calls.data ?? []).map((c) => c.call_id))} patch={patch} sim={sim} />
-        </div>
-      </section>
+          <div className="mt-auto flex flex-wrap items-center gap-3 border-t border-border pt-5">
+            <button type="button" onClick={save} disabled={!patch || readOnly} title={saveTitle}
+              className="inline-flex h-11 items-center gap-2 rounded-full bg-primary px-6 font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40">
+              <Save className="size-4" aria-hidden />Save thresholds
+            </button>
+            <button type="button" onClick={() => { reset(); setMsg(null); }} disabled={!patch}
+              className="inline-flex h-11 items-center rounded-full border border-foreground/60 px-6 font-semibold hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40">Reset</button>
+            {patch && <span className="text-sm text-muted-foreground">Unsaved draft{readOnly ? ` · ${saveTitle}` : ""}</span>}
+          </div>
+        </section>
+      </div>
 
       {/* the trade-off, quieter */}
       <section aria-labelledby="tradeoff-h" className="surface-tint space-y-2 rounded-2xl p-5">
         <h3 id="tradeoff-h" className="text-sm font-semibold">How strictness trades off on the test set</h3>
         <p className="flex flex-wrap items-center gap-x-1 text-xs text-muted-foreground">
-          Precision<InfoTip term="precision" /> and recall<InfoTip term="recall" /> at every alarm threshold
+          Precision<InfoTip term="precision" /> and recall<InfoTip term="recall" /> at every alert line
           {report.data ? `, measured on ${report.data.overall.n} ${report.data.split} calls${report.data.is_mock ? " (MOCK curve)" : ""}` : ""}. The solid line is your draft.
         </p>
         {curve ? <CurveChart curve={curve} dragged={draft.alarm} />
           : report.status === "loading" ? <div className="skeleton h-24" /> : <p className="text-sm text-muted-foreground">No curve yet: it appears after the first evaluation run.</p>}
       </section>
 
-      <Fold title="Advanced" hint={`review threshold ${pct(draft.review)}, confidence gate ${pct(draft.confidence_gate)}`}>
+      <Fold title="Advanced" hint={`review line ${score(draft.review)}, confidence gate ${score(draft.confidence_gate)}`}>
         <div className="grid gap-6 md:grid-cols-2">
-          <SmallSlider k="review" term="review_threshold" title="Review threshold" help="From this risk up to the alarm threshold, a person decides." value={draft.review} saved={saved.data.review} onChange={(v) => set("review", v)} />
+          <SmallSlider k="review" term="review_threshold" title="Review line" help="From this risk up to the alert line, a person decides." value={draft.review} saved={saved.data.review} onChange={(v) => set("review", v)} />
           <SmallSlider k="confidence_gate" term="confidence_gate" title="Confidence gate" help="Below this confidence, a call with some risk always goes to a person." value={draft.confidence_gate} saved={saved.data.confidence_gate} onChange={(v) => set("confidence_gate", v)} />
         </div>
       </Fold>
@@ -123,66 +157,79 @@ export function Tuning() {
   );
 }
 
-/** The effect, always visible: plain numbers without a draft; "before → after" and the calls that change while there is one. */
+// Presets only move the alert line; the review line and the gate stay as they are (Advanced).
+const PRESETS = [
+  { label: "Cautious", alarm: 0.5, hint: "catches more, more calls for a person" },
+  { label: "Balanced", alarm: 0.7, hint: "the shipped default" },
+  { label: "Strict", alarm: 0.85, hint: "fewer false alarms, may miss weaker cases" },
+];
+
+/** Nik's design 05, right panel: Outcome | Now | After, one sentence per kind of move, the calls that flip, the workload. */
 function Impact({ calls, known, patch, sim }: { calls: CallListItem[]; known: Set<string>; patch: Patch | null; sim: ReturnType<typeof useSimulate> }) {
   const data = sim.data ?? sim.stale;
   const base: Record<Decision, number> = { alarm: 0, review: 0, no_alert: 0 };
   for (const c of calls) base[c.decision!] += 1;
   const drafting = !!patch && !!data;
-  // Without a draft, "Right now" counts the call list itself. useSimulate keeps its last result (to avoid flicker while
+  // Without a draft, "Now" counts the call list itself. useSimulate keeps its last result (to avoid flicker while
   // dragging), so reading data.counts.before here would show an old simulation after Reset or Save.
   const before = drafting ? data!.counts.before : base;
   const after = drafting ? data!.counts.after : before;
-  const share = (r: Record<Decision, number>) => { const n = r.alarm + r.review + r.no_alert; return n ? ((r.alarm + r.review) / n) * 100 : 0; };
-  const wBefore = drafting ? data!.workload.before.flagged_per_100 : share(base);
-  const wAfter = drafting ? data!.workload.after.flagged_per_100 : wBefore;
-  const items: { key: string; label: string; before: number; after: number; tone: string; unit?: string }[] = [
-    { key: "alarm", label: "Alarms", before: before.alarm, after: after.alarm, tone: "text-alarm" },
-    { key: "review", label: "To review", before: before.review, after: after.review, tone: "text-review" },
-    { key: "no_alert", label: "No alert", before: before.no_alert, after: after.no_alert, tone: "" },
-    { key: "workload", label: "Need a person", before: Math.round(wBefore), after: wAfter, tone: "", unit: " %" },
+  const rows: { key: Decision; label: string; tone: string }[] = [
+    { key: "alarm", label: "Alert", tone: "text-alarm" }, { key: "review", label: "Review", tone: "text-review" }, { key: "no_alert", label: "No alert", tone: "" },
   ];
+  const moves = new Map<string, number>();
+  for (const f of drafting ? data!.flipped : []) moves.set(`${f.before}>${f.after}`, (moves.get(`${f.before}>${f.after}`) ?? 0) + 1);
   const fc = patch ? data?.feedback_check : null;
+  const w = drafting ? data!.workload : null;
 
   return (
-    <div className="space-y-3" aria-live="polite">
+    <div className="space-y-4" aria-live="polite">
       <div className="flex items-baseline justify-between gap-3">
-        <h3 className="text-sm font-semibold">{patch ? "If you save" : "Right now"}</h3>
+        <h3 className="eyebrow">What this change would do</h3>
         {patch && sim.loading && <span className="text-xs text-muted-foreground">updating…</span>}
       </div>
       {patch && sim.error && !data ? <p role="alert" className="text-sm text-alarm">The effect could not be computed: {sim.error}</p> : (
-        <dl className="grid grid-cols-2 gap-x-6 gap-y-3">
-          {items.map((it) => {
-            const changed = drafting && Math.round(it.after) !== Math.round(it.before);
-            return (
-              <div key={it.key}>
-                <dt className="text-xs text-muted-foreground">{it.label}</dt>
-                <dd className="tabular text-xl font-semibold tracking-tight">
-                  {drafting && (
-                    <><span className="text-muted-foreground">{it.before}{it.unit}</span><ArrowRight className="mx-1 inline size-3.5 text-muted-foreground" aria-label="becomes" /></>
-                  )}
-                  <Tween value={it.after} className={changed ? it.tone || "text-foreground" : ""} />{it.unit}
-                </dd>
-              </div>
-            );
-          })}
-        </dl>
+        <table className="w-full text-lead">
+          <thead><tr className="border-b border-border text-left text-sm text-muted-foreground"><th className="py-2 font-normal">Outcome</th><th className="w-24 py-2 font-normal">Now</th><th className="w-24 py-2 font-normal">After</th></tr></thead>
+          <tbody>
+            {rows.map((r) => {
+              const changed = before[r.key] !== after[r.key];
+              return (
+                <tr key={r.key} className="border-b border-border/60">
+                  <th scope="row" className={cn("py-3 text-left font-semibold", r.tone)}>{r.label}</th>
+                  <td className="tabular py-3">{before[r.key]}</td>
+                  <td className={cn("tabular py-3 font-semibold", changed && (r.tone || "text-foreground"))}><Tween value={after[r.key]} /></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       )}
-      {drafting && (
-        data!.flipped.length === 0 ? <p className="text-sm text-muted-foreground">No call would change its decision.</p> : (
-          <ul className="space-y-1.5 border-t border-border pt-3">
-            {data!.flipped.map((f) => (
-              <li key={f.call_id} className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-sm">
-                {known.has(f.call_id)
-                  ? <Link href={`/calls/${f.call_id}`} className="font-medium text-link underline-offset-2 hover:underline">{f.call_id}</Link>
-                  : <span className="font-medium" title="Sample call: no detail page">{f.call_id}</span>}
-                <span className="flex items-center gap-1.5"><DecisionBadge decision={f.before} size="sm" /><ArrowRight className="size-3.5 text-muted-foreground" aria-label="becomes" /><DecisionBadge decision={f.after} size="sm" /></span>
-                {f.attributed_to.length > 0 && <span className="text-xs text-muted-foreground">because of the {f.attributed_to.map(componentLabel).join(" and ")}</span>}
-              </li>
-            ))}
-          </ul>
-        )
-      )}
+      {!patch ? <p className="text-sm text-muted-foreground">Move the alert line or pick a preset: every call of this run is decided again with the draft, nothing is saved.</p>
+        : drafting && data!.flipped.length === 0 ? <p className="text-body">No call would change its decision.</p>
+        : drafting && (
+          <>
+            <p className="text-body">
+              {[...moves].map(([k, n], i) => {
+                const [b, a] = k.split(">") as [Decision, Decision];
+                return <span key={k}>{i > 0 && " "}<b>{n} call{n === 1 ? "" : "s"} move{n === 1 ? "s" : ""} from {DECISION_LABEL[b]} to {DECISION_LABEL[a]}.</b></span>;
+              })}
+              {fc && fc.n_feedback > 0 && <span className="text-muted-foreground"> On calls already checked by a person: {fc.fixed.length} fixed, {fc.violations.length} moved the wrong way.</span>}
+            </p>
+            <ul className="max-h-48 space-y-1.5 overflow-y-auto border-t border-border pt-3">
+              {data!.flipped.map((f, i) => (
+                <li key={`${f.call_id}-${f.after}`} className="stage-in flex flex-wrap items-center gap-x-2.5 gap-y-1 text-sm" style={{ "--i": Math.min(i, 8) } as React.CSSProperties}>
+                  {known.has(f.call_id)
+                    ? <Link href={`/calls/${f.call_id}`} className="font-mono font-medium underline-offset-2 hover:underline">{f.call_id}</Link>
+                    : <span className="font-mono font-medium" title="Sample call: no detail page">{f.call_id}</span>}
+                  <span className="flex items-center gap-1.5"><DecisionBadge decision={f.before} size="sm" /><ArrowRight className="size-3.5 text-muted-foreground" aria-label="becomes" /><DecisionBadge decision={f.after} size="sm" /></span>
+                  <span className="tabular text-xs text-muted-foreground">risk {score(f.risk_after)}</span>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      {w && <WorkloadMeter before={w.before} after={w.after} delta={w.delta_flagged_per_100} />}
       {fc && fc.violations.length > 0 && (
         <p role="alert" className="flex gap-2 rounded-xl border border-alarm bg-alarm-bg p-3 text-sm text-alarm">
           <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />This draft changes {fc.violations.join(", ")}, which you marked as correct or which would move the wrong way.
@@ -193,9 +240,11 @@ function Impact({ calls, known, patch, sim }: { calls: CallListItem[]; known: Se
           <CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden />Fixes {fc.fixed.length} of your verdicts: {fc.fixed.join(", ")}.
         </p>
       )}
-      {drafting && data?.baseline_version === "unknown" && (
-        <p className="text-xs text-muted-foreground">This server has no detailed simulation yet, so the check against your feedback is missing.</p>
-      )}
+      <p className="text-xs text-muted-foreground">
+        {isLocalRun ? "Preview re-decides the calls of this run with the pipeline’s own decision code (exact), not the final test set."
+          : drafting && data?.baseline_version === "unknown" ? "This server has no detailed simulation yet, so the check against your feedback is missing."
+          : "Preview uses the calls already processed, not the final test set."}
+      </p>
     </div>
   );
 }
@@ -207,9 +256,9 @@ function SmallSlider({ k, term, title, help, value, saved, onChange }: {
     <div className="space-y-2">
       <div className="flex items-baseline justify-between gap-3">
         <label htmlFor={`th-${k}`} className="flex items-center gap-1 text-sm font-semibold">{title}<InfoTip term={term} /></label>
-        <span className="tabular text-lg font-semibold">{pct(value)}<span className={cn("ml-1.5 text-xs font-normal", value !== saved ? "text-link" : "text-muted-foreground")}>saved {pct(saved)}</span></span>
+        <span className="tabular text-lg font-semibold">{score(value)}<span className={cn("ml-1.5 text-xs font-normal", value !== saved ? "text-foreground" : "text-muted-foreground")}>saved {score(saved)}</span></span>
       </div>
-      <input id={`th-${k}`} type="range" min={0} max={1} step={0.01} value={value} onChange={(e) => onChange(+e.target.value)} className="w-full" aria-valuetext={pct(value)} />
+      <input id={`th-${k}`} type="range" min={0} max={1} step={0.01} value={value} onChange={(e) => onChange(+e.target.value)} className="w-full" aria-valuetext={score(value)} />
       <p className="text-xs text-muted-foreground">{help}</p>
     </div>
   );

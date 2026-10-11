@@ -39,7 +39,7 @@ export function SuggestionsCard({ activePatch, onPreview, onApplied, bare }: { a
 
   const d = state.data;
   const description = (
-    d ? <>Built from your {d.n_feedback} verdict{d.n_feedback === 1 ? "" : "s"} ({d.counts_by_verdict.false_alarm ?? 0} false alarm, {d.counts_by_verdict.missed ?? 0} missed, {d.counts_by_verdict.correct ?? 0} correct). Never applied automatically.</> : "Built from your false alarm / missed / correct verdicts. Never applied automatically."
+    d ? <>Built from your {d.n_feedback} verdict{d.n_feedback === 1 ? "" : "s"} ({d.counts_by_verdict.false_alarm} false alarm, {d.counts_by_verdict.missed} missed, {d.counts_by_verdict.correct} correct). Never applied automatically.</> : "Built from your false alarm / missed / correct verdicts. Never applied automatically."
   );
   const body = (
     <>

@@ -1,51 +1,34 @@
 "use client";
-import Link from "next/link";
-import { ChevronRight } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import { Card } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Select } from "@/components/ui/select";
-import { CriterionChip, DecisionBadge, StageErrorChip, StatusPill } from "@/components/shell/badges";
+// Inbox (Nik's design 04): the call list on the left, the selected call on the right, both in view.
+// Keyboard: j / k (or ↓ / ↑) move the selection, Enter opens the full call. Filters narrow the list; the counts in the
+// group headers always describe what is shown.
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { EmptyState, ErrorCard } from "@/components/shell/states";
-import { ScoreBar } from "@/components/shell/score";
-import { CallList, callsIn } from "./call-list";
+import { Skeleton } from "@/components/ui/skeleton";
+import { CallList, GROUP_ORDER, callsIn, groupOf, type Group } from "./call-list";
 import { CallPanel } from "./call-panel";
 import { UploadButton, useWavUpload } from "./upload";
-import { getCalls, getThresholds, subscribeGlobalEvents } from "@/lib/data";
-import { fmtDateTime, fmtTime } from "@/lib/format";
+import { getCalls, getThresholds, getTrace, subscribeGlobalEvents } from "@/lib/data";
+import { CRITERION_LABEL } from "@/lib/colors";
 import { useReportMock } from "@/lib/mock-store";
-import type { CallListItem, Criterion, Decision } from "@/lib/types";
-import { CRITERIA, VARIANTS } from "@/lib/types";
+import type { CallListItem, Criterion, DecisionTrace } from "@/lib/types";
+import { CRITERIA } from "@/lib/types";
 import { useAsync } from "@/lib/use-async";
+import { cn } from "@/lib/utils";
 
-const DECISION_RANK: Record<string, number> = { alarm: 0, review: 1, no_alert: 2 };
-const decisionRank = (d: Decision | null) => (d == null ? -1 : DECISION_RANK[d]);
-
-type Sort = "default" | "risk" | "confidence" | "updated";
-
-function sortRows(rows: CallListItem[], sort: Sort): CallListItem[] {
-  const by = (f: (r: CallListItem) => number) => (a: CallListItem, b: CallListItem) => f(b) - f(a);
-  const risk = (r: CallListItem) => r.risk_score ?? -1;
-  const out = [...rows];
-  if (sort === "risk") return out.sort(by(risk));
-  if (sort === "confidence") return out.sort(by((r) => r.confidence ?? -1));
-  if (sort === "updated") return out.sort(by((r) => Date.parse(r.updated_at ?? "") || 0));
-  // default: alarm, review, no_alert; within each, risk descending. Queued/processing rows go first.
-  return out.sort((a, b) => decisionRank(a.decision) - decisionRank(b.decision) || risk(b) - risk(a));
-}
+const typing = (el: EventTarget | null) => el instanceof HTMLElement && (el.isContentEditable || ["INPUT", "SELECT", "TEXTAREA"].includes(el.tagName));
 
 export function InboxView({ selected }: { selected: string | null }) {
+  const router = useRouter();
   const calls = useAsync(getCalls, "calls");
   const th = useAsync(getThresholds, "thresholds");
-  const gate = th.data?.confidence_gate ?? null;
-  const [decision, setDecision] = useState("");
-  const [status, setStatus] = useState("");
   const [criterion, setCriterion] = useState("");
   const [variant, setVariant] = useState("");
   const [onlyErrors, setOnlyErrors] = useState(false);
-  const [sort, setSort] = useState<Sort>("default");
   const [stages, setStages] = useState<Record<string, string>>({});
   const [dragging, setDragging] = useState(false);
+  const [openState, setOpenState] = useState<Record<Group, boolean>>({ alarm: true, review: true, no_alert: false, processing: true });
   const upload = useWavUpload(calls.reload);
 
   useReportMock("inbox", calls.data?.some((c) => c.is_mock) ? { is_mock: true } : null);
@@ -63,151 +46,106 @@ export function InboxView({ selected }: { selected: string | null }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const rows = useMemo(() => {
-    const all = calls.data ?? [];
-    return sortRows(
-      all.filter((r) =>
-        (!decision || r.decision === decision) && (!status || r.status === status) &&
-        (!criterion || r.criteria.includes(criterion as Criterion)) && (!variant || r.variant === variant) &&
-        (!onlyErrors || r.n_stage_errors > 0)),
-      sort,
-    );
-  }, [calls.data, decision, status, criterion, variant, onlyErrors, sort]);
+  // One trace per decided call, for the one-line reason on each row ("Unsure: noisy audio"). Missing traces are fine.
+  const decidedKey = (calls.data ?? []).filter((c) => c.status === "done" || c.status === "error").map((c) => `${c.call_id}@${c.updated_at}`).join(",");
+  const traces = useAsync(async () => {
+    const ids = (calls.data ?? []).filter((c) => c.status === "done" || c.status === "error").map((c) => c.call_id);
+    const got = await Promise.allSettled(ids.map((id) => getTrace(id)));
+    return new Map(got.flatMap((r, i) => (r.status === "fulfilled" ? [[ids[i], r.value] as [string, DecisionTrace]] : [])));
+  }, `traces:${decidedKey}`);
 
-  const stale = calls.status === "error" && calls.data;
+  const visible = useMemo(() => (calls.data ?? []).filter((r) =>
+    (!criterion || r.criteria.includes(criterion as Criterion)) && (!variant || r.variant === variant) && (!onlyErrors || r.n_stage_errors > 0)),
+  [calls.data, criterion, variant, onlyErrors]);
+  const filtered = !!(criterion || variant || onlyErrors);
 
-  // The call in the right panel: the one in the URL, else the first alarm, else the first review, and so on.
+  // The call in the right panel: the one in the URL, else the first alert, else the first review, and so on.
   const current = useMemo(() => {
     const all = calls.data ?? [];
     return all.find((c) => c.call_id === selected)
-      ?? (["alarm", "review", "no_alert", "processing"] as const).map((g) => callsIn(all, g)[0]).find(Boolean) ?? null;
-  }, [calls.data, selected]);
+      ?? (["alarm", "review", "no_alert", "processing"] as const).map((g) => callsIn(visible, g)[0]).find(Boolean) ?? null;
+  }, [calls.data, visible, selected]);
+
+  // The group of the selected call is always open (e.g. a shared link to a cleared call).
+  const open = useMemo(() => (current ? { ...openState, [groupOf(current)]: true } : openState), [openState, current]);
+  const setOpen = useCallback((g: Group, v: boolean) => setOpenState((o) => ({ ...o, [g]: v })), []);
+
+  // j / k walk the rows in the order they are shown (open groups only); Enter opens the call.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey || typing(e.target)) return;
+      const order = GROUP_ORDER.filter((g) => open[g]).flatMap((g) => callsIn(visible, g));
+      if (order.length === 0) return;
+      const i = current ? order.findIndex((c) => c.call_id === current.call_id) : -1;
+      const go = (c: CallListItem) => router.replace(`/?call=${encodeURIComponent(c.call_id)}`, { scroll: false });
+      if (e.key === "j" || e.key === "ArrowDown") { e.preventDefault(); go(order[Math.min(order.length - 1, i + 1)]); }
+      else if (e.key === "k" || e.key === "ArrowUp") { e.preventDefault(); go(order[Math.max(0, i - 1)]); }
+      else if (e.key === "Enter" && current && !(e.target instanceof HTMLButtonElement || e.target instanceof HTMLAnchorElement)) {
+        e.preventDefault();
+        router.push(current.status === "queued" || current.status === "processing" ? `/calls/${current.call_id}/processing` : `/calls/${current.call_id}`);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, visible, current, router]);
+
+  const stale = calls.status === "error" && calls.data;
 
   return (
-    <div className="relative space-y-5"
+    <div className="relative space-y-4"
       onDragOver={(e) => { if (e.dataTransfer.types.includes("Files")) { e.preventDefault(); setDragging(true); } }}
       onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false); }}
       onDrop={(e) => { e.preventDefault(); setDragging(false); void upload.send(e.dataTransfer.files); }}>
       {dragging && (
-        <div className="pointer-events-none fixed inset-3 z-40 flex items-center justify-center rounded-2xl border-2 border-dashed border-primary bg-background/80 text-lg font-semibold text-link">
+        <div className="pointer-events-none fixed inset-3 z-40 flex items-center justify-center rounded-2xl border-2 border-dashed border-foreground bg-background/80 text-lg font-semibold">
           Drop .wav files to analyse them
         </div>
       )}
-
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Overview</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Every call is checked automatically, not sampled.</p>
-        </div>
-        <UploadButton upload={upload} />
-      </div>
+      <h1 className="sr-only">Alerts</h1>
 
       {calls.status === "error" && <ErrorCard error={calls.error} title="Could not load the call list" onRetry={calls.reload} />}
       {stale && <p className="text-xs text-review">Showing the last good data. It may be stale.</p>}
       {calls.data && calls.data.length === 0 ? (
         <EmptyState>No calls yet. Drop .wav files on this page or run <code className="font-mono">./run.sh &lt;folder&gt;</code>.</EmptyState>
       ) : (
-        // Two panels: the list on the left, the selected call on the right. Both stay in view and scroll on their own
-        // on wide screens; on narrow screens they stack (list first).
-        <div className="grid gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] lg:items-start">
-          <div className="surface-tint rounded-2xl p-2 lg:sticky lg:top-24 lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto">
-            <CallList calls={calls.data ?? null} selected={current?.call_id ?? null} stages={stages} />
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] lg:items-start">
+          <div className="stage-in space-y-3 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:pr-2">
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <FilterSelect label="Kind of fraud" value={criterion} onChange={setCriterion}
+                options={CRITERIA.filter((c) => c !== "other").map((c) => [c, CRITERION_LABEL[c]])} />
+              <FilterSelect label="Audio" value={variant} onChange={setVariant} options={[["clean", "clean"], ["noisy", "noisy"]]} />
+              <label className="flex items-center gap-1.5 text-muted-foreground"><input type="checkbox" checked={onlyErrors} onChange={(e) => setOnlyErrors(e.target.checked)} />failed steps</label>
+              <span className="ml-auto"><UploadButton upload={upload} /></span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {calls.data ? <>{filtered ? `${visible.length} of ${calls.data.length}` : calls.data.length} calls, every one checked · </> : null}
+              <kbd className="rounded border border-border px-1 font-mono">j</kbd> <kbd className="rounded border border-border px-1 font-mono">k</kbd> to move,{" "}
+              <kbd className="rounded border border-border px-1 font-mono">Enter</kbd> to open
+            </p>
+            {filtered && visible.length === 0 ? (
+              <EmptyState>No call matches these filters. Clear a filter to see more.</EmptyState>
+            ) : (
+              <CallList calls={calls.data ? visible : null} selected={current?.call_id ?? null} stages={stages} traces={traces.data ?? new Map()} open={open} setOpen={setOpen} />
+            )}
           </div>
-          <div className="min-w-0 lg:sticky lg:top-24 lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto">
+          <div className="stage-in min-w-0 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto" style={{ "--i": 1 } as React.CSSProperties}>
             {current ? <CallPanel key={current.call_id} item={current} thresholds={th.data ?? null} />
-              : calls.data ? null : <Skeleton className="h-96 rounded-2xl" />}
+              : calls.data ? null : <Skeleton className="h-96 rounded-[var(--radius-panel)]" />}
           </div>
         </div>
       )}
-
-      <details className="group rounded-2xl border border-border bg-card/40">
-        <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-semibold [&::-webkit-details-marker]:hidden">
-          <ChevronRight className="size-4 transition-transform group-open:rotate-90 motion-reduce:transition-none" aria-hidden />
-          All calls{calls.data ? ` (${calls.data.length})` : ""}
-          <span className="font-normal text-muted-foreground">· including no-alert calls, processing and errors</span>
-        </summary>
-        <div className="space-y-4 border-t border-border p-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <Select label="Decision" value={decision} onChange={(e) => setDecision(e.target.value)}>
-          <option value="">all</option>
-          <option value="alarm">alarm</option><option value="review">review</option><option value="no_alert">no alert</option>
-        </Select>
-        <Select label="Status" value={status} onChange={(e) => setStatus(e.target.value)}>
-          <option value="">all</option>
-          {["queued", "processing", "done", "error"].map((s) => <option key={s}>{s}</option>)}
-        </Select>
-        <Select label="Criterion" value={criterion} onChange={(e) => setCriterion(e.target.value)}>
-          <option value="">all</option>
-          {CRITERIA.map((c) => <option key={c} value={c}>{c.replaceAll("_", " ")}</option>)}
-        </Select>
-        <Select label="Variant" value={variant} onChange={(e) => setVariant(e.target.value)}>
-          <option value="">all</option>
-          {VARIANTS.map((v) => <option key={v}>{v}</option>)}
-        </Select>
-        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={onlyErrors} onChange={(e) => setOnlyErrors(e.target.checked)} />has stage errors</label>
-        <div className="ml-auto"><Select label="Sort" value={sort} onChange={(e) => setSort(e.target.value as Sort)}>
-          <option value="default">decision, then risk</option><option value="risk">risk</option>
-          <option value="confidence">confidence</option><option value="updated">last update</option>
-        </Select></div>
-      </div>
-
-      {th.status === "error" && !th.data && (
-        <div role="alert" className="flex items-center justify-between gap-3 rounded-md border border-review bg-review-bg px-3 py-2 text-sm text-review">
-          <span>The confidence gate could not be loaded ({th.error.message}), so low-confidence calls are not flagged with ▼ below.</span>
-          <button type="button" className="rounded border border-review px-2 py-0.5 text-xs" onClick={th.reload}>Retry</button>
-        </div>
-      )}
-
-      {calls.status === "loading" && !calls.data ? (
-        <Card className="divide-y divide-border" aria-busy="true">
-          {Array.from({ length: 8 }, (_, i) => <div key={i} className="flex gap-4 p-4"><Skeleton className="h-5 w-32" /><Skeleton className="h-5 w-24" /><Skeleton className="h-5 flex-1" /></div>)}
-        </Card>
-      ) : calls.data && calls.data.length === 0 ? (
-        <EmptyState>No calls yet. Drop .wav files here or run <code className="font-mono">./run.sh &lt;folder&gt;</code>.</EmptyState>
-      ) : rows.length === 0 && calls.data ? (
-        <EmptyState>No call matches these filters. Clear a filter to see more.</EmptyState>
-      ) : (
-        <Card className="overflow-x-auto">
-          <table className="w-full min-w-[860px] text-sm">
-            <thead className="border-b border-border text-left text-xs text-muted-foreground">
-              <tr>{["Call", "Status", "Decision", "Risk", "Confidence", "Criteria", "Duration", "Variant", "Updated"].map((h) => <th key={h} className="px-3 py-2 font-medium">{h}</th>)}</tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {rows.map((r) => {
-                const href = r.status === "processing" || r.status === "queued" ? `/calls/${r.call_id}/processing` : `/calls/${r.call_id}`;
-                const dim = r.confidence != null && gate != null && r.confidence < gate;
-                return (
-                  <tr key={r.call_id} className="hover:bg-muted/60">
-                    <td className="px-3 py-2.5"><Link href={href} className="font-mono font-medium underline-offset-2 hover:underline">{r.call_id}</Link></td>
-                    <td className="px-3 py-2.5"><div className="flex flex-wrap gap-1.5"><StatusPill status={r.status} stage={stages[r.call_id]} /><StageErrorChip count={r.n_stage_errors} /></div></td>
-                    <td className="px-3 py-2.5">{r.status === "queued" || r.status === "processing" ? null : <DecisionBadge decision={r.decision} />}</td>
-                    <td className="w-40 px-3 py-2.5">{r.risk_score == null ? null : (
-                      <div className="flex items-center gap-2"><ScoreBar value={r.risk_score} label="risk" color={r.decision === "alarm" ? "var(--alarm)" : r.decision === "review" ? "var(--review)" : "var(--noalert)"} /><span className="tabular w-10 text-right text-xs">{Math.round(r.risk_score * 100)}%</span></div>
-                    )}</td>
-                    <td className={`tabular px-3 py-2.5 ${dim ? "text-review" : ""}`} title={dim ? "below the confidence gate" : undefined}>
-                      {r.confidence == null ? (r.status === "done" || r.status === "error" ? "n/a" : "") : `${Math.round(r.confidence * 100)}%${dim ? " ▼" : ""}`}
-                    </td>
-                    <td className="px-3 py-2.5"><div className="flex items-center gap-1">
-                      {r.criteria[0] && <CriterionChip criterion={r.criteria[0]} />}
-                      {r.criteria.length > 1 && <span className="text-xs text-muted-foreground" title={r.criteria.slice(1).join(", ")}>+{r.criteria.length - 1}</span>}
-                    </div></td>
-                    <td className="tabular px-3 py-2.5">{fmtTime(r.duration_s)}</td>
-                    <td className="px-3 py-2.5 text-muted-foreground">{r.variant ?? "–"}</td>
-                    <td className="tabular px-3 py-2.5 text-xs text-muted-foreground">{fmtDateTime(r.updated_at)}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </Card>
-      )}
-      {calls.data && <p className="text-xs text-muted-foreground">{rows.length} of {calls.data.length} calls. <RiskConfidenceHint /></p>}
-        </div>
-      </details>
     </div>
   );
 }
 
-function RiskConfidenceHint() {
-  return <span>Risk and confidence are always read together; confidence in amber with ▼ is below the gate.</span>;
+function FilterSelect({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: [string, string][] }) {
+  return (
+    <label className={cn("flex items-center gap-1.5 rounded-full border px-3 py-1", value ? "border-foreground" : "border-border text-muted-foreground")}>
+      <span className="sr-only">{label}</span>
+      <select value={value} onChange={(e) => onChange(e.target.value)} className="bg-transparent text-sm outline-none" aria-label={label}>
+        <option value="">{label}: all</option>
+        {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+      </select>
+    </label>
+  );
 }

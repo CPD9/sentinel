@@ -108,6 +108,7 @@ export interface Fact {
   counter_evidence: string | null;
   valid: boolean;
   drop_reason: string | null;
+  gloss_de?: string | null;            // the quote in Standard German (pipeline/schemas.py Fact.gloss_de)
 }
 export interface KeywordHit {
   hit_id: string;
@@ -200,8 +201,16 @@ export interface CallListItem {
   n_stage_errors: number;
   updated_at: string | null;
   is_mock: boolean;
-  decision_path?: DecisionPath | null;  // why the decision came out this way (from the trace)
+  decision_path?: DecisionPath | null;  // why the decision came out this way (from the trace); docs/API.md GET /calls
   reason?: string | null;               // the top finding's reason, one line
+}
+// ---- How each detection method decided (strategy comparison run, scripts/strategy_lab.py)
+export interface MethodDecision { id: string; decision: Decision | null; risk: number | null; reason: string | null; criteria: string[]; error: boolean }
+export interface MethodsResponse { call_id: string; run: string; default: string | null; top3: string[]; methods: MethodDecision[] }
+export interface ReportResponse {
+  call_id: string; dry_run: boolean;
+  records: { mode: "dry-run" | "send"; payload: { url: string; title: string; description: string }; response?: unknown; error?: string }[];
+  errors: string[];
 }
 export interface ProcessingEvent {
   seq: number;
@@ -268,7 +277,7 @@ export interface QualityReportSummary {
 }
 
 // ---- Settings (proposals, docs/API.md)
-export interface KeywordFamily { criterion: Criterion; terms: string[]; variants: Record<string, string[]> }
+export interface KeywordFamily { criterion: Criterion; terms: string[]; variants: Record<string, string[]>; label?: string }
 export interface KeywordsConfig { families: Record<string, KeywordFamily>; fuzzy_threshold: number }
 export interface RuleConfig { criterion: Criterion; enabled: boolean; [param: string]: unknown }
 export interface RulesConfig { version: string; rules: RuleConfig[] }
@@ -287,7 +296,7 @@ export const VERDICTS = ["false_alarm", "missed", "correct", "escalate"] as cons
 export type Verdict = (typeof VERDICTS)[number];
 export const DECISION_RANK: Record<Decision, number> = { no_alert: 0, review: 1, alarm: 2 };
 /** A false alarm needs a flag to be false; a miss needs room above the current decision. */
-export const verdictAllowed = (v: Verdict, d: Decision) => !((v === "false_alarm" && d === "no_alert") || (v === "missed" && d === "alarm"));
+export const verdictAllowed = (v: Verdict, d: Decision): boolean => !((v === "false_alarm" && d === "no_alert") || (v === "missed" && d === "alarm"));
 
 export interface Patch {
   thresholds?: Partial<Thresholds>;

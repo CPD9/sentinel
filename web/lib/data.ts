@@ -1,17 +1,23 @@
 // The ONLY module that fetches. Every UI surface goes through here.
 //   NEXT_PUBLIC_DATA_MODE=fixtures  → reads public/fixtures/*.json (copied from ../fixtures; MOCK data)
 //   NEXT_PUBLIC_DATA_MODE=api       → follows docs/API.md exactly, via the same-origin /api proxy (next.config.ts)
+//     + NEXT_PUBLIC_API_PREFIX=/run-api → the same contract served by app/run-api (LOCAL-RUN FALLBACK: one finished
+//       run read from disk, read-only, while the API has no real mode). The UI labels this source everywhere.
 import { replayDelayMs, synthFinishedEvents, synthRunningEvents } from "./mock-replay";
 import { approxSimulate, patchComponents, samePatch, type WhatifCalls } from "./whatif-mock";
 import type {
   AnalysisArtifact, ApiErrorBody, ApplyResponse, AuditEntry, CallListItem, CallResult, DecisionTrace, FeedbackEntry,
   Decision, KeywordsConfig, Patch, PreviewRequest, PreviewResponse, ProcessingEvent, QualityReport, QualityReportSummary,
-  RerunResponse, RulesConfig, SimulationResult, SuggestionsResponse, Thresholds, Transcript, Verdict,
+  MethodsResponse, ReportResponse, Stage, RerunResponse, RulesConfig, SimulationResult, SuggestionsResponse, Thresholds, Transcript, Verdict,
 } from "./types";
 import { CRITERIA, EVENT_TYPES, verdictAllowed } from "./types";
 
 export const DATA_MODE: "fixtures" | "api" = process.env.NEXT_PUBLIC_DATA_MODE === "api" ? "api" : "fixtures";
 export const isFixtures = DATA_MODE === "fixtures";
+const API_PREFIX = process.env.NEXT_PUBLIC_API_PREFIX === "/run-api" ? "/run-api" : "/api";
+/** True when api mode reads the local-run fallback (app/run-api) instead of the FastAPI service. */
+export const isLocalRun = !isFixtures && API_PREFIX === "/run-api";
+export const DATA_SOURCE_LABEL = isFixtures ? "fixtures (MOCK)" : isLocalRun ? "local run, read-only" : "live API";
 
 export class ApiError extends Error {
   constructor(public status: number, public code: string, public detail: string | string[]) {
@@ -43,12 +49,19 @@ async function getJson<T>(url: string): Promise<{ status: number; data: T }> {
 }
 
 const fx = (name: string) => `/fixtures/${name}`;
-const api = (path: string) => `/api${path}`;
+const api = (path: string) => `${API_PREFIX}${path}`;
 const unsupported = (what: string) =>
   new ApiError(409, "conflict", `${what} is disabled in fixtures mode (MOCK data only, as in API.md "Fixture mode").`);
 
 function notAvailable(what: string) {
   return new ApiError(404, "not_available", `${what} not available`);
+}
+
+// ------------------------------------------------------------------ run info (local-run fallback only)
+export interface RunInfo { run_id: string; mode: "reference" | "asr"; created_at: string; notes: string[]; system: string | null; provider: string | null; source: string }
+export async function getRunInfo(): Promise<RunInfo | null> {
+  if (!isLocalRun) return null;
+  return (await getJson<RunInfo>(api("/run"))).data;
 }
 
 // ------------------------------------------------------------------ calls
@@ -112,6 +125,7 @@ export function subscribeCallEvents(
   onEvent: (e: ProcessingEvent) => void,
   onStatus: (s: StreamStatus) => void,
 ): Subscription {
+  if (isLocalRun) return runReplay(id, onEvent, onStatus);
   return isFixtures ? mockReplay(id, onEvent, onStatus) : sse(api(`/calls/${id}/events`), onEvent, onStatus, true);
 }
 
@@ -139,6 +153,38 @@ function sse(url: string, onEvent: (e: ProcessingEvent) => void, onStatus: (s: S
     });
   }
   return { close: () => es.close() };
+}
+
+/** Local-run fallback: a finished run has no event log, so the timeline is replayed from what was recorded: the stages
+ *  in pipeline order, the trace's own timings where it has them (null otherwise, never invented), stage errors as
+ *  failures. The view labels it "replay of the recorded run". */
+function runReplay(id: string, onEvent: (e: ProcessingEvent) => void, onStatus: (s: StreamStatus) => void): Subscription {
+  let cancelled = false;
+  const timers: ReturnType<typeof setTimeout>[] = [];
+  onStatus("connecting");
+  (async () => {
+    const detail = await getCall(id).catch(() => null);
+    const trace = await getTrace(id).catch(() => null);
+    if (cancelled) return;
+    if (!detail || detail.kind !== "result") { onStatus("closed"); return; }
+    const failed = new Map(detail.data.stage_errors.map((e) => [e.stage, e.message]));
+    const order: Stage[] = ["asr", "diarize", "keywords", "extract", "validate", "rules", "confidence", "decide", "narrate", "snippets", "trigger"];
+    const evs: Omit<ProcessingEvent, "seq" | "ts">[] = [{ event: "job_queued", call_id: id, stage: null, elapsed_s: null, cached: null, message: "replay of the recorded run", decision: null }];
+    for (const st of order) {
+      evs.push({ event: "stage_started", call_id: id, stage: st, elapsed_s: null, cached: null, message: null, decision: null });
+      evs.push(failed.has(st)
+        ? { event: "stage_failed", call_id: id, stage: st, elapsed_s: null, cached: null, message: failed.get(st)!, decision: null }
+        : { event: "stage_finished", call_id: id, stage: st, elapsed_s: trace?.timings_s[st] ?? null, cached: null, message: null, decision: null });
+    }
+    evs.push({ event: "job_finished", call_id: id, stage: null, elapsed_s: null, cached: null, message: null, decision: detail.data.decision });
+    onStatus("open");
+    evs.forEach((e, i) => timers.push(setTimeout(() => {
+      if (cancelled) return;
+      onEvent({ ...e, seq: i + 1, ts: new Date().toISOString() } as ProcessingEvent);
+      if (i === evs.length - 1) onStatus("closed");
+    }, 120 + i * 140)));
+  })();
+  return { close: () => { cancelled = true; timers.forEach(clearTimeout); } };
 }
 
 function mockReplay(id: string, onEvent: (e: ProcessingEvent) => void, onStatus: (s: StreamStatus) => void): Subscription {
@@ -186,13 +232,18 @@ export async function getQualityReports(): Promise<QualityReportSummary[]> {
   }
   return (await getJson<QualityReportSummary[]>(api("/quality"))).data;
 }
+/** Reports written by the pipeline may leave out optional sections; default them so each one says "not computed". */
+const normaliseReport = (r: QualityReport): QualityReport => ({
+  ...r, breakdowns: r.breakdowns ?? {}, threshold_curves: r.threshold_curves ?? [], reliability: r.reliability ?? null, ablations: r.ablations ?? [],
+  wer_vs_recall: r.wer_vs_recall ?? [], latency: r.latency ?? [], evidence_validity: r.evidence_validity ?? null, warnings: r.warnings ?? [], notes: r.notes ?? [],
+});
 export async function getQualityReport(reportId: string): Promise<QualityReport> {
   if (isFixtures) {
     const r = (await getJson<QualityReport>(fx("quality_report.json"))).data;
     if (r.report_id !== reportId) throw new ApiError(404, "not_found", `Unknown report ${reportId}`);
-    return r;
+    return normaliseReport(r);
   }
-  return (await getJson<QualityReport>(api(`/quality/${reportId}`))).data;
+  return normaliseReport((await getJson<QualityReport>(api(`/quality/${reportId}`))).data);
 }
 
 // ------------------------------------------------------------------ settings
@@ -313,6 +364,22 @@ function persistFeedback() {
 /** The checked-in API may not have the what-if routes yet (docs/API.md "What-if, feedback and suggestions"): 404/405 means "not built". */
 const routeMissing = (e: unknown) => e instanceof ApiError && (e.status === 404 || e.status === 405);
 const notBuilt = (what: string, route: string) => new ApiError(404, "not_available", `${what}: not available on this server yet (${route} is not implemented).`);
+
+/** How each detection method decided on this call (strategy comparison run). null when the server or call has none. */
+export async function getMethods(id: string): Promise<MethodsResponse | null> {
+  if (isFixtures) return null;
+  try { return (await getJson<MethodsResponse>(api(`/calls/${encodeURIComponent(id)}/strategies`))).data; }
+  catch (e) { if (e instanceof ApiError && (e.status === 404 || e.status === 405)) return null; throw e; }
+}
+
+/** POST /calls/{id}/report (docs/API.md): "Confirm fraud" hands the call to the Outcept trigger API. Dry-run unless the
+ *  server has TRIGGER_URL set; the response says which. A server without the route throws not_available. */
+export async function reportCall(id: string): Promise<ReportResponse> {
+  if (isFixtures) throw unsupported("Reporting to the trigger API");
+  const res = await fetch(api(`/calls/${encodeURIComponent(id)}/report`), { method: "POST" });
+  if (!res.ok) { const e = await parseError(res); throw e.status === 404 || e.status === 405 ? notBuilt("Reporting", "POST /api/calls/{id}/report") : e; }
+  return (await res.json()) as ReportResponse;
+}
 
 /** Latest verdict per call. Throws not_available when the server has no feedback route. */
 export async function getFeedback(): Promise<FeedbackEntry[]> {

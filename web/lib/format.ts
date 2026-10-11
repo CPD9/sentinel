@@ -25,7 +25,7 @@ export function fmtMetric(x: number | null | undefined, digits = 2): string {
 
 export function fmtSeconds(x: number | null | undefined): string {
   if (x == null) return "–";
-  return x < 1 ? `${(x * 1000).toFixed(0)} ms` : `${x.toFixed(1)} s`;
+  return x < 0.0005 ? "<1 ms" : x < 1 ? `${(x * 1000).toFixed(0)} ms` : `${x.toFixed(1)} s`;
 }
 
 export function fmtDateTime(iso: string | null | undefined): string {
@@ -39,9 +39,9 @@ export function humanize(s: string): string {
   return s.replaceAll("_", " ");
 }
 
-export const VERDICT_LABEL = { false_alarm: "False alarm", missed: "Missed", correct: "Correct", escalate: "Escalate" } as const;
+export const VERDICT_LABEL = { false_alarm: "False alarm", missed: "Missed", correct: "Correct", escalate: "Escalated" } as const;
 
-/** "thresholds.alarm=0.8" → "alarm threshold 0.8", "rules.disable:insider_trading" → "rule insider trading off". */
+/** "thresholds.alarm=0.8" → "alert line 0.8", "rules.disable:insider_trading" → "rule insider trading off". */
 export function componentLabel(c: string): string {
   const [kind, rest = ""] = c.split(/[=:]/);
   if (kind === "thresholds.confidence_gate") return `confidence gate ${rest}`;

@@ -187,8 +187,31 @@ def test_counter_evidence_lowers_risk():
 
 
 def test_earlier_warning_does_not_excuse_a_later_disclosure():
-    t = run([fact("F1", "advisor", "warn", "credentials", ["s003"]), fact("F2", "customer", "disclose", "credentials", ["s004"])])
-    assert t.decision == "alarm"
+    later = fact("F2", "customer", "disclose", "credentials", ["s004"])
+    t = run([fact("F1", "advisor", "warn", "credentials", ["s003"]), later])
+    assert t.risk_score == run([later]).risk_score and t.decision != "no_alert"     # no discount from the earlier warning
+    advisor = fact("F2", "advisor", "disclose", "credentials", ["s004"])
+    assert run([fact("F1", "customer", "warn", "credentials", ["s003"]), advisor]).decision == "alarm"
+
+
+def test_customer_reading_out_a_code_is_review_advisor_disclosing_is_alarm():
+    assert run([fact("F2", "customer", "disclose", "credentials", ["s004"])]).decision == "review"
+    assert run([fact("F2", "advisor", "disclose", "credentials", ["s004"])]).decision == "alarm"
+    assert run([fact("F2", "customer", "disclose", "credentials", ["s004"], recipient_third_party=True)]).decision == "alarm"
+
+
+def test_prior_counter_speakers_option(tmp_path):
+    import copy
+    import yaml
+    from pipeline import rules as rl
+    doc = yaml.safe_load((rl.RULES_FILE).read_text(encoding="utf-8"))
+    assert rl.parse_rules(doc).prior_counter_speakers == ()                       # off in the shipped config
+    on = copy.deepcopy(doc)
+    on["defaults"]["prior_counter_speakers"] = ["customer"]
+    assert rl.parse_rules(on).prior_counter_speakers == ("customer",)
+    on["defaults"]["prior_counter_speakers"] = ["auditor"]
+    with pytest.raises(Exception, match="prior_counter_speakers"):
+        rl.parse_rules(on)
 
 
 def test_hypothetical_and_quote_acts_never_raise_risk():
