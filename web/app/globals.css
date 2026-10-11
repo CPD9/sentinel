@@ -191,3 +191,18 @@ body { background: var(--background); color: var(--foreground); font-family: var
 @keyframes jump { from { background: color-mix(in srgb, var(--foreground) 22%, transparent); } }
 .jumped { animation: jump 900ms var(--ease-out) both; }
 @media (prefers-reduced-motion: reduce) { .jumped { animation: none; } }
+
+/* Audit record print: Cmd+P on a call page prints only .print-area, light and on A4, whatever the screen theme. */
+@media print {
+  @page { size: A4; margin: 14mm; }
+  :root, .dark { --background: #fff; --foreground: #111; --card: #fff; --muted: #f2f2f0; --muted-foreground: #444; --border: #ccc;
+    --alarm: #9b1c14; --alarm-bg: #fbe4e2; --review: #6b4500; --review-bg: #fcefc9; --noalert: #333; --shadow-card: none; color-scheme: light; }
+  body { background: #fff !important; }
+  /* everything that is neither the record nor one of its ancestors takes no space, so no blank trailing pages */
+  body *:not(:has(.print-area)):not(.print-area):not(.print-area *) { display: none !important; }
+  body *:has(.print-area) { margin: 0 !important; padding: 0 !important; max-width: none !important; position: static !important; overflow: visible !important; }
+  .print-area { width: 100%; box-shadow: none !important; border: 0 !important; padding: 0 !important; font-size: 10.5pt; }
+  .print-area .no-print { display: none !important; }
+  .audit-block { break-inside: avoid; }
+  .print-area a { color: inherit; text-decoration: underline; }
+}
