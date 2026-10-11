@@ -83,7 +83,7 @@ def load(run_dir: Path) -> tuple[list[str], dict, dict, dict]:
                              "facts_third_party": sum(f.get("recipient_third_party") is True for f in facts),
                              "facts_secrecy": sum(f.get("secrecy_cue") is True for f in facts),
                              "facts_counter": sum(f["act"] in ("warn", "refuse") for f in facts)},
-                    "facts": facts, "risk_rules": tr["risk_score"]}
+                    "facts": facts, "risk_rules": max((r["risk"] for r in tr["rules"]), default=0.0)}
     return ids, calls, group, split
 
 
