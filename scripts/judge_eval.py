@@ -115,6 +115,17 @@ def main(argv: list[str] | None = None) -> int:
     write_json_atomic(REPO_ROOT / "artifacts" / "metrics" / "judge_eval.json",
                       {"scorers": out, "citations_valid": vc, "citations_total": nc,
                        "judge_version": judge.PROMPT_VERSION_FULL})
+    # crossval.json "methods": per method AUC with its CI and CV precision / recall / balanced accuracy per fold
+    cvp = REPO_ROOT / "artifacts" / "metrics" / "crossval.json"
+    doc = json.loads(cvp.read_text(encoding="utf-8")) if cvp.is_file() else {}
+    doc["methods"] = {name: {"auc": o["auc"]["auc"], "auc_ci95": o["auc"]["ci95"], "auc_by_split": o["auc"]["by_split"],
+                             "cv_bacc_mean": o["cv"]["cv_bacc_mean"], "cv_bacc_range": o["cv"]["cv_bacc_range"],
+                             "cv_folds": o["cv"]["folds"], "oof_esc_p": o["cv"]["oof_esc_p"],
+                             "oof_esc_r": o["cv"]["oof_esc_r"], "oof_esc_f1": o["cv"]["oof_esc_f1"]}
+                      for name, o in out.items()}
+    doc["methods_note"] = ("all 62 calls, ASR mode; AUC vs gold escalation with a dialogue-group bootstrap CI; CV = "
+                           "escalation threshold tuned on two splits by balanced accuracy, scored on the third")
+    write_json_atomic(cvp, doc)
     return 0
 
 

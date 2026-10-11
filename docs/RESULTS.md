@@ -216,3 +216,30 @@ false alarm or sent a harmless call to review on these 62 calls. It is conservat
 calls that need escalation (9 of 34). Its escalation F1 (0.42) is still below the flag-all baseline (0.71); what it
 offers over flag-all is precision 1.00 at a workload of 9 calls instead of 62. Next levers: recall (a second pass on
 calls the facts flag but the judge clears; criterion-specific prompts), and n: 62 calls, 31 dialogues.
+
+## The ladder (headline for the pitch)
+
+| step | what decides | AUC vs gold escalation [95% CI] | balanced accuracy | escalation P / R | review load | false alarms |
+|---|---|---|---|---|---|---|
+| pre-fix (T5, holdout unseen) | facts → rules, ASR, no roles | 0.43 | holdout esc F1 **0.00** | holdout 0.00 / 0.00 | — | 0 |
+| T5b facts → rules (re-segmentation + extract-v2-asr) | facts → rules | 0.36 [0.24, 0.51] | 3-fold CV 0.46 | OOF 0.00 / 0.00 at its CV threshold | 5 % | 0 |
+| **S4 direct judge (shipped)** | judge verdict + validated citation | **0.63 [0.53, 0.74]** | **0.63** (dev 0.66, test30 0.58, holdout 0.67) | **1.00 / 0.26** | **15 %** | **0** |
+| S4 + learned review conditions | judge + depth-3 tree | = S4 (cap binds) | 3-fold CV 0.64 = S4 alone; uncapped 0.53 at 74 % load | | | |
+| everything to review (trivial) | — | 0.50 | 0.50 | 0.55 / 1.00 | 100 % | 0 |
+
+**The S4 verdict has no tuned parameter** (no threshold, no rule weight was fitted on these calls; the prompt and
+criteria were written before this run), so its numbers on all 62 calls are effectively unseen; the per-split
+numbers agree (0.58–0.67). Everything else on this page that was tuned is labelled in-sample or reported in CV.
+
+### Conditions after AI (recall layer, not shipped)
+
+Design (Peter): alarm stays the S4 verdict with a validated citation; a learned layer may send more calls to REVIEW
+from the S4 risk, mined n-grams, keyword hits and fact flags, with counter-evidence pushing towards no_alert. Mined
+by log-odds with an informative Dirichlet prior over unigrams and bigrams present in >= 2 dialogue groups
+(call-level, from ASR transcripts: the gold evidence windows point at reference-script turns, which ASR text does not
+match), fitted as a depth-3 tree; mining and fitting inside each of the 3 folds (`scripts/learn_conditions.py`,
+branch `ml/conditions`, not merged). Ship rule set before measuring: beat S4 alone on CV balanced accuracy with
+<= 40 % review load. Result: uncapped, CV balanced accuracy 0.53 at 74 % review load (recall 0.76, precision 0.57);
+with the cap enforced inside each fold the chosen cut adds no review, i.e. exactly S4 alone (0.64). It fails the rule,
+so S4 alone ships. Per-method AUC with CIs and per-fold CV precision / recall: `artifacts/metrics/crossval.json`
+(`methods`), `artifacts/metrics/conditions_cv.json`.
