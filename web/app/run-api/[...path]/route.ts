@@ -138,7 +138,7 @@ function strategies(id: string): Response {
 // the strategy comparison on reference transcripts (artifacts/bench/strategy_lab_t4/summary.json), and the risk-score AUC
 // stated in the final report's notes. Metrics only; no labels and no per-call gold leave the files.
 function qualityEvidence() {
-  type Fold = { esc_f1?: number };
+  type Fold = { esc_f1?: number; esc_r?: number };
   type Row = { label: string; folds?: Record<string, Fold>; cv_mean?: number; cv_min?: number; cv_max?: number; all62_in_sample?: { esc_f1?: number }; flag_all_baseline?: Record<string, number> };
   const cv = readJson<{ rows?: Row[] }>(path.join(ART, "metrics", "crossval.json"));
   type Strat = { strategy?: string; description?: string; n?: number; esc_f1?: number; ci95?: { esc_f1?: [number, number] } };
@@ -149,6 +149,7 @@ function qualityEvidence() {
   return {
     crossval: (cv?.rows ?? []).map((r) => ({
       label: r.label, folds: Object.fromEntries(Object.entries(r.folds ?? {}).map(([k, v]) => [k, v.esc_f1 ?? null])),
+      recall_folds: Object.fromEntries(Object.entries(r.folds ?? {}).map(([k, v]) => [k, v.esc_r ?? null])),
       cv_mean: r.cv_mean ?? null, cv_min: r.cv_min ?? null, cv_max: r.cv_max ?? null, all62: r.all62_in_sample?.esc_f1 ?? null, flag_all: r.flag_all_baseline ?? null,
     })),
     strategies: lab ? { tuning_set: lab.tuning_set ?? null, rows: Object.entries(lab.strategies ?? {}).map(([sid, v]) => ({ id: sid, strategy: v.strategy ?? null, description: v.description ?? null, n: v.n ?? null, esc_f1: v.esc_f1 ?? null, ci: v.ci95?.esc_f1 ?? null })) } : null,

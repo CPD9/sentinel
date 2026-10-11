@@ -206,7 +206,7 @@ export interface CallListItem {
 }
 // ---- Evidence behind the Quality page (local-run fallback: GET /evidence/quality)
 export interface CrossvalRow {
-  label: string; folds: Record<string, number | null>; cv_mean: number | null; cv_min: number | null; cv_max: number | null;
+  label: string; folds: Record<string, number | null>; recall_folds?: Record<string, number | null>; cv_mean: number | null; cv_min: number | null; cv_max: number | null;
   all62: number | null; flag_all: Record<string, number> | null;
 }
 export interface QualityEvidence {
