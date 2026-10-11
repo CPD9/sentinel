@@ -232,13 +232,18 @@ export async function getQualityReports(): Promise<QualityReportSummary[]> {
   }
   return (await getJson<QualityReportSummary[]>(api("/quality"))).data;
 }
+/** Reports written by the pipeline may leave out optional sections; default them so each one says "not computed". */
+const normaliseReport = (r: QualityReport): QualityReport => ({
+  ...r, breakdowns: r.breakdowns ?? {}, threshold_curves: r.threshold_curves ?? [], reliability: r.reliability ?? null, ablations: r.ablations ?? [],
+  wer_vs_recall: r.wer_vs_recall ?? [], latency: r.latency ?? [], evidence_validity: r.evidence_validity ?? null, warnings: r.warnings ?? [], notes: r.notes ?? [],
+});
 export async function getQualityReport(reportId: string): Promise<QualityReport> {
   if (isFixtures) {
     const r = (await getJson<QualityReport>(fx("quality_report.json"))).data;
     if (r.report_id !== reportId) throw new ApiError(404, "not_found", `Unknown report ${reportId}`);
-    return r;
+    return normaliseReport(r);
   }
-  return (await getJson<QualityReport>(api(`/quality/${reportId}`))).data;
+  return normaliseReport((await getJson<QualityReport>(api(`/quality/${reportId}`))).data);
 }
 
 // ------------------------------------------------------------------ settings
