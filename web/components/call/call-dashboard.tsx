@@ -11,6 +11,7 @@ import { AuditTab } from "./tabs/audit-tab";
 import { AudioTab } from "./tabs/audio-tab";
 import { ReasoningTab } from "./tabs/reasoning-tab";
 import { TranscriptTab } from "./tabs/transcript-tab";
+import { AskCallPanel } from "@/components/copilot/ask-call-panel";
 import { ErrorCard, SkeletonBlock } from "@/components/shell/states";
 import { ProcessingView } from "@/components/processing/processing-view";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -100,6 +101,8 @@ function Body({ result, tab, sel }: { result: CallResult; tab: TabValue; sel: { 
         <CallSummary meta={{ call_id: id, updated_at: item?.updated_at ?? null, duration_s: item?.duration_s ?? null, is_mock: item?.is_mock ?? false }}
           result={result} trace={trace} analysis={analysis} transcript={transcript} thresholds={trace.data?.thresholds ?? null} onCite={onCite} />
       </article>
+
+      <AskCallPanel callId={id} onCite={onCite} />
 
       <section aria-labelledby="transcript-h" className="stage-in space-y-3" style={{ "--i": 1 } as React.CSSProperties}>
         <h2 id="transcript-h" className="text-title font-semibold tracking-tight">Transcript</h2>
