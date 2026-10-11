@@ -266,3 +266,23 @@ tuned on these numbers; false alarms = gold no_alert decided alarm, missed = gol
 | default + keyword review, min 4 segments | 0 | 25 | 18 % |
 | default + keyword review, min 2 segments | 0 | 20 | 35 % |
 | default + keyword review, min 1 segment | 0 | 17 | 40 % |
+
+## Multi-check judge (11 Oct 2026, 06:30–07:00): shipped
+
+Instead of one general verdict, the judge runs once per criterion (`pipeline/judge_multi.py`, `judge-asr-mc-v1`):
+six focused zero-shot prompts that share the single judge's criterion definitions, citation rules, JSON schema and
+evidence validator. The call's risk is the maximum over the checks; the criterion and citations come from the top
+check; a check that says "not met" cannot carry more than 0.1 risk; an unusable check becomes a review (0 of 372 on
+the 62 calls). Zero-shot, nothing fitted on labels, so the all-62 numbers are effectively unseen. `config/thresholds.json`
+`judge_mode: "multi"` (`"single"` restores the one-prompt judge). Gate set before measuring: balanced accuracy above the
+single judge and at most 1 false alarm at the default thresholds (0.70 / 0.20).
+
+| all 62 calls, ASR mode | AUC [95% CI] | balanced accuracy (dev / test30 / holdout) | escalation P / R | false alarms | review load | alarm / review / no_alert |
+|---|---|---|---|---|---|---|
+| single judge (S4) | 0.63 [0.53, 0.74] | 0.63 (0.66 / 0.58 / 0.67) | 1.00 / 0.26 | 0 | 15 % | 1 / 8 / 53 |
+| **multi-check judge** | **0.69 [0.58, 0.80]** | **0.69 (0.69 / 0.63 / 0.83)** | **1.00 / 0.38** | **0** | **21 %** | 6 / 7 / 49 |
+
+Gate: **pass**. Run `mc_final` (`~/Developer/sentinel-runs/mc_0656_final/`): alarms call_022 and call_050 (control
+evasion), call_026 and call_044 (documentation concealment), call_037 and call_041 (insider trading); every call fully
+explained; each call's per-criterion answers are kept in `<out>/judge/<id>.json` (`checks`). Threshold curve at the
+defaults: 0 false alarms, 21 missed of 34, 21 % review load; keyword review with >= 2 hit segments: 17 missed at 40 %.
