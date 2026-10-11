@@ -13,7 +13,6 @@ import argparse
 import json
 import platform
 import socket
-import statistics
 import sys
 import time
 from datetime import datetime, timezone
@@ -23,16 +22,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
 from pipeline import asr  # noqa: E402
+from pipeline.timing import stats  # noqa: E402
 from scripts.pod_asr_batch import VramPeak, vram_used_mib  # noqa: E402
-
-
-def stats(xs: list[float]) -> dict:
-    if not xs:
-        return {}
-    s = sorted(xs)
-    p90 = s[min(len(s) - 1, int(round(0.9 * (len(s) - 1))))]
-    return {"n": len(s), "mean": round(statistics.fmean(s), 3), "median": round(statistics.median(s), 3),
-            "p90": round(p90, 3), "min": round(s[0], 3), "max": round(s[-1], 3)}
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -5,16 +5,22 @@ and the call's total (job_finished). It never changes what a call decides; with 
 """
 from __future__ import annotations
 
+import math
 import statistics
 import threading
 
 
+def nearest_rank(sorted_xs: list[float], q: float) -> float:
+    """Nearest-rank percentile: the value at 1-based rank ceil(q * n), i.e. index ceil(q * n) - 1."""
+    return sorted_xs[max(0, math.ceil(round(q * len(sorted_xs), 9)) - 1)]     # round: guards ceil against float error in q * n
+
+
 def stats(xs: list[float]) -> dict:
-    """n, mean, median, p90 (nearest rank), min, max, rounded to ms. {} for no data."""
+    """n, mean, median, p90 (nearest rank, ceil(0.9 n) - 1), min, max, rounded to ms. {} for no data."""
     if not xs:
         return {}
     s = sorted(xs)
-    p90 = s[min(len(s) - 1, int(round(0.9 * (len(s) - 1))))]
+    p90 = nearest_rank(s, 0.9)
     return {"n": len(s), "mean": round(statistics.fmean(s), 3), "median": round(statistics.median(s), 3),
             "p90": round(p90, 3), "min": round(s[0], 3), "max": round(s[-1], 3)}
 

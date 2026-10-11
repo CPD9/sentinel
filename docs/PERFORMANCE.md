@@ -95,7 +95,8 @@ scripts/run_test_set.sh <folder with audio | the organisers' packet folder>
 Checks (venv, ffmpeg, tunnel + Apertus, ssh to the Pod, disk), converts any non-WAV / non-16 kHz-mono audio, GPU ASR
 on the Pod with FLAC upload, the pipeline with 8 workers and `--timings`, a timing summary and the total time, a
 quality summary if `--labels` is given, and the organisers' result files (`export/Ergebnisse.csv`,
-`Ergebnisse.jsonl`, `Laufprotokoll.json`). Falls back to CPU ASR if the Pod is unreachable.
+`Ergebnisse.jsonl`, `Laufprotokoll.json`). If the Pod is unreachable, or its decodes do not match the pipeline's
+model and cache keys, it stops rather than re-decoding on the CPU without saying so; `--cpu` runs the laptop ASR on purpose.
 
 ## How to reproduce
 

@@ -38,7 +38,7 @@ It runs, and prints the time of, each step:
 2. **audio**: every wav / mp3 / m4a / flac / ogg in the folder; anything that is not 16 kHz mono PCM WAV is converted;
    given the organisers' packet folder, it takes `01_Audio/`;
 3. **GPU ASR on the Pod** (`scripts/pod_asr_folder.sh --flac`): lossless FLAC upload in one stream, one model load,
-   the decodes land in the run's own `artifacts/cache/asr`; if the Pod is unreachable the run decodes on the CPU;
+   the decodes land in the run's own `artifacts/cache/asr`. The Pod must load the same model as the pipeline (name and revision, `scripts/asr_cache_check.py`), and afterwards every WAV's decode is checked under the pipeline's own cache key; if the Pod is unreachable or anything does not match, the run **stops** instead of silently re-decoding on the laptop CPU (`--cpu` does that on purpose);
 4. **the pipeline**: `./run.sh <wavs> --out <run>/out --artifacts <run>/artifacts --workers 8 --timings ...`;
    `--artifacts` keeps transcripts, traces, audio analysis and the ASR / LLM caches of this set in its own folder,
    nothing shared is read or written;
@@ -48,7 +48,8 @@ It runs, and prints the time of, each step:
    `Ergebnisse.csv`, `Ergebnisse.jsonl` (one row per `clip_id` = file stem: `alert` = alarm, `manual_review` = review,
    `keyword_ids` K01–K11 found verbatim, `alert_audio_seconds` = start of the alarm's first evidence passage,
    `entity_types` not reported) and `Laufprotokoll.json` (run id, version, settings, audio SHA-256, checked against
-   the packet's `Auswahl.json`).
+   the packet's `Auswahl.json`; hashes of the original files, before any conversion). With the packet, the K-ids come from
+   its own `03_Referenzen/keywords.json`, otherwise from the tracked copy `config/organiser_keywords.json`.
 
 `--workers 8` was the fastest of 4 / 6 / 8 with zero stage errors (PERFORMANCE.md). The two manual steps it wraps
 still work on their own:

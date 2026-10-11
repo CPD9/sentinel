@@ -7,13 +7,15 @@ recording, clip_id = the original file stem (e.g. TEST-02):
   alert                decision == alarm (binary policy "review_no_auto_alert": a review is never an alert)
   manual_review        decision == review (incl. calls with a failed stage: never silently no alert)
   keyword_ids          K01..K11 groups our keyword matcher found verbatim (score >= 0.95), mapped through the
-                       case keyword list (data/case/Stichwortliste.json = the packet's 03_Referenzen/keywords.json);
+                       packet's 03_Referenzen/keywords.json (with --package), else the tracked copy
+                       config/organiser_keywords.json (byte-identical to it and to the case list, sha256 8ec085ae...);
                        [] = explicitly none found
   entity_types         null = not reported (SENTINEL does not classify entity types)
   alert_audio_seconds  for an alarm: audio position (s) where the top finding's first evidence passage starts
   notes                top criterion, risk, confidence, stage errors
-Reads only our own outputs (+ Auswahl.json's run id and file hashes from --package to check we ran the right audio);
-never the packet's Soll files or any label.
+Audio hashes in Laufprotokoll.json are those of the ORIGINAL files before any conversion (out/source_files.json,
+written by run_test_set.sh), checked against the packet's Auswahl.json. Reads only our own outputs, the packet's
+keyword list and Auswahl.json (run id, file hashes); never the packet's Soll files or any label.
 """
 from __future__ import annotations
 
@@ -29,7 +31,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-KEYWORD_LIST = REPO_ROOT / "data" / "case" / "Stichwortliste.json"
+KEYWORD_LIST = REPO_ROOT / "config" / "organiser_keywords.json"      # tracked copy; the packet's own file wins
 FIELDS = ["clip_id", "alert", "manual_review", "keyword_ids", "entity_types", "alert_audio_seconds", "notes"]
 VERBATIM = 0.95
 
@@ -87,12 +89,29 @@ def sha256(p: Path) -> str:
     return h.hexdigest()
 
 
+def keyword_list_for(package: Path | None) -> Path:
+    if package:
+        p = package / "03_Referenzen" / "keywords.json"
+        if not p.is_file():
+            raise SystemExit(f"--package given but {p} is missing")
+        return p
+    return KEYWORD_LIST
+
+
+def source_hashes(run_dir: Path) -> dict[str, str]:
+    """stem -> sha256 of the original file (before conversion), from run_test_set.sh's out/source_files.json."""
+    f = run_dir / "out" / "source_files.json"
+    return {k: v["sha256"] for k, v in json.loads(f.read_text(encoding="utf-8")).items()} if f.is_file() else {}
+
+
 def export(run_dir: Path, out: Path, package: Path | None = None, settings: str = "", started: str | None = None) -> dict:
     res_all = json.loads((run_dir / "out" / "results.json").read_text(encoding="utf-8"))
     im = run_dir / "out" / "id_map.json"
     idm = json.loads(im.read_text(encoding="utf-8"))["map"] if im.is_file() else {}
     cid2name = {v: k for k, v in idm.items()}
-    by_phrase, by_family = keyword_index()
+    kw_file = keyword_list_for(package)
+    by_phrase, by_family = keyword_index(kw_file)
+    originals = source_hashes(run_dir)
     rows, shas = [], {}
     for r in res_all["calls"]:
         name = cid2name.get(r["call_id"], f"{r['call_id']}.wav")
@@ -100,9 +119,10 @@ def export(run_dir: Path, out: Path, package: Path | None = None, settings: str 
         tp = run_dir / "artifacts" / "traces" / f"{r['call_id']}.json"
         trace = json.loads(tp.read_text(encoding="utf-8")) if tp.is_file() else None
         rows.append(row(clip, r, trace, by_phrase, by_family))
-        wav = run_dir / "wavs" / name
-        if wav.is_file():
-            shas[clip] = sha256(wav)
+        if clip in originals:
+            shas[clip] = originals[clip]
+        elif (run_dir / "wavs" / name).is_file():            # no record of the original: hash what was processed
+            shas[clip] = sha256(run_dir / "wavs" / name)
     rows.sort(key=lambda x: x["clip_id"])
     sel = json.loads((package / "Auswahl.json").read_text(encoding="utf-8")) if package and (package / "Auswahl.json").is_file() else {}
     mismatch = sorted(k for k, v in (sel.get("audio_sha256") or {}).items() if k in shas and shas[k] != v)
@@ -130,6 +150,8 @@ def export(run_dir: Path, out: Path, package: Path | None = None, settings: str 
         "audio_sha256": shas, "notes": "; ".join(filter(None, [
             f"sha256 mismatch vs Auswahl.json: {mismatch}" if mismatch else "",
             f"not processed: {missing}" if missing else "",
+            "" if originals else "audio_sha256 = processed WAV (no record of the original files)",
+            f"keyword list: {kw_file.name} sha256 {sha256(kw_file)[:12]}",
             "entity_types not reported (null)", "alert_audio_seconds = audio position, not wall-clock latency"])),
     }
     (out / "Laufprotokoll.json").write_text(json.dumps(proto, indent=2, ensure_ascii=False), encoding="utf-8")

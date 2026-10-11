@@ -10,7 +10,10 @@
 #   --workers N   calls in parallel on the laptop (default 8, the fastest of 4 / 6 / 8 with 0 stage errors, docs/PERFORMANCE.md)
 #   --labels F    {"<file name>": "alarm|review|no_alert"} or CSV file,label; read only after predictions exist
 #   --run-dir D   where everything goes (default ~/Developer/sentinel-runs/testset_<timestamp>)
-#   --wav         upload WAV instead of lossless FLAC     --cpu   skip the Pod, decode on the laptop CPU (slow)
+#   --wav         upload WAV instead of lossless FLAC     --cpu   skip the Pod, decode on the laptop CPU (~1 min per call)
+# The Pod and the pipeline use the same ASR model (pipeline.asr.DEFAULT_ASR_MODEL, name AND revision): if the Pod is
+# unreachable or its decodes do not match the pipeline's cache keys, the run stops instead of silently re-decoding on
+# the CPU (rerun with --cpu to accept that on purpose).
 # Any audio ffmpeg reads (wav, mp3, m4a, flac, ogg) is accepted; files that are not 16 kHz mono WAV are converted.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -33,6 +36,8 @@ if [[ -d "$SRC/01_Audio" ]]; then PACKAGE="$SRC"; SRC="$SRC/01_Audio"; fi
 RUN=${RUN:-$HOME/Developer/sentinel-runs/testset_$(date +%Y%m%d_%H%M%S)}
 mkdir -p "$RUN"; RUN="$(cd "$RUN" && pwd)"
 PY="$ROOT/.venv/bin/python"
+# one model spec for the Pod and for run.py (overrides .env, which run.py would read otherwise)
+export ASR_MODEL_PATH="$("$PY" -c 'import sys; sys.path.insert(0, sys.argv[1]); from pipeline.asr import DEFAULT_ASR_MODEL; print(DEFAULT_ASR_MODEL)' "$ROOT")"
 now() { python3 -c 'import time; print(time.time())'; }
 T0=$(now)
 STARTED=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -44,12 +49,15 @@ echo "== checks"
 command -v ffmpeg >/dev/null && ok "ffmpeg" || { bad "ffmpeg not on PATH"; exit 1; }
 if curl -sf -m 5 http://127.0.0.1:8000/v1/models | grep -q apertus; then ok "Apertus reachable on 127.0.0.1:8000"
 else bad "Apertus not reachable: start scripts/pod_tunnel.sh (calls would end as review with a stage error)"; exit 1; fi
+IDLINE=$("$PY" "$ROOT/scripts/asr_cache_check.py" id) || { bad "ASR model cannot be reproduced on the Pod"; exit 1; }
+ok "ASR model $(printf '%s' "$IDLINE" | cut -f2)"
 if [[ $CPU == 0 ]]; then
   if ssh -o ConnectTimeout=8 -o BatchMode=yes sentinel-pod true 2>/dev/null; then ok "ssh sentinel-pod"
-  else bad "ssh sentinel-pod failed: falling back to CPU ASR (slow)"; CPU=1; fi
+  else bad "ssh sentinel-pod failed: start the Pod / fix ~/.ssh/config, or rerun with --cpu (laptop ASR, ~1 min per call)"; exit 1; fi
 fi
-FREE_GB=$(df -g "$RUN" | awk 'NR==2 {print $4}')
-[[ ${FREE_GB:-0} -ge 2 ]] && ok "disk ${FREE_GB} GB free" || { bad "less than 2 GB free"; exit 1; }
+# portable (macOS + Linux): POSIX df in 1 KiB blocks, column 4 = available
+FREE_KB=$(df -Pk "$RUN" | awk 'NR==2 {print $4}')
+if [[ ${FREE_KB:-0} -ge $((2 * 1024 * 1024)) ]]; then ok "disk $((FREE_KB / 1024 / 1024)) GB free"; else bad "less than 2 GB free"; exit 1; fi
 
 echo "== audio"
 WAVS="$RUN/wavs"; mkdir -p "$WAVS"
@@ -63,6 +71,21 @@ for f in "$SRC"/*.{wav,mp3,m4a,flac,ogg,aac}; do
 done
 shopt -u nullglob nocaseglob
 [[ $n -gt 0 ]] || { bad "no audio files in $SRC"; exit 1; }
+mkdir -p "$RUN/out"
+# SHA-256 of the ORIGINAL files, before any conversion (Laufprotokoll.json, check against Auswahl.json)
+"$PY" - "$SRC" "$RUN/out/source_files.json" <<'PYEOF'
+import hashlib, json, sys
+from pathlib import Path
+out = {}
+for f in sorted(Path(sys.argv[1]).iterdir()):
+    if f.suffix.lower() in {".wav", ".mp3", ".m4a", ".flac", ".ogg", ".aac"} and f.is_file():
+        h = hashlib.sha256()
+        with f.open("rb") as fh:
+            for c in iter(lambda: fh.read(1 << 20), b""):
+                h.update(c)
+        out[f.stem] = {"file": f.name, "sha256": h.hexdigest()}
+Path(sys.argv[2]).write_text(json.dumps(out, indent=1))
+PYEOF
 ok "$n files ($conv converted to 16 kHz mono WAV) in $WAVS"
 
 POD_LINE=""
@@ -72,12 +95,12 @@ if [[ $CPU == 0 ]]; then
   if OUT=$("$ROOT/scripts/pod_asr_folder.sh" "$WAVS" "$RUN/artifacts" $FLAG 2>&1); then
     echo "$OUT" | tail -2; POD_LINE=$(echo "$OUT" | grep '^pod_asr_timing' || true)
   else
-    echo "$OUT" | tail -5; bad "Pod ASR failed: the run decodes the missing files on the laptop CPU"
+    echo "$OUT" | tail -5; bad "Pod ASR failed or its decodes do not match the pipeline's model: stopping (rerun with --cpu to decode on the laptop on purpose)"; exit 3
   fi
 fi
 
 echo "== pipeline ($WORKERS workers)"
-mkdir -p "$RUN/out"; echo "$WAVS" > "$RUN/out/source_folder.txt"
+echo "$WAVS" > "$RUN/out/source_folder.txt"
 "$ROOT/run.sh" "$WAVS" --out "$RUN/out" --artifacts "$RUN/artifacts" --workers "$WORKERS" \
   --timings "$RUN/out/timings.json" --run-id "testset_$(basename "$RUN")"
 

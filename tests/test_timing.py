@@ -14,6 +14,14 @@ def test_stats_mean_median_p90():
     assert stats([]) == {}
 
 
+def test_p90_is_nearest_rank_ceil_09n_minus_1():
+    from pipeline.timing import nearest_rank
+    for n, want in ((1, 1), (5, 5), (9, 9), (10, 9), (11, 10), (20, 18), (30, 27), (62, 56), (100, 90)):
+        xs = [float(i) for i in range(1, n + 1)]          # value = 1-based rank
+        assert nearest_rank(xs, 0.9) == want, n
+        assert stats(list(reversed(xs)))["p90"] == want
+
+
 def test_collector_sums_stages_and_records_failures():
     c = TimingCollector()
     c({"event": "stage_finished", "call_id": "call_001", "stage": "asr", "elapsed_s": 1.5})
@@ -87,3 +95,60 @@ def test_organiser_export_rows_and_keyword_ids(tmp_path):
     lines = (tmp_path / "exp" / "Ergebnisse.jsonl").read_text().splitlines()
     assert [json.loads(x)["clip_id"] for x in lines] == ["TEST-02", "TEST-03"]
     assert (tmp_path / "exp" / "Ergebnisse.csv").read_text().splitlines()[0] == ",".join(eo.FIELDS)
+
+
+def test_pod_refuses_another_model_before_decoding(tmp_path, monkeypatch):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    import pod_asr_folder as paf
+    monkeypatch.setattr(asr, "resolve_model", lambda spec: (tmp_path, "other/model@deadbeef0000"))
+    called = []
+    monkeypatch.setattr(asr, "load_model", lambda *a: called.append(1))
+    (tmp_path / "audio").mkdir()
+    rc = paf.main([str(tmp_path / "audio"), str(tmp_path / "cache"), "--expect-model-id", "m/x@0a363e9161cb"])
+    assert rc == 3 and not called
+
+
+def test_cache_check_fails_loudly_on_missing_gpu_decode(tmp_path, capsys):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    import asr_cache_check as acc
+    wavs, cache = tmp_path / "wavs", tmp_path / "cache"
+    wavs.mkdir()
+    cache.mkdir()
+    make_wav(wavs / "a.wav", seconds=2)
+    make_wav(wavs / "b.wav", seconds=3)
+    mid = "mobiuslabsgmbh/faster-whisper-large-v3-turbo@0a363e9161cb"
+    key = asr.cache_key(asr._sha256(wavs / "a.wav"), mid, *asr.GPU_DECODE)
+    (cache / f"{key}.json").write_text("{}")
+    assert acc.main(["check", str(wavs), str(cache), mid]) == 3
+    assert "b.wav" in capsys.readouterr().err
+    key_b = asr.cache_key(asr._sha256(wavs / "b.wav"), mid, *asr.GPU_DECODE)
+    (cache / f"{key_b}.json").write_text("{}")
+    assert acc.main(["check", str(wavs), str(cache), mid]) == 0
+    assert acc.main(["check", str(wavs), str(cache), "mobiuslabsgmbh/faster-whisper-large-v3-turbo@ffffffffffff"]) == 3
+
+
+def test_export_uses_packet_keywords_and_original_hashes(tmp_path):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    import export_organiser as eo
+    pkg = tmp_path / "pkg"
+    (pkg / "03_Referenzen").mkdir(parents=True)
+    kl = {"families": {"access": {"keywords": ["K10"]}},
+          "keywords": [{"id": "K10", "de": ["Passwort"], "gsw": []}]}
+    (pkg / "03_Referenzen" / "keywords.json").write_text(json.dumps(kl))
+    (pkg / "Auswahl.json").write_text(json.dumps({"run_id": "SIZE-1", "clip_ids": ["TEST-02"],
+                                                 "audio_sha256": {"TEST-02": "a" * 64}}))
+    run = tmp_path / "run"
+    (run / "out").mkdir(parents=True)
+    (run / "artifacts" / "traces").mkdir(parents=True)
+    call = {"call_id": "call_x001", "decision": "no_alert", "risk_score": 0.0, "confidence": 0.9, "stage_errors": [],
+            "findings": []}
+    (run / "out" / "results.json").write_text(json.dumps({"run_id": "t", "calls": [call]}))
+    (run / "out" / "id_map.json").write_text(json.dumps({"map": {"TEST-02.wav": "call_x001"}}))
+    (run / "out" / "source_files.json").write_text(json.dumps({"TEST-02": {"file": "TEST-02.mp3", "sha256": "a" * 64}}))
+    (run / "artifacts" / "traces" / "call_x001.json").write_text(json.dumps(
+        {"keyword_hits": [{"family": "access", "term": "Passwort", "matched_text": "Passwort", "score": 1.0}]}))
+    r = eo.export(run, tmp_path / "exp", pkg)
+    assert r["rows"][0]["keyword_ids"] == ["K10"] and r["mismatch"] == [] and r["missing"] == []
+    proto = json.loads((tmp_path / "exp" / "Laufprotokoll.json").read_text())
+    assert proto["audio_sha256"] == {"TEST-02": "a" * 64} and proto["selection_run_id"] == "SIZE-1"
+    assert eo.keyword_list_for(None) == eo.KEYWORD_LIST and eo.KEYWORD_LIST.is_file()   # tracked copy, not data/

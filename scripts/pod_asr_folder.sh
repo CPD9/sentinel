@@ -9,7 +9,10 @@
 #
 # --flac converts to lossless FLAC first (same samples, smaller upload); the cache keys stay those of the WAVs.
 # The pipeline code is shipped with the audio into the run dir, so the Pod decodes with exactly this checkout's
-# pipeline/asr.py (same cache key and decode settings) and nothing shared on the Pod is overwritten.
+# pipeline/asr.py (same cache key and decode settings) and nothing shared on the Pod is overwritten. The model is the
+# one the pipeline resolves (scripts/asr_cache_check.py id: same name AND revision; the Pod refuses another one), and
+# after the download every WAV's GPU decode is checked under the pipeline's own cache key: exit 3 on any mismatch,
+# because ./run.sh would otherwise silently re-decode those files on the laptop CPU.
 set -euo pipefail
 WAVS=${1:?usage: scripts/pod_asr_folder.sh <wav_folder> <artifacts_dir> [--flac]}
 ART=${2:?usage: scripts/pod_asr_folder.sh <wav_folder> <artifacts_dir> [--flac]}
@@ -23,6 +26,9 @@ trap 'rm -rf "$STAGE"' EXIT
 now() { python3 -c 'import time; print(time.time())'; }
 since() { python3 -c "import sys; print(f'{float(sys.argv[2]) - float(sys.argv[1]):.1f}')" "$1" "$(now)"; }
 
+IDLINE=$("$ROOT/.venv/bin/python" "$ROOT/scripts/asr_cache_check.py" id) || exit 2
+SPEC=$(printf '%s' "$IDLINE" | cut -f1); MODEL_ID=$(printf '%s' "$IDLINE" | cut -f2)
+echo "ASR model: $MODEL_ID"
 N=$(ls "$WAVS"/*.wav 2>/dev/null | wc -l | tr -d ' ')
 [[ "$N" -gt 0 ]] || { echo "no .wav files in $WAVS" >&2; exit 1; }
 T0=$(now)
@@ -57,7 +63,7 @@ T_UP=$(since "$T1")
 
 T2=$(now)
 SHAS=""; [[ $FMT == flac ]] && SHAS="--shas $REMOTE/shas.json"
-ssh sentinel-pod "source /workspace/sentinel/pod_env.sh >/dev/null && cd $REMOTE/code && python scripts/pod_asr_folder.py $REMOTE/audio $REMOTE/cache $SHAS 2>&1 | grep -v -i warning"
+ssh sentinel-pod "source /workspace/sentinel/pod_env.sh >/dev/null && cd $REMOTE/code && python scripts/pod_asr_folder.py $REMOTE/audio $REMOTE/cache $SHAS --model $SPEC --expect-model-id $MODEL_ID 2>&1 | grep -v -i warning; exit \${PIPESTATUS[0]}" || { echo "Pod ASR failed (see above)" >&2; ssh sentinel-pod "rm -rf $REMOTE"; exit 3; }
 T_DEC=$(since "$T2")
 
 T3=$(now)
@@ -66,4 +72,5 @@ ssh sentinel-pod "tar cf - -C $REMOTE/cache ." | tar xf - -C "$ART/cache/asr"
 ssh sentinel-pod "rm -rf $REMOTE"
 T_DOWN=$(since "$T3")
 echo "GPU decodes in $ART/cache/asr: $(ls "$ART/cache/asr" | wc -l | tr -d ' ') files"
+"$ROOT/.venv/bin/python" "$ROOT/scripts/asr_cache_check.py" check "$WAVS" "$ART/cache/asr" "$MODEL_ID" || exit 3
 echo "pod_asr_timing format=$FMT files=$N size=$BYTES prep_s=$T_PREP upload_s=$T_UP decode_s=$T_DEC download_s=$T_DOWN total_s=$(since "$T0")"
