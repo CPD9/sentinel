@@ -19,6 +19,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # pipeline/snippets.py cuts evidence snippets with ffmpeg; the runner image doesn't ship it.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -30,8 +32,13 @@ jobs:
       # ASR runtime only, same pins as requirements-asr.txt. torch/transformers are left out: no test uses them,
       # they only serve ct2-transformers-converter (benchmark_asr.py fine-tune conversion).
       - run: pip install -r requirements-dev.txt -r requirements-analysis.txt -r services/api/requirements.txt faster-whisper==1.2.1 ctranslate2==4.8.2 av==18.1.0
-      # test_runtime_per_audio_minute is timing-based and flaky (cold numba start); uncomment the deselect if it fails.
-      - run: python -m pytest #--deselect tests/test_audio_analysis.py::test_runtime_per_audio_minute
+      # test_test_split_is_locked reads artifacts/splits/dialogue_splits.json (built from the gitignored case data) and
+      # doesn't skip without it; deselected here until the test skips itself. Remove the deselect then.
+      # test_runtime_per_audio_minute is timing-based and flaky (cold numba start); uncomment its deselect if it fails.
+      - run: >-
+          python -m pytest
+          --deselect tests/test_run_cli.py::test_test_split_is_locked
+          # --deselect tests/test_audio_analysis.py::test_runtime_per_audio_minute
 
   web:
     name: Web lint, typecheck, build
