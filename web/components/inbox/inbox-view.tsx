@@ -28,7 +28,8 @@ export function InboxView({ selected }: { selected: string | null }) {
   const [onlyErrors, setOnlyErrors] = useState(false);
   const [stages, setStages] = useState<Record<string, string>>({});
   const [dragging, setDragging] = useState(false);
-  const [openState, setOpenState] = useState<Record<Group, boolean>>({ alarm: true, review: true, no_alert: false, processing: true });
+  // explicit choices only; a group nobody has toggled opens by default unless it is "No alert" (the bulk)
+  const [openState, setOpenState] = useState<Partial<Record<Group, boolean>>>({});
   const upload = useWavUpload(calls.reload);
 
   useReportMock("inbox", calls.data?.some((c) => c.is_mock) ? { is_mock: true } : null);
@@ -66,8 +67,13 @@ export function InboxView({ selected }: { selected: string | null }) {
       ?? (["alarm", "review", "no_alert", "processing"] as const).map((g) => callsIn(visible, g)[0]).find(Boolean) ?? null;
   }, [calls.data, visible, selected]);
 
-  // The group of the selected call is always open (e.g. a shared link to a cleared call).
-  const open = useMemo(() => (current ? { ...openState, [groupOf(current)]: true } : openState), [openState, current]);
+  // The selected call's group opens by default (e.g. a shared link to a cleared call), but the officer's own toggle wins,
+  // so every group header can always fold.
+  const open = useMemo(() => {
+    const sel = current ? groupOf(current) : null;
+    const def = (g: Group) => g !== "no_alert" || g === sel;
+    return Object.fromEntries(GROUP_ORDER.map((g) => [g, openState[g] ?? def(g)])) as Record<Group, boolean>;
+  }, [openState, current]);
   const setOpen = useCallback((g: Group, v: boolean) => setOpenState((o) => ({ ...o, [g]: v })), []);
 
   // j / k walk the rows in the order they are shown (open groups only); Enter opens the call.
