@@ -34,6 +34,9 @@ function run(): Run | null {
     notes: Array.isArray(r.notes) ? (r.notes as string[]) : [], system: (r.system as string) ?? null, provider: (r.provider as string) ?? null };
 }
 const suffix = () => (run()?.mode === "reference" ? "_reference" : "");
+/** A self-contained run folder (traces/ and transcripts/ next to results/) wins over the shared artifacts, which other
+ *  runs may rewrite at any time; the shared folders are the fallback for older run layouts. */
+const docDir = (kind: "traces" | "transcripts") => (existsSync(path.join(RUN, kind)) ? path.join(RUN, kind) : path.join(ART, `${kind}${suffix()}`));
 const resultIds = () => (existsSync(path.join(RUN, "results")) ? readdirSync(path.join(RUN, "results")).filter((f) => f.endsWith(".json")).map((f) => f.slice(0, -5)).sort() : []);
 
 function calls() {
@@ -45,7 +48,7 @@ function calls() {
     const res = readJson<{ decision: string; risk_score: number; confidence: number | null; findings: { criterion: string; risk: number }[]; stage_errors: unknown[] }>(path.join(RUN, "results", `${id}.json`));
     if (!res) return [];
     const an = readJson<{ duration_s?: number }>(path.join(ART, "analysis", id, "analysis.json"));
-    const tr = readJson<{ decision_path?: string }>(path.join(ART, `traces${suffix()}`, `${id}.json`));
+    const tr = readJson<{ decision_path?: string }>(path.join(docDir("traces"), `${id}.json`));
     const top = [...res.findings].sort((x, y) => y.risk - x.risk)[0] as { reason?: string } | undefined;
     return [{
       // a failed post-decision step (trigger, snippets) leaves the call "done"; only a decisive failure is "error"
@@ -166,8 +169,8 @@ export async function GET(req: Request, ctx: { params: Promise<{ path: string[] 
   if (!existsSync(path.join(RUN, "results", `${id}.json`))) return err(404, "not_found", `Unknown call ${id}`);
   if (!b) return json(readJson(path.join(RUN, "results", `${id}.json`)));
   const doc = (f: string) => (existsSync(f) ? json(readJson(f)) : err(404, "not_available", `${b} not available for ${id}`));
-  if (b === "transcript") return doc(path.join(ART, `transcripts${suffix()}`, `${id}.json`));
-  if (b === "trace") return doc(path.join(ART, `traces${suffix()}`, `${id}.json`));
+  if (b === "transcript") return doc(path.join(docDir("transcripts"), `${id}.json`));
+  if (b === "trace") return doc(path.join(docDir("traces"), `${id}.json`));
   if (b === "analysis") return doc(path.join(ART, "analysis", id, "analysis.json"));
   if (b === "audio") {
     const f = path.join(ART, "audio", `${id}.wav`);
