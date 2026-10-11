@@ -211,3 +211,51 @@ def test_summary_joins_labels_by_source_file_for_non_wav_inputs(tmp_path):
     assert q["n"] == 3 and q["unlabelled"] == 0
     assert (q["strict_alarm"]["tp"], q["strict_alarm"]["fn"]) == (1, 1)
     assert tss.join_labels({"TEST-02.flac": "review"}, {"TEST-02.wav": "call_x001"}, {}) == {"call_x001": "review"}
+
+
+def _export_fixture(tmp_path, packet_sha):
+    pkg = tmp_path / "pkg"
+    (pkg / "03_Referenzen").mkdir(parents=True)
+    (pkg / "03_Referenzen" / "keywords.json").write_text(json.dumps({"families": {}, "keywords": []}))
+    (pkg / "Auswahl.json").write_text(json.dumps({"run_id": "SIZE-1", "clip_ids": ["TEST-02", "TEST-03"],
+                                                 "audio_sha256": {"TEST-02": packet_sha, "TEST-03": "b" * 64}}))
+    run = tmp_path / "run"
+    (run / "out").mkdir(parents=True)
+    calls = [{"call_id": "call_x001", "decision": "no_alert", "risk_score": 0.0, "confidence": 0.9,
+              "stage_errors": [], "findings": []}]
+    (run / "out" / "results.json").write_text(json.dumps({"run_id": "t", "calls": calls}))
+    (run / "out" / "id_map.json").write_text(json.dumps({"map": {"TEST-02.wav": "call_x001"}}))
+    (run / "out" / "source_files.json").write_text(json.dumps({"TEST-02": {"file": "TEST-02.wav", "sha256": "a" * 64}}))
+    return run, pkg
+
+
+def test_integrity_failure_keeps_outputs_banners_and_exits_nonzero(tmp_path):
+    import subprocess
+    root = Path(__file__).resolve().parents[1]
+    run, pkg = _export_fixture(tmp_path, "f" * 64)                 # TEST-02 differs, TEST-03 never processed
+    r = subprocess.run(["bash", str(root / "scripts" / "run_test_set.sh"), "--export-only", str(run), "--package",
+                        str(pkg)], capture_output=True, text=True, timeout=120)
+    assert r.returncode == 4
+    assert r.stderr.count("INTEGRITY CHECK FAILED") == 2             # once at export, again at the very end
+    assert "TEST-02" in r.stderr and "TEST-03" in r.stderr and "export:" not in r.stdout
+    for f in ("Ergebnisse.csv", "Ergebnisse.jsonl", "Laufprotokoll.json"):
+        assert (run / "export" / f).is_file()
+    proto = json.loads((run / "export" / "Laufprotokoll.json").read_text())
+    assert proto["integrity"] == {"status": "failed", "checked_against": "Auswahl.json",
+                                  "sha256_mismatch": ["TEST-02"], "not_processed": ["TEST-03"]}
+
+
+def test_integrity_passes_when_the_selection_matches(tmp_path):
+    import subprocess
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    import export_organiser as eo
+    run, pkg = _export_fixture(tmp_path, "a" * 64)
+    sel = json.loads((pkg / "Auswahl.json").read_text())
+    sel["clip_ids"], sel["audio_sha256"] = ["TEST-02"], {"TEST-02": "a" * 64}
+    (pkg / "Auswahl.json").write_text(json.dumps(sel))
+    assert eo.main([str(run), "--package", str(pkg)]) == 0
+    assert json.loads((run / "export" / "Laufprotokoll.json").read_text())["integrity"]["status"] == "passed"
+    root = Path(__file__).resolve().parents[1]
+    r = subprocess.run(["bash", str(root / "scripts" / "run_test_set.sh"), "--export-only", str(run), "--package",
+                        str(pkg)], capture_output=True, text=True, timeout=120)
+    assert r.returncode == 0 and "export:" in r.stdout and "INTEGRITY" not in r.stderr

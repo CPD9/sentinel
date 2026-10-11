@@ -3,6 +3,7 @@
 # a quality summary if labels are given, a timing summary, and the total time. docs/RUN_HIDDEN_SET.md explains it.
 #
 #   scripts/run_test_set.sh <audio_folder | organisers' packet> [--workers N] [--labels F] [--run-dir D] [--wav] [--cpu]
+#   scripts/run_test_set.sh --export-only <run_dir> [--package <packet>]     # re-export a finished run
 #
 # Given the organisers' packet folder (with 01_Audio/ and Auswahl.json), it takes the audio from 01_Audio and writes
 # their result files (export/Ergebnisse.csv, Ergebnisse.jsonl, Laufprotokoll.json; scripts/export_organiser.py).
@@ -17,6 +18,33 @@
 # Any audio ffmpeg reads (wav, mp3, m4a, flac, ogg) is accepted; files that are not 16 kHz mono WAV are converted.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+# Export in the organisers' format; exit 4 from the exporter = integrity check failed: outputs are kept, the banner is
+# repeated at the very end instead of the success line, and this script exits 4 too.
+export_results() {   # <run_dir> <package or ""> <started_utc>
+  local py="$ROOT/.venv/bin/python"; [[ -x "$py" ]] || py=python3
+  echo "== export (organisers' format)"
+  local rc=0
+  "$py" "$ROOT/scripts/export_organiser.py" "$1" --started-utc "$3" ${2:+--package "$2"} 2> "$1/export_stderr.txt" || rc=$?
+  cat "$1/export_stderr.txt" >&2
+  if [[ $rc -eq 4 ]]; then INTEGRITY_FAILED=1; elif [[ $rc -ne 0 ]]; then echo "export failed (exit $rc)" >&2; exit "$rc"; fi
+}
+finish() {   # <run_dir> <success line>
+  if [[ ${INTEGRITY_FAILED:-0} == 1 ]]; then
+    echo; cat "$1/export_stderr.txt" >&2
+    echo "outputs kept in $1 (results, timing, export) for inspection" >&2
+    exit 4
+  fi
+  echo "$2"
+}
+if [[ "${1:-}" == "--export-only" ]]; then
+  RUN_ONLY=$(cd "${2:?usage: run_test_set.sh --export-only <run_dir> [--package <packet>]}" && pwd)
+  PKG=""; [[ "${3:-}" == "--package" ]] && PKG=$(cd "${4:?--package needs a folder}" && pwd)
+  export_results "$RUN_ONLY" "$PKG" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  finish "$RUN_ONLY" "export: $RUN_ONLY/export/"
+  exit 0
+fi
+
 SRC=${1:?usage: scripts/run_test_set.sh <audio_folder> [--workers N] [--labels F] [--run-dir D] [--wav] [--cpu]}
 shift
 WORKERS=8; LABELS=""; RUN=""; FMT=flac; CPU=0
@@ -109,6 +137,5 @@ TOTAL=$(python3 -c "import time; print(round(time.time() - $T0, 1))")
 echo "== summary"
 "$PY" "$ROOT/scripts/test_set_summary.py" "$RUN/out" --total-s "$TOTAL" --format "$FMT" --label "$(basename "$RUN")" \
   ${POD_LINE:+--pod-asr "$POD_LINE"} ${LABELS:+--labels "$LABELS"}
-echo "== export (organisers' format)"
-"$PY" "$ROOT/scripts/export_organiser.py" "$RUN" --started-utc "$STARTED" ${PACKAGE:+--package "$PACKAGE"}
-echo "results: $RUN/out/results.json · timing: $RUN/out/timing_summary.json · export: $RUN/export/"
+export_results "$RUN" "$PACKAGE" "$STARTED"
+finish "$RUN" "results: $RUN/out/results.json · timing: $RUN/out/timing_summary.json · export: $RUN/export/"

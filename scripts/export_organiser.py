@@ -13,6 +13,9 @@ recording, clip_id = the original file stem (e.g. TEST-02):
   entity_types         null = not reported (SENTINEL does not classify entity types)
   alert_audio_seconds  for an alarm: audio position (s) where the top finding's first evidence passage starts
   notes                top criterion, risk, confidence, stage errors
+With --package, a sha256 mismatch against Auswahl.json or a selected clip that was not processed still writes every
+file, but Laufprotokoll.json gets integrity.status = "failed" (with the lists), a banner is printed and the exit code
+is 4, so nobody submits results for the wrong audio by accident.
 Audio hashes in Laufprotokoll.json are those of the ORIGINAL files before any conversion (out/source_files.json,
 written by run_test_set.sh), checked against the packet's Auswahl.json. Reads only our own outputs, the packet's
 keyword list and Auswahl.json (run id, file hashes); never the packet's Soll files or any label.
@@ -147,7 +150,11 @@ def export(run_dir: Path, out: Path, package: Path | None = None, settings: str 
         "settings": settings or "ASR faster-whisper large-v3-turbo (GPU), Apertus v1.5 8B multi-check judge, "
                                 "config/thresholds.json (alarm 0.70, review 0.20); review = manual_review, never alert",
         "test_mode": "batch_file", "started_utc": started or res_all.get("created_at"),
-        "audio_sha256": shas, "notes": "; ".join(filter(None, [
+        "audio_sha256": shas,
+        "integrity": {"status": "failed" if (mismatch or missing) else "passed" if sel else "not_checked",
+                      "checked_against": "Auswahl.json" if sel else None,
+                      "sha256_mismatch": mismatch, "not_processed": missing},
+        "notes": "; ".join(filter(None, [
             f"sha256 mismatch vs Auswahl.json: {mismatch}" if mismatch else "",
             f"not processed: {missing}" if missing else "",
             "" if originals else "audio_sha256 = processed WAV (no record of the original files)",
@@ -156,6 +163,21 @@ def export(run_dir: Path, out: Path, package: Path | None = None, settings: str 
     }
     (out / "Laufprotokoll.json").write_text(json.dumps(proto, indent=2, ensure_ascii=False), encoding="utf-8")
     return {"rows": rows, "mismatch": mismatch, "missing": missing}
+
+
+EXIT_INTEGRITY = 4
+
+
+def banner(mismatch: list[str], missing: list[str]) -> str:
+    bar = "!" * 78
+    lines = [bar, "!!  INTEGRITY CHECK FAILED: the results do not cover the organisers' selection as given", bar]
+    if mismatch:
+        lines.append(f"!!  audio differs from Auswahl.json (sha256): {', '.join(mismatch)}")
+    if missing:
+        lines.append(f"!!  in Auswahl.json but not processed: {', '.join(missing)}")
+    lines += ["!!  All result files were written; Laufprotokoll.json has integrity.status = failed.",
+              "!!  Do not submit before the audio is checked against the packet.", bar]
+    return "\n".join(lines)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -170,9 +192,10 @@ def main(argv: list[str] | None = None) -> int:
     for x in r["rows"]:
         print(f"{x['clip_id']}: alert={x['alert']} review={x['manual_review']} keywords={x['keyword_ids']} "
               f"at={x['alert_audio_seconds']}")
-    if r["mismatch"] or r["missing"]:
-        print(f"WARNING: sha mismatch {r['mismatch']} / not processed {r['missing']}")
     print(f"wrote {out}/Ergebnisse.csv, Ergebnisse.jsonl, Laufprotokoll.json")
+    if r["mismatch"] or r["missing"]:
+        print(banner(r["mismatch"], r["missing"]), file=sys.stderr)
+        return EXIT_INTEGRITY
     return 0
 
 
