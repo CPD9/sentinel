@@ -91,7 +91,7 @@ export function Tuning() {
           )}
         </div>
         <div className="min-w-0 lg:border-l lg:border-border lg:pl-8">
-          <Impact calls={decided} patch={patch} sim={sim} />
+          <Impact calls={decided} known={new Set((calls.data ?? []).map((c) => c.call_id))} patch={patch} sim={sim} />
         </div>
       </section>
 
@@ -124,15 +124,17 @@ export function Tuning() {
 }
 
 /** The effect, always visible: plain numbers without a draft; "before → after" and the calls that change while there is one. */
-function Impact({ calls, patch, sim }: { calls: CallListItem[]; patch: Patch | null; sim: ReturnType<typeof useSimulate> }) {
+function Impact({ calls, known, patch, sim }: { calls: CallListItem[]; known: Set<string>; patch: Patch | null; sim: ReturnType<typeof useSimulate> }) {
   const data = sim.data ?? sim.stale;
   const base: Record<Decision, number> = { alarm: 0, review: 0, no_alert: 0 };
   for (const c of calls) base[c.decision!] += 1;
   const drafting = !!patch && !!data;
-  const before = data?.counts.before ?? base;
+  // Without a draft, "Right now" counts the call list itself. useSimulate keeps its last result (to avoid flicker while
+  // dragging), so reading data.counts.before here would show an old simulation after Reset or Save.
+  const before = drafting ? data!.counts.before : base;
   const after = drafting ? data!.counts.after : before;
   const share = (r: Record<Decision, number>) => { const n = r.alarm + r.review + r.no_alert; return n ? ((r.alarm + r.review) / n) * 100 : 0; };
-  const wBefore = data?.workload.before.flagged_per_100 ?? share(base);
+  const wBefore = drafting ? data!.workload.before.flagged_per_100 : share(base);
   const wAfter = drafting ? data!.workload.after.flagged_per_100 : wBefore;
   const items: { key: string; label: string; before: number; after: number; tone: string; unit?: string }[] = [
     { key: "alarm", label: "Alarms", before: before.alarm, after: after.alarm, tone: "text-alarm" },
@@ -171,7 +173,9 @@ function Impact({ calls, patch, sim }: { calls: CallListItem[]; patch: Patch | n
           <ul className="space-y-1.5 border-t border-border pt-3">
             {data!.flipped.map((f) => (
               <li key={f.call_id} className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-sm">
-                <Link href={`/calls/${f.call_id}`} className="font-medium text-link underline-offset-2 hover:underline">{f.call_id}</Link>
+                {known.has(f.call_id)
+                  ? <Link href={`/calls/${f.call_id}`} className="font-medium text-link underline-offset-2 hover:underline">{f.call_id}</Link>
+                  : <span className="font-medium" title="Sample call: no detail page">{f.call_id}</span>}
                 <span className="flex items-center gap-1.5"><DecisionBadge decision={f.before} size="sm" /><ArrowRight className="size-3.5 text-muted-foreground" aria-label="becomes" /><DecisionBadge decision={f.after} size="sm" /></span>
                 {f.attributed_to.length > 0 && <span className="text-xs text-muted-foreground">because of the {f.attributed_to.map(componentLabel).join(" and ")}</span>}
               </li>
