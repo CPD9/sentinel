@@ -4,6 +4,14 @@ What each screen shows, which JSON field feeds each element, and what it shows w
 empty, loading or broken. The contracts are in `pipeline/schemas.py`. The endpoints are in [API.md](API.md).
 MOCK data for every contract is in `fixtures/` (see `fixtures/README.md`).
 
+> **Current state (13 Oct 2026).** This spec was written for the first design, where rules over extracted facts made
+> the decision. The shipped decision is the **multi-check AI judge** (`decision_source: direct_judge`, `judge_mode:
+> multi` in `config/thresholds.json`): its verdict and validated citations lead the call page (Summary: "why this was
+> flagged", "Evidence: what the AI judge cited"); facts, rules and confidence stay as the explanation in the Reasoning
+> tab, and the decision path ends in `judge_alarm` / `judge_review` / `judge_no_alert` / `keyword_review`. The demo
+> now follows the 8 steps of `web/lib/demo.ts` (Shift+D), see section 6. Screens added since: Model arena, Patterns,
+> How it runs, Model card, the language-routing map in the Audio analysis tab ([DIALECT.md](DIALECT.md)).
+
 ## Conventions
 
 **Field paths.** A path starts with the document it comes from. `[]` means "each item of the list".
@@ -196,7 +204,9 @@ all lanes together. Top to bottom:
 
 ### 3.5 Reasoning
 
-Read top to bottom: facts → rules → confidence → decision.
+Read top to bottom: facts → rules → confidence → decision. With the shipped multi-check judge, facts and rules are
+the explanation; the decision path shows the judge step (`judge_alarm`, `judge_review`, `judge_no_alert`,
+`keyword_review`) and the judge's own checks and citations are on the Summary tab.
 
 | Element | Fed by |
 |---|---|
@@ -361,6 +371,11 @@ step is rehearsed on fixtures. Times below are targets.
 
 Fallback if the GPU is down: start the API in fixture mode. The UI shows the MOCK banner, and we say so.
 
+> **As presented.** The script above is the original plan on fixtures. The demo that ran uses the real final run
+> (`mc_0656_final`) and the 8 steps of `web/lib/demo.ts`: Overview → `call_041` processing replay → the `call_041`
+> alert and its evidence → Threshold with the keyword-review switch → Keywords → the harmless `call_040` → Quality →
+> How it runs. Moment 3 is `call_040` (the alert's own insider words, about public reports), not `call_MOCK_002`.
+
 <!-- stretch:start -->
 ## 7. STRETCH: feature maps (nothing depends on this)
 
@@ -377,5 +392,6 @@ in [-1, 1], with a diverging colour map centred on 0), aligned to its evidence w
 
 - The organizers' metric convention is unconfirmed, so all three conventions are always shown.
 - The Stufe → expected decision mapping in the MOCK quality report is invented.
-- The settings file shapes (keywords.json, rules.yaml) are proposals until the config milestone. There is no fixture for them.
+- The settings file shapes (`config/keywords.json`, `config/rules.yaml`, `config/thresholds.json`) are final and in
+  use; there is still no fixture for them.
 - No audio in fixtures (`*.wav` is gitignored). Snippet and audio endpoints return 404 in fixture mode.

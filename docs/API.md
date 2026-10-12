@@ -43,11 +43,10 @@ result: dict = process_call(audio_path: str, call_id: str)   # a CallResult as d
 | snippets | `out/snippets/<call_id>/<name>.wav` | audio |
 | quality reports | `artifacts/quality/<report_id>.json` | `QualityReport` |
 
-- **Progress events (proposal for the pipeline milestone):** a keyword-only extension,
-  `process_call(audio_path, call_id, *, on_event=None)`. When set, the pipeline calls
-  `on_event(dict)` with `ProcessingEvent`-shaped dicts (without `seq`, which the API assigns). Until
-  then, the API emits only `job_queued`, `stage_started` with `stage="asr"`, and `job_finished` /
-  `stage_failed`.
+- **Progress events (implemented):** `process_call(audio_path, call_id, *, on_event=None)`. When set, the pipeline
+  calls `on_event(dict)` with `ProcessingEvent`-shaped dicts (without `seq`, which the API assigns) for every stage
+  (`stage_started` / `stage_finished` / `stage_failed` with `elapsed_s`) and `job_finished`; `run.py --timings` and the
+  web app's live upload use the same events.
 
 ## Endpoints
 
@@ -98,12 +97,14 @@ Full example: `fixtures/call_MOCK_001.events.json`.
 ### Settings
 
 Files: `config/thresholds.json`, `config/keywords.json`, `config/rules.yaml`. The API speaks JSON for
-all three, and converts `rules.yaml` to and from YAML. **The shapes below are proposals.** The config milestone
-finalises them, and both this section and the schemas will be updated then.
+all three, and converts `rules.yaml` to and from YAML. The routes below are implemented in `services/api/settings.py`.
+The shipped `thresholds.json` also carries `decision_source: direct_judge`, `judge_mode: multi` and `keyword_review`;
+with the judge as decision source, a threshold change re-decides from the cached judge risk (`decide.judge_decide`),
+no LLM call.
 
 | Method + path | Body / response |
 |---|---|
-| `GET /settings/thresholds` | `{"alarm": 0.7, "review": 0.4, "confidence_gate": 0.5}` (same shape as `DecisionTrace.thresholds`) |
+| `GET /settings/thresholds` | `{"alarm": 0.7, "review": 0.2, "confidence_gate": 0.5, …}` (shipped values; same shape as `DecisionTrace.thresholds`) |
 | `PUT /settings/thresholds` | Same shape. 422 unless every value is in [0, 1] and review < alarm. Saves the file, then re-runs steps 6–8 for all processed calls from cache. `202 {"rerun": {"stages": ["rules", "confidence", "decide"], "n_calls": N}}` |
 | `GET /settings/keywords` | `{"families": {"access": {"criterion": "credential_sharing", "terms": ["Passwort", …], "variants": {"Passwort": ["Passwörter", "Passwoort"]}}, …}, "fuzzy_threshold": 0.85}` |
 | `PUT /settings/keywords` | Same shape. Families must be keys of `schemas.CRITERION_BY_FAMILY`. Re-runs step 3, then 6–8. `202 {"rerun": …}` |
@@ -144,12 +145,12 @@ Every key is optional. `keywords` and `rules` may also carry a full document (`{
 
 | Method + path | Body / response |
 |---|---|
-| `POST /simulate` | Body `{"patch": {…}, "with_feedback": true}` (`with_feedback` defaults to true). `200 SimulationResult`. **Does not save.** Must be fast (< 1 s for 60 calls). `flipped[]` lists every call whose decision changes, with `reasons`, the patch components that `attributed_to` it, and `feedback_verdict` when the officer labelled it. `workload` is alarms + reviews per 100 calls, before and after. `feedback_check` lists labelled calls that moved the right way (`fixed`) or the wrong way (`violations`, which includes any `correct` call that flips), so the UI can warn while the officer drags a slider. |
+| `POST /simulate` (served by the web app's local-run route, `web/app/run-api`; not in the FastAPI service) | Body `{"patch": {…}, "with_feedback": true}` (`with_feedback` defaults to true). `200 SimulationResult`. **Does not save.** Must be fast (< 1 s for 60 calls). `flipped[]` lists every call whose decision changes, with `reasons`, the patch components that `attributed_to` it, and `feedback_verdict` when the officer labelled it. `workload` is alarms + reviews per 100 calls, before and after. `feedback_check` lists labelled calls that moved the right way (`fixed`) or the wrong way (`violations`, which includes any `correct` call that flips), so the UI can warn while the officer drags a slider. |
 | `POST /feedback` | Body `{"call_id", "verdict": "false_alarm" \| "missed" \| "correct" \| "escalate", "note"?}`. `201 FeedbackEntry`. The server fills `ts`, `decision_at_feedback` (the call's current decision) and `config_version`, then calls `append_feedback` (atomic append to `out/feedback.jsonl`). `404 not_found` for an unknown call, `409 conflict` for a call that has no decision yet (queued or processing), `422 invalid` for a verdict that makes no sense (`false_alarm` on a `no_alert` call, `missed` on an `alarm`, bad note length). The log is append-only and the **latest verdict per call wins**: to change your mind, post again. `escalate` ("a person above me must look") is allowed on every decision; like every verdict it never changes the decision, and it is not a label for `/simulate` or `/suggestions` (ignored there). A UI shows escalated calls in its review queue from `GET /feedback`. **Button → verdict:** Dismiss = `false_alarm`; Confirm fraud = `correct` on an alarm but `missed` on a review (the system should have alarmed; `correct` would teach the suggestions that review was right), then `POST /calls/{id}/report`; Escalate = `escalate`. |
 | `GET /feedback` | `200 list[FeedbackEntry]`, the latest verdict per call. |
-| `GET /suggestions` | `200 SuggestionsResponse`. `suggestions` are ranked (most feedback fixed first, then fewest other calls flipped, fewest knobs, smallest change). Each carries its patch, `fixed` / `not_fixed` calls, `collateral_flips` (unlabelled calls that would change) and the full simulated `effect`. An empty list always has a `reason` (no feedback yet, only "correct" verdicts, everything already resolved, or no change satisfies the correct-marked calls); it is not an error. Query `?max=5`. Computed on demand (< 2 s for 60 calls). |
-| `POST /suggestions/{id}/apply` | **Needed for the apply flow.** Body `{"confirm": true, "note"?}`. Recomputes the suggestion `id` against the current config; `409 conflict` if the config changed since (the UI then reloads) or the id is unknown. Writes the config through the same code path as `PUT /settings/*` (`patched_docs(load_raw(), patch)` gives the three documents to save), re-runs steps 6-8, appends an `AuditEntry` (`append_audit`, `out/audit.jsonl`) and answers `202 {"rerun": …, "audit": AuditEntry}`. |
-| `GET /audit` | `200 list[AuditEntry]`, newest first. Also written by `PUT /settings/*` (`action: "settings_change"`). |
+| `GET /suggestions` (**specified, not built**; the engine is `pipeline/suggest.py`) | `200 SuggestionsResponse`. `suggestions` are ranked (most feedback fixed first, then fewest other calls flipped, fewest knobs, smallest change). Each carries its patch, `fixed` / `not_fixed` calls, `collateral_flips` (unlabelled calls that would change) and the full simulated `effect`. An empty list always has a `reason` (no feedback yet, only "correct" verdicts, everything already resolved, or no change satisfies the correct-marked calls); it is not an error. Query `?max=5`. Computed on demand (< 2 s for 60 calls). |
+| `POST /suggestions/{id}/apply` (**specified, not built**) | **Needed for the apply flow.** Body `{"confirm": true, "note"?}`. Recomputes the suggestion `id` against the current config; `409 conflict` if the config changed since (the UI then reloads) or the id is unknown. Writes the config through the same code path as `PUT /settings/*` (`patched_docs(load_raw(), patch)` gives the three documents to save), re-runs steps 6-8, appends an `AuditEntry` (`append_audit`, `out/audit.jsonl`) and answers `202 {"rerun": …, "audit": AuditEntry}`. |
+| `GET /audit` (**specified, not built**; the call page's audit record is built from the trace) | `200 list[AuditEntry]`, newest first. Also written by `PUT /settings/*` (`action: "settings_change"`). |
 
 Notes for implementation:
 - `feedback` is passed to the pure functions as an argument: `suggestions_response(inputs, latest_feedback(), load_raw())`.
@@ -213,7 +214,8 @@ Implementation notes (`services/api/`, run with `SENTINEL_FIXTURES=1 python -m s
   `config/keywords.json` and `config/rules.yaml`; anything missing or invalid falls back to the MOCK default.
   `PUT` still keeps values in memory and re-runs nothing (`n_calls: 0`).
 - `/calls/{id}/events` synthesizes a short log from the stored result (no live log). `POST /calls` → `409` (uploads
-  are not wired yet: process calls with `./run.sh`).
+  are not wired into this service yet: process calls with `./run.sh`; the web app's local-run route accepts live
+  uploads itself, `web/app/run-api/uploads.ts`).
 
 ## Versions block
 

@@ -7,7 +7,10 @@ Page: `/arena`. Outputs: `artifacts/arena/` (gitignored).*
 Does any open-weight model judge the case calls clearly better than our self-hosted production model, Apertus v1.5 8B?
 
 ## Method
-- **Same judge as production.** Every model got the S4 direct-judge prompt `judge-asr-v1+cea5e163`, with the same
+- **Same judge as production at the time (11 Oct, 06:20).** Production has since moved to the multi-check judge (one
+  zero-shot check per criterion: Apertus AUC 0.69 [0.58, 0.80], 13 of 34 found, 0 false alarms); the arena has not
+  been re-run with it, so everything below compares models on the single S4 prompt.
+  Every model got the S4 direct-judge prompt `judge-asr-v1+cea5e163`, with the same
   strict JSON schema and the same citation validator. Concretely:
   - `pipeline/judge.py:judge_call` with temperature 0 and at most 700 output tokens;
   - `pipeline/validate.py` checks every citation: the segment id must exist, and the quote must be found in the
@@ -64,7 +67,8 @@ Does any open-weight model judge the case calls clearly better than our self-hos
 
 ## Conclusion
 **No measured win over self-hosted Apertus 8B.**
-- Every challenger's AUC CI overlaps Apertus's (0.53–0.74), so the point estimates alone don't justify a swap.
+- Every challenger's AUC CI overlaps Apertus's single-prompt CI (0.53–0.74), so the point estimates alone don't justify
+  a swap. Apertus with the multi-check judge (0.69 [0.58, 0.80]) is what ships.
 - Apertus is the most conservative model: 0 false alarms, but 25 of 34 escalation cases missed.
 
 **Next: serve Mistral Small 3.2 24B ourselves and re-measure.** It is the cleanest challenger: 1 failed call, 96% valid

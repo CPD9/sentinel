@@ -110,12 +110,14 @@ family it finds 4 more cases at 40 % review load. False alarms stay 0 along the 
 
 ## Limitations
 
-- **n is small**: 62 calls in 24 dialogue groups; CIs are wide (AUC 0.53–0.74 for the judge).
+- **n is small**: 62 calls in 24 dialogue groups; CIs are wide (AUC 0.58–0.80 for the shipped multi-check judge,
+  0.53–0.74 for the single judge before it).
 - **Recall is low**: the judge finds 13 of the 34 calls that need escalation; it is precise, not thorough.
   A compliance team using it today would still sample the rest.
 - **Everything ran on rented hardware outside Switzerland** with fictional case data only. Real customer data needs the
   self-hosted Swiss or on-premise deployment described in the architecture; no data ever went to a cloud LLM API.
-- **No diarization**: speaker roles are inferred by the LLM from content.
+- **Speaker roles are display only**: pyannote 3.1 voices mapped to advisor / customer (87.3 % of aligned words right)
+  are shown in the app but do not feed the decision; the judge infers roles from content.
 - **Tuning on case data**: thresholds and prompts were developed on these 62 calls; the judge's verdict has no fitted
   parameter, but the prompt was written while looking at the case material. The jury's hidden set is the real test.
 - **The bake-off raw numbers** (large-v3 vs turbo vs Swiss fine-tune) live in Loyola's notes, not in this repository.
@@ -292,7 +294,8 @@ do not capture the violation.
 
 Next: make the direct judge the decision on ASR transcripts and keep the facts as evidence and explanation (being
 measured in a follow-up branch before the freeze), and per-criterion fact types for the violation itself
-(e.g. "split to avoid approval"), not the topic.
+(e.g. "split to avoid approval"), not the topic. *(Done: the direct judge decided from 11 Oct 05:10 and was then
+replaced by the multi-check judge, see the summary at the top.)*
 
 ## T5b-2: the direct judge decides (11 Oct 2026, 05:00–05:10)
 
@@ -344,8 +347,9 @@ calls the facts flag but the judge clears; criterion-specific prompts), and n: 6
 |---|---|---|---|---|---|---|
 | pre-fix (T5, holdout unseen) | facts → rules, ASR, no roles | 0.43 | holdout esc F1 **0.00** | holdout 0.00 / 0.00 | — | 0 |
 | T5b facts → rules (re-segmentation + extract-v2-asr) | facts → rules | 0.36 [0.24, 0.51] | 3-fold CV 0.46 | OOF 0.00 / 0.00 at its CV threshold | 5 % | 0 |
-| **S4 direct judge (shipped)** | judge verdict + validated citation | **0.63 [0.53, 0.74]** | **0.63** (dev 0.66, test30 0.58, holdout 0.67) | **1.00 / 0.26** | **15 %** | **0** |
+| S4 direct judge (shipped 05:10, replaced by multi-check) | judge verdict + validated citation | **0.63 [0.53, 0.74]** | **0.63** (dev 0.66, test30 0.58, holdout 0.67) | **1.00 / 0.26** | **15 %** | **0** |
 | S4 + learned review conditions | judge + depth-3 tree | = S4 (cap binds) | 3-fold CV 0.64 = S4 alone; uncapped 0.53 at 74 % load | | | |
+| **multi-check judge (shipped, final)** | one check per criterion, risk = max, validated citation | **0.69 [0.58, 0.80]** | **0.69** (dev 0.69, test30 0.63, holdout 0.83) | **1.00 / 0.38** | **21 %** | **0** |
 | everything to review (trivial) | — | 0.50 | 0.50 | 0.55 / 1.00 | 100 % | 0 |
 
 **The S4 verdict has no tuned parameter** (no threshold, no rule weight was fitted on these calls; the prompt and
@@ -362,7 +366,7 @@ match), fitted as a depth-3 tree; mining and fitting inside each of the 3 folds 
 branch `ml/conditions`, not merged). Ship rule set before measuring: beat S4 alone on CV balanced accuracy with
 <= 40 % review load. Result: uncapped, CV balanced accuracy 0.53 at 74 % review load (recall 0.76, precision 0.57);
 with the cap enforced inside each fold the chosen cut adds no review, i.e. exactly S4 alone (0.64). It fails the rule,
-so S4 alone ships. Per-method AUC with CIs and per-fold CV precision / recall: `artifacts/metrics/crossval.json`
+so S4 alone shipped (later replaced by the multi-check judge). Per-method AUC with CIs and per-fold CV precision / recall: `artifacts/metrics/crossval.json`
 (`methods`), `artifacts/metrics/conditions_cv.json`.
 
 ## Adjustable threshold and keyword list on top of the judge (11 Oct 2026, 06:00)
@@ -375,7 +379,8 @@ review if risk >= review; otherwise no_alert. `keyword_review` (`{"enabled", "mi
 `config/keywords.json` changes the hits without any LLM re-run. Defaults alarm 0.70 / review 0.20 reproduce the S4
 verdicts: **0 of 62 calls differ**. `pipeline.simulate` re-decides all 62 calls from cache in **27 ms**.
 
-In-sample curve on all 62 calls (`scripts/threshold_curve.py` → `artifacts/metrics/threshold_curve.json`; nothing was
+In-sample curve on all 62 calls, **measured on the single S4 judge before the multi-check switch** (the multi-check
+numbers are in the summary and on the Quality page) (`scripts/threshold_curve.py` → `artifacts/metrics/threshold_curve.json`; nothing was
 tuned on these numbers; false alarms = gold no_alert decided alarm, missed = gold alarm/review decided no_alert):
 
 | setting | false alarms | missed cases (of 34) | review load |
