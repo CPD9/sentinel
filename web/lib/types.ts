@@ -106,6 +106,30 @@ export interface SpeakerRoles {
   rationale: string;
 }
 
+// ---- DialectEstimate (display only: language routing, never feeds the decision; scripts/dialect_map.py)
+export type DialectRole = "advisor" | "customer";
+export interface RegionProb { region: string; p: number }
+export interface ResearchDialect { top3: RegionProb[]; cv_accuracy: number; cv_ci95: [number, number]; chance: number; warning: string }
+export interface SpeakerLanguage {
+  role: DialectRole;
+  speech_s: number;
+  chunks: number;
+  language_probs: Record<"de" | "fr" | "it" | "en" | "other", number>;
+  region_probs: Record<string, number>;
+  confidence: "low" | "medium" | "high";
+  research_dialect?: ResearchDialect | null;
+}
+export interface DialectEstimate {
+  call_id: string;
+  method: string;
+  model: string;
+  validated_on: string[];
+  speakers: SpeakerLanguage[];
+  purpose?: string;
+  unsupported_languages?: string[];
+  is_sample?: boolean;
+}
+
 // ---- DecisionTrace
 export type FactAct = "request" | "disclose" | "warn" | "refuse" | "hypothetical" | "quote" | "other";
 export type InfoType = "credentials" | "nonpublic_info" | "client_data" | "other";

@@ -5,7 +5,8 @@
 //   reads    results/*.json (+ results.json), transcripts[_reference]/, traces[_reference]/, analysis/<id>/analysis.json,
 //            audio/<id>.wav (Range requests), out/snippets/<id>/, artifacts/manifests/inference.json (variant only:
 //            neutral ids, never evaluation.json), artifacts/quality/final_report.json, config/*.json of the repo,
-//            <SENTINEL_SPEAKERS_DIR or RUN/../speakers>/<id>.json (display-only speaker roles, scripts/assign_speakers.py)
+//            <SENTINEL_SPEAKERS_DIR or RUN/../speakers>/<id>.json (display-only speaker roles, scripts/assign_speakers.py),
+//            <SENTINEL_DIALECT_DIR or RUN/../dialect>/<id>.json (display-only language routing, scripts/dialect_map.py)
 //   what-if  POST /simulate runs pipeline/simulate.py (exact decide.py over the cached facts) in a helper process
 //   writes   nothing on disk. Feedback lives in this server's memory until restart; saving settings is refused (409).
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
@@ -22,6 +23,7 @@ const RUN = process.env.SENTINEL_RUN_DIR ?? "";
 const ART = process.env.SENTINEL_ARTIFACTS_DIR ?? "";
 const REPO = path.resolve(process.cwd(), "..");
 const SPK = process.env.SENTINEL_SPEAKERS_DIR ?? (RUN ? path.join(RUN, "..", "speakers") : "");
+const DIA = process.env.SENTINEL_DIALECT_DIR ?? (RUN ? path.join(RUN, "..", "dialect") : "");
 
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
 const err = (status: number, error: string, detail: string | string[]) => json({ error, detail }, status);
@@ -208,6 +210,7 @@ function uploadGet(req: Request, id: string, b: string | undefined, name: string
   if (b === "transcript") return doc(P.transcript);
   if (b === "trace") return doc(P.trace);
   if (b === "analysis") return doc(P.analysis);
+  if (b === "dialect") return DIA ? doc(path.join(DIA, `${id}.json`)) : err(404, "not_available", "No language estimate.");
   if (b === "audio") return existsSync(P.audio) ? fileResponse(P.audio, req, "audio/wav") : err(404, "not_available", "No audio.");
   if (b === "snippets" && name) { const f = path.join(P.snippets, name); return inside(P.snippets, f) && existsSync(f) ? fileResponse(f, req, "audio/wav") : err(404, "not_available", "No snippet."); }
   return err(404, "not_available", `${b} not available for an uploaded call`);
@@ -258,6 +261,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ path: string[] 
   if (b === "trace") return doc(path.join(docDir("traces"), `${id}.json`));
   if (b === "analysis") return doc(path.join(ART, "analysis", id, "analysis.json"));
   if (b === "speakers") return SPK ? doc(path.join(SPK, `${id}.json`)) : err(404, "not_available", "No speaker roles.");
+  if (b === "dialect") return DIA ? doc(path.join(DIA, `${id}.json`)) : err(404, "not_available", "No language estimate.");
   if (b === "audio") {
     const f = path.join(ART, "audio", `${id}.wav`);
     return existsSync(f) ? fileResponse(f, req, "audio/wav") : err(404, "not_available", "No audio for this call.");

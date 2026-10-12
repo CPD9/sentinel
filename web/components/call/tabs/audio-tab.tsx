@@ -1,6 +1,7 @@
 "use client";
 import { DocGate } from "@/components/shell/states";
 import { AudioLanes } from "@/components/audio/lanes";
+import { LanguageRouting } from "@/components/audio/swiss-map";
 import type { AnalysisArtifact, CallResult } from "@/lib/types";
 import type { Loadable } from "@/lib/use-async";
 
@@ -13,6 +14,7 @@ export function AudioTab({ result, analysis, selectedWindow }: { result: CallRes
       <DocGate state={analysis} unavailable="Audio analysis not computed for this call." rows={8}>
         {(a) => <AudioLanes a={a} result={result} initialWindow={selectedWindow} />}
       </DocGate>
+      <LanguageRouting callId={result.call_id} />
     </div>
   );
 }

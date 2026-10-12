@@ -40,6 +40,19 @@ Banks record client phone calls, but people can only listen to a small sample of
 - **People stay in charge.** An AI judge reads each call and must cite the exact words behind every flag; the alarm and review thresholds and the keyword list are settings a compliance officer can read and change without programming, with the effect shown immediately.
 - **Measured carefully.** Every number comes with its uncertainty, because the sample is small, and the negative results are reported too ([`docs/RESULTS.md`](docs/RESULTS.md)).
 
+## Language routing (experimental)
+
+<p align="center">
+  <img src="docs/screenshots/feat-dialect-map/map_call_022_dark.png?raw=true" alt="Language routing card in the Audio analysis tab: one map of Switzerland per speaker, the German-speaking cantons shaded at 99 to 100 percent for advisor and customer, French- and Italian-speaking regions near zero, bilingual cantons hatched." width="100%">
+</p>
+
+**Figure 3. Which language model and which reviewer a call needs.** Whisper's language detection runs over each
+speaker's turns and the call page shades the Swiss language regions by probability (never a location, never used in
+the decision). Measured: French, Italian and German FLEURS clips 150 / 150 correct, Swiss German (SwissDial) 158 / 160
+routed to German, all 124 speakers of the 62 case calls German. Dialect is *not* determined: a SwissDial classifier
+reaches 61 % on held-out sentences but mostly recognises its 8 voices, and on the synthetic case voices it says
+"St. Gallen" for 123 of 124 speakers ([`docs/DIALECT.md`](docs/DIALECT.md)).
+
 ## Results at a glance
 
 On all 62 case calls, from speech recognition to decision, the shipped multi-check judge ranks calls better than
@@ -71,6 +84,7 @@ report that too. Full report, method and limitations: [`docs/RESULTS.md`](docs/R
 | Narrative, audio snippets, trigger | Explanations, playable clips, call to the Outcept API | 🟡 built and unit-tested: template narrative (no LLM), ffmpeg snippets (±10 s, ffprobe-checked), trigger in dry-run by default; snippets and a real trigger POST not yet run on real ASR output |
 | `run.sh` command line | `./run.sh <folder>` produces `out/results.json` and snippets | 🟡 runs end to end in ASR mode on all 62 calls, zero stage errors, real snippets, every call fully explained; cold run on a fresh folder needs no manual step. Since 11 Oct 05:10 the direct judge decides (`decision_source: direct_judge`): AUC 0.63 [0.53, 0.74] vs 0.36 for facts → rules, balanced accuracy 0.63, escalation precision 1.00 at recall 0.26, zero false alarms; still below the flag-all escalation F1 (0.71). Pre-fix holdout 0.00 recorded; see [`docs/RESULTS.md`](docs/RESULTS.md) |
 | Audio analysis | Waveform, spectrogram, quality score for the UI | 🟡 |
+| Language routing map | Per speaker, the Swiss language regions shaded by Whisper language-ID probability in the Audio analysis tab; display only ([`docs/DIALECT.md`](docs/DIALECT.md), [`scripts/dialect_map.py`](scripts/dialect_map.py)) | 🟢 measured 11 Oct 2026 on the laptop CPU: FLEURS fr / it / de 50 / 50 each, SwissDial 158 / 160 to German, 124 / 124 case-call speakers German; dialect research panel (SwissDial CV 60.6 % [53.8, 67.5] vs 12.5 % chance) shown collapsed with its confound warning; no effect on any decision |
 | What-if, feedback, suggestions | Simulate a config change over cached calls (flipped calls with reasons, officer workload), record officer verdicts, rank the smallest change that fixes flagged false alarms / misses without touching calls marked correct ([`simulate.py`](pipeline/simulate.py), [`suggest.py`](pipeline/suggest.py), [`feedback.py`](pipeline/feedback.py)) | 🟡 engine built and tested on a synthetic corpus only (no real traces or officer feedback yet); `GET`/`POST /feedback` built in the API (in memory in fixture mode); `/simulate`, `/suggestions` and `/audit` specified in [API.md](docs/API.md) but not built |
 | API service | FastAPI, job queue, live events ([`services/api/`](services/api/README.md)) | 🟡 endpoints answer in fixture mode (MOCK data), with tests, incl. `/feedback`; no real mode yet (reading `out/` results), uploads, audio and `process_call()` not wired yet |
 | Model arena | The S4 judge prompt on all 62 case calls (ASR) for every open-weight model on the OpenRouter allowlist vs self-hosted Apertus 8B; leaderboard, blind duel with local Elo, governed learning loop ([`scripts/arena.py`](scripts/arena.py), `/arena`) | 🟢 run 11 Oct 2026 06:20 (6 remote models, fictional case calls only, ~0.13 USD): AUC qwen3-32b 0.72 [0.58, 0.85] (12 failed calls), mistral-small-3.2-24b 0.69 [0.53, 0.84], Apertus 0.63 [0.53, 0.74] (0 false alarms, 25/34 missed); every CI overlaps Apertus, so no measured win yet. Duel votes live only in the browser; few-shot bank and promotion gate are design only |
@@ -129,13 +143,13 @@ A real baseline run needs `LLM_BASE_URL` (and optionally `LLM_MODEL`) in `.env`,
   <img src="docs/assets/architecture.svg" alt="Deployment: the compliance officer's laptop reaches FastAPI on an Exoscale GPU VM through an SSH tunnel. The VM runs the pipeline, vLLM with Apertus, faster-whisper and the artifact store, all inside a secured environment. No cloud AI APIs." width="100%">
 </p>
 
-**Figure 3. Target deployment: everything that touches a call stays inside the secured environment.** The laptop reaches it only through an SSH tunnel, and no cloud AI API is called, not even for a quick test.
+**Figure 4. Target deployment: everything that touches a call stays inside the secured environment.** The laptop reaches it only through an SSH tunnel, and no cloud AI API is called, not even for a quick test.
 
 <p align="center">
   <img src="docs/assets/decision.svg" alt="Confidence gate with five components feeding a four-step decision ladder: failed stage, missing evidence or low confidence gives review; validated evidence with risk at or above the alarm threshold gives alarm; risk in the review band gives review; otherwise no alert." width="100%">
 </p>
 
-**Figure 4. Doubt is checked first, so an unsure call is meant to end as `review`, not as an alarm.** Thresholds come from `config/thresholds.json`, and the "why not flagged" text is written only after the decision is locked.
+**Figure 5. Doubt is checked first, so an unsure call is meant to end as `review`, not as an alarm.** Thresholds come from `config/thresholds.json`, and the "why not flagged" text is written only after the decision is locked.
 
 The full step-by-step design, output contract and evaluation rules are in [CLAUDE.md](CLAUDE.md).
 

@@ -1,0 +1,28 @@
+{
+  "note": "Display only (language routing in the Audio analysis tab); never read by the pipeline or the decision. Language regions are approximated at canton level by the majority official language (BFS); bilingual cantons are flagged and shown hatched, because their language border runs inside the canton. Dialect regions name the SwissDial recording dialects (one speaker each) and are used only by the research panel.",
+  "source": "Majority language per canton: Bundesamt für Statistik (BFS), Sprachgebiete der Schweiz. Map geometry: BFS GEOSTAT / swisstopo via swiss-maps 4.7.0.",
+  "language_regions": {
+    "de_ch": {"label": "German-speaking Switzerland", "language": "de",
+              "cantons": ["ZH", "BE", "LU", "UR", "SZ", "OW", "NW", "GL", "ZG", "SO", "BS", "BL", "SH", "AR", "AI", "SG", "GR", "AG", "TG"]},
+    "fr_ch": {"label": "French-speaking Switzerland (Romandie)", "language": "fr",
+              "cantons": ["FR", "VD", "VS", "NE", "GE", "JU"]},
+    "it_ch": {"label": "Italian-speaking Switzerland", "language": "it",
+              "cantons": ["TI"]}
+  },
+  "bilingual_cantons": {
+    "BE": ["de", "fr"],
+    "FR": ["fr", "de"],
+    "VS": ["fr", "de"],
+    "GR": ["de", "rm", "it"]
+  },
+  "dialect_regions": {
+    "ag": {"label": "Aargau", "cantons": ["AG"]},
+    "be": {"label": "Bern", "cantons": ["BE"]},
+    "bs": {"label": "Basel", "cantons": ["BS", "BL"]},
+    "gr": {"label": "Graubünden", "cantons": ["GR"]},
+    "lu": {"label": "Lucerne", "cantons": ["LU"]},
+    "sg": {"label": "St. Gallen", "cantons": ["SG"]},
+    "vs": {"label": "Valais (Upper Valais)", "cantons": ["VS"]},
+    "zh": {"label": "Zurich", "cantons": ["ZH"]}
+  }
+}
