@@ -529,6 +529,91 @@ class SpeakerRoles(_Artifact):
         return errs
 
 
+# --------------------------------------------------------------------------- DialectEstimate (display only)
+# Language routing per speaker (scripts/dialect_map.py -> sentinel-runs/dialect/<call_id>.json). Never read by the
+# pipeline and never part of a decision: it says which language model / reviewer a call should go to. Probabilities
+# over regions, never a location. Dialect inference is personal data under the nDSG (docs/DIALECT.md).
+
+DIALECT_ROLES = ("advisor", "customer")
+DIALECT_LANGUAGES = ("de", "fr", "it", "en", "other")      # Whisper has no Romansh: rm is reported as unsupported
+DIALECT_CONFIDENCE = ("low", "medium", "high")
+_PROB_TOL = 1e-3
+
+
+def _prob_dist(p: dict, where: str, keys: tuple | None = None) -> list[str]:
+    errs = [f"{where} is empty"] if not p else []
+    for k, v in p.items():
+        if keys is not None and k not in keys:
+            errs.append(f"{where}[{k!r}] not in {keys}")
+        if not isinstance(v, (int, float)) or not 0.0 <= v <= 1.0:
+            errs.append(f"{where}[{k!r}] = {v!r} not in [0, 1]")
+    if p and not errs and abs(sum(p.values()) - 1.0) > _PROB_TOL:
+        errs.append(f"{where} sums to {sum(p.values()):.4f}, not 1")
+    return errs
+
+
+@dataclass
+class RegionProb:
+    region: str
+    p: float
+
+
+@dataclass
+class ResearchDialect:
+    """SwissDial classifier output, shown only in the collapsed research panel, only when its CV was measured above
+    chance. It reflects the voice more than the dialect (one speaker per dialect in training)."""
+    top3: list[RegionProb]
+    cv_accuracy: float
+    cv_ci95: list[float]
+    chance: float
+    warning: str
+
+
+@dataclass
+class SpeakerLanguage:
+    role: str
+    speech_s: float                       # seconds of this speaker's speech the estimate is based on
+    chunks: int                           # number of <=30 s language-ID windows
+    language_probs: dict[str, float]      # de / fr / it / en / other, sums to 1
+    region_probs: dict[str, float]        # language regions (config/dialect_regions.json), sums to 1
+    confidence: str
+    research_dialect: ResearchDialect | None = None
+
+
+@dataclass
+class DialectEstimate(_Artifact):
+    call_id: str
+    method: str
+    model: str
+    validated_on: list[str]               # measured validations, e.g. "FLEURS fr/it/de test: 0.98 (n=150)"
+    speakers: list[SpeakerLanguage]
+    purpose: str = "language routing (model and reviewer choice); not used in the decision"
+    unsupported_languages: list[str] = field(default_factory=lambda: ["rm"])
+    is_sample: bool = False               # True only for hand-written UI test files, never for real output
+    schema_version: int = SCHEMA_VERSION
+
+    @classmethod
+    def _semantic(cls, d: dict) -> list[str]:
+        errs = _schema_version(d)
+        roles = [s["role"] for s in d["speakers"]]
+        if len(set(roles)) != len(roles):
+            errs.append(f"speakers has duplicate roles {roles}")
+        for i, s in enumerate(d["speakers"]):
+            w = f"speakers[{i}]"
+            errs += _enum(s["role"], DIALECT_ROLES, f"{w}.role") + _enum(s["confidence"], DIALECT_CONFIDENCE,
+                                                                       f"{w}.confidence")
+            errs += _prob_dist(s["language_probs"], f"{w}.language_probs", DIALECT_LANGUAGES)
+            errs += _prob_dist(s["region_probs"], f"{w}.region_probs")
+            r = s.get("research_dialect")
+            if r is not None:
+                if not 1 <= len(r["top3"]) <= 3:
+                    errs.append(f"{w}.research_dialect.top3 needs 1-3 regions")
+                errs += [e for j, t in enumerate(r["top3"]) for e in _in_unit(t["p"], f"{w}.research_dialect.top3[{j}].p")]
+                if not r["cv_ci95"] or len(r["cv_ci95"]) != 2 or r["cv_ci95"][0] <= r["chance"]:
+                    errs.append(f"{w}.research_dialect shown only when the CV CI lower bound beats chance")
+        return errs
+
+
 # --------------------------------------------------------------------------- DecisionTrace
 
 FACT_ACTS = ("request", "disclose", "warn", "refuse", "hypothetical", "quote", "other")
