@@ -1,205 +1,254 @@
 # SENTINEL
 
-**Every bank call checked, not just samples.**
+**Every bank call heard. Every alert proven to the second.**
 
 <p align="center">
-  <img src="docs/assets/pipeline.svg" alt="SENTINEL pipeline: call audio, speech detection, Swiss German transcription, fact extraction and keyword matching, evidence validation, rules, confidence gate, decision, narrative and audio snippets, dashboard and trigger API. Evaluation labels reach only evaluate.py." width="100%">
+  <img src="docs/assets/readme/how-it-works.svg" alt="Animated: a Swiss German call is transcribed, six AI checks look for different kinds of fraud, the call risk crosses the alarm line, and the alert comes with the quote, the time and a playable clip." width="100%">
 </p>
 
-**Figure 1. From a phone call to a decision with evidence.** AI reads the call, fixed rules decide, and every alert carries the exact audio that caused it.
+SENTINEL checks **every** Swiss German advisory call, not a sample. It transcribes the audio, runs one AI check per
+kind of fraud, and decides **alarm**, **review** or **no alert**. Every alert comes with the exact words, the second
+they were said and a clip to play, and every quote is checked word for word against the transcript before anyone sees
+it. All of it runs on self-hosted open-weight models: no audio or text leaves the environment.
 
-Built for the Inventx / Outcept case at the sprintd Innovation Sprint Zurich (9–11 October 2026).
+Built in 48 hours for the [Inventx × Outcept case](https://github.com/Outcept/inventx-case-study) at the sprintd
+Innovation Sprint Zurich, October 2026.
 
----
+## The four demo moments
 
-# Part 1 · For everyone
-
-## The problem
-
-Banks record client phone calls, but people can only listen to a small sample of them. Calls that break the rules, for example an advisor asking for a customer's password or acting on inside information, can slip through unnoticed. Checking every call by hand is impossible, and tools that send recordings to a cloud service are not acceptable for client conversations.
-
-## What SENTINEL does
-
-<p align="center">
-  <img src="docs/assets/call-walkthrough.svg" alt="Animated example of one invented call going through five steps: listen, transcribe, understand, decide, show the evidence." width="100%">
-</p>
-
-**Figure 2. One call, five steps.** The example is invented; it shows what the compliance officer ends up seeing.
-
-1. **Listen.** SENTINEL takes in the recording of a call, however noisy the line.
-2. **Transcribe.** It turns the Swiss German speech into text, with a time stamp for every sentence.
-3. **Understand.** It works out who asked for what and who revealed what, instead of just searching for suspicious words. A harmless call that merely contains the word "password" is not flagged.
-4. **Decide.** Fixed, readable rules turn what was understood into one of three outcomes: **alarm**, **review** (a person should take a look) or **no alert**.
-5. **Show the evidence.** Every alert comes with the exact quote, the time in the call and a short audio clip to play, so a compliance officer can check it in seconds.
-
-## Why it can be trusted
-
-- **Evidence for every alert.** The design discards any alert whose quote cannot be found in the call at the cited time, before anyone sees it.
-- **It says when it is unsure.** If the audio is poor, the transcript is doubtful or the evidence conflicts, the call goes to **review**. The design never turns doubt into a confident alarm, and a technical failure is recorded as an error, not as "all clear".
-- **Self-hosted by design.** The plan is to run all models on our own server in Switzerland, with no audio or transcript sent to any cloud AI service.
-- **People stay in charge.** An AI judge reads each call and must cite the exact words behind every flag; the alarm and review thresholds and the keyword list are settings a compliance officer can read and change without programming, with the effect shown immediately.
-- **Measured carefully.** Every number comes with its uncertainty, because the sample is small, and the negative results are reported too ([`docs/RESULTS.md`](docs/RESULTS.md)).
-
-## Results at a glance
-
-On all 62 case calls, from speech recognition to decision, the shipped multi-check judge ranks calls better than
-chance (AUC 0.69 [0.58, 0.80]), raises **no false alarm**, sends **21 %** of calls to a person and finds 13 of the 34
-calls that need escalation (precision 1.00, recall 0.38). It is zero-shot with no tuned parameter, so these numbers
-are effectively unseen. Our first design, fact extraction plus hand-written rules, ranked calls worse than chance; we
-report that too. Full report, method and limitations: [`docs/RESULTS.md`](docs/RESULTS.md).
-
-![AUC ladder](docs/assets/results/ladder.png)
-
-![Threshold curve: false alarms, missed cases and review load](docs/assets/results/threshold_curve.png)
-
-## Project status
-
-*As of 10 October 2026.* ✅ done and tested · 🟡 works, but only with mock or invented data · 📐 specified, not yet built · ⬜ not started
-
-| Milestone | What it delivers | Status |
+| Moment (case brief) | Where in the app | What you see |
 |---|---|---|
-| Data and splits | Neutral call IDs, labels kept apart from inference, dev / holdout / test split by dialogue | ✅ |
-| Output contract and evaluation | Result schema, three metric conventions with confidence intervals, evidence validity check | ✅ |
-| Baseline | One-prompt LLM judge over the reference transcript, the number the real pipeline must beat | 🟢 run on Apertus 8B as strategy S4 of the strategy lab ([`scripts/strategy_lab.py`](scripts/strategy_lab.py), 11 Oct 2026, dev + Testset_30): escalation F1 0.44 [0.23, 0.64], never alarms. The hybrid pipeline (S3) leads with 0.63 [0.47, 0.75], ahead of context-only 0.58, ensemble 0.54 and keywords-only 0.48; only S3 > S1 is separable at n = 48 ([`docs/RESULTS.md`](docs/RESULTS.md), top 3 in [`config/strategy_defaults.json`](config/strategy_defaults.json)) |
-| Product and API specification | Every screen mapped to JSON fields, every endpoint and error state ([PRODUCT.md](docs/PRODUCT.md), [API.md](docs/API.md)) | ✅ |
-| Mock data for the web app | Example calls, transcripts, traces, events and a quality report in [`fixtures/`](fixtures/README.md) | 🟡 all invented |
-| LLM provider registry | One client for any OpenAI-compatible endpoint (our vLLM, Ollama, Infomaniak, OpenRouter) with a policy gate: remote providers only for fictional data and open-weight allowlisted models, measured TTFT / tokens per second / cost ([`config/providers.yaml`](config/providers.yaml), [`pipeline/llm.py`](pipeline/llm.py)) | 🟡 gate, metrics and streaming fallback unit-tested with fake responses; one live OpenRouter smoke run (10 Oct 2026, `qwen/qwen-2.5-72b-instruct`, one short German prompt: TTFT 521 ms, 1.26 s wall, 28 output tokens, 22.2 tok/s, 0.00002 USD) and all 6 allowlisted models found in the 458-model catalog; streaming fallback not yet run against a real vLLM; not yet used by fact extraction (not built) |
-| Infrastructure | GPU server, vLLM, SSH tunnel | 🟡 builder Pod (Runpod A40, Montreal, fictional data only) serves two self-hosted models through one tunnel ([`scripts/pod_tunnel.sh`](scripts/pod_tunnel.sh)): Apertus v1.5 8B (`builder_pod`, laptop :8000, 0.45 of VRAM) and Qwen2.5-32B-Instruct-AWQ (`builder_pod_qwen`, Pod :8010 → laptop :8002, 0.50 of VRAM, weights on the container disk). Live smoke test on 11 Oct 2026, ~4.2k input / 400 output tokens: Apertus 34 tok/s decode, TTFT 1.2–1.9 s; Qwen 13–15 tok/s, TTFT 0.6 s warm / 6.4 s cold; 42.7 of 46 GB VRAM used, so stop Qwen before Whisper ASR. A Swiss-region server is still the target, not built |
-| Transcription | Swiss German speech-to-text, model chosen by bake-off | ⬜ |
-| Speaker roles, keywords, fact extraction | Who said what, keyword families, LLM facts | 🟡 fact extraction and evidence validator built and unit-tested with a fake client ([`pipeline/extract.py`](pipeline/extract.py), [`pipeline/validate.py`](pipeline/validate.py), `scripts/run_extract.py`). Model × prompt grid on dev + Testset_30 (48 calls, reference transcripts, untuned rules, 11 Oct 2026; [`docs/RESULTS.md`](docs/RESULTS.md)): Apertus v1.5 8B + prompt v2 wins with escalation F1 0.63 [0.47, 0.75] (dev 0.59, Testset_30 0.67), ahead of Apertus v1 0.58 and Qwen2.5-32B-AWQ v1/v2 0.42/0.30; zero failed calls (over-long windows are split and retried); 10 false alarms on gold no_alert are still open; speaker roles 🟡 display only, the decision is unchanged ([`pipeline/diarize.py`](pipeline/diarize.py), `scripts/pod_diarize.py`, `scripts/eval_speakers.py`, 11 Oct 2026, all 62 calls, ASR transcripts of `s4t_0551_final`): pyannote 3.1 voices + Apertus cluster mapping (44 calls) and Apertus content-only fallback where the clustering collapsed to one voice (18 calls). Measured against the reference turn speakers by word alignment (42 % of ASR words align): 87.3 % of aligned words carry the right role (acoustic + content 91.3 %, content only 78.6 %, always-advisor baseline 46.8 %); best possible cluster mapping 98.1 %, the gap is 2 calls where Apertus picked the wrong voice |
-| Evidence check, rules, confidence, decision | The deterministic core | 🟡 keywords, rules, confidence gate and decision built and tested on synthetic facts (`pipeline/decide.py`); the evidence validator and fact extraction are not built, nothing run on real data, all numbers are untuned placeholders |
-| Narrative, audio snippets, trigger | Explanations, playable clips, call to the Outcept API | 🟡 built and unit-tested: template narrative (no LLM), ffmpeg snippets (±10 s, ffprobe-checked), trigger in dry-run by default; snippets and a real trigger POST not yet run on real ASR output |
-| `run.sh` command line | `./run.sh <folder>` produces `out/results.json` and snippets | 🟡 runs end to end in ASR mode on all 62 calls, zero stage errors, real snippets, every call fully explained; cold run on a fresh folder needs no manual step. Since 11 Oct 05:10 the direct judge decides (`decision_source: direct_judge`): AUC 0.63 [0.53, 0.74] vs 0.36 for facts → rules, balanced accuracy 0.63, escalation precision 1.00 at recall 0.26, zero false alarms; still below the flag-all escalation F1 (0.71). Pre-fix holdout 0.00 recorded; see [`docs/RESULTS.md`](docs/RESULTS.md) |
-| Audio analysis | Waveform, spectrogram, quality score for the UI | 🟡 |
-| What-if, feedback, suggestions | Simulate a config change over cached calls (flipped calls with reasons, officer workload), record officer verdicts, rank the smallest change that fixes flagged false alarms / misses without touching calls marked correct ([`simulate.py`](pipeline/simulate.py), [`suggest.py`](pipeline/suggest.py), [`feedback.py`](pipeline/feedback.py)) | 🟡 engine built and tested on a synthetic corpus only (no real traces or officer feedback yet); `GET`/`POST /feedback` built in the API (in memory in fixture mode); `/simulate`, `/suggestions` and `/audit` specified in [API.md](docs/API.md) but not built |
-| API service | FastAPI, job queue, live events ([`services/api/`](services/api/README.md)) | 🟡 endpoints answer in fixture mode (MOCK data), with tests, incl. `/feedback`; no real mode yet (reading `out/` results), uploads, audio and `process_call()` not wired yet |
-| Model arena | The S4 judge prompt on all 62 case calls (ASR) for every open-weight model on the OpenRouter allowlist vs self-hosted Apertus 8B; leaderboard, blind duel with local Elo, governed learning loop ([`scripts/arena.py`](scripts/arena.py), `/arena`) | 🟢 run 11 Oct 2026 06:20 (6 remote models, fictional case calls only, ~0.13 USD): AUC qwen3-32b 0.72 [0.58, 0.85] (12 failed calls), mistral-small-3.2-24b 0.69 [0.53, 0.84], Apertus 0.63 [0.53, 0.74] (0 false alarms, 25/34 missed); every CI overlaps Apertus, so no measured win yet. Duel votes live only in the browser; few-shot bank and promotion gate are design only |
-| Web app | Two-panel Overview (grouped call list + call panel with transcript excerpt and waveform player), call dashboard, Sensitivity, Keywords & checks, Detection quality ([`web/`](web/README.md)) | ✅ runs on the real pipeline run `s4t_0551_final` (62 calls, ASR transcripts, AI judge) through the read-only local-run fallback (`/run-api`); fixture mode (MOCK data) still available for development; see the web storyboard row below |
-| Web storyboard: officer journey and demo | Overview → Alerts → call page (reason, risk vs alert line, passage player, facts, AI judge verdict, printable audit record) → Settings (threshold, keyword review switch, keywords) → Quality (cross-validated ladder) → How it runs; Model arena and Patterns in the nav; an 8-step demo path over the real screens (→ / ←, drafts reset between steps), live upload of one WAV, dark and light ([`web/`](web/README.md)) | ✅ runs on the final run `s4t_0551_final` through the read-only local-run fallback (`/run-api`, 11 Oct 2026): all 62 calls match the run's results and traces (1 alert / 8 review / 53 no alert); keyword review (min 2 passages) previews 1 / 21 / 40, missed cases 25 → 20, false alarms stay 0 (in-sample, `threshold_curve.json`); one live upload end to end in 100 s; backup recording in dark and light. Saving settings needs the API (off in the local run) |
-| Copilot: ask about a call, patterns across calls | "Ask about this call" panel on the call page and a `/patterns` page: grounded chat answered by the self-hosted Apertus 8B (`builder_pod`, provider registry, one request at a time), every claim validated with the evidence checker and cited as playable timestamps; entities and repeated phrasing across all calls ([`web/scripts/copilot.py`](web/scripts/copilot.py), [`web/app/copilot-api/route.ts`](web/app/copilot-api/route.ts)) | 🟡 built and unit-tested (fake client), run live on the final run `s4t_final` (11 Oct 2026): 8 of 9 suggested questions on 3 flagged calls answered with a validated citation (~1–4 s each), 1 ended as "Not in this call." after one retry; a validated quote proves the words exist in the cited segment, not that the claim is correct; patterns are lexicon/n-gram heuristics, not an LLM |
+| 1. One call from audio to alert, with snippets | `/calls/call_041/processing` → `/calls/call_041` | every pipeline step replayed, then the alert: reason, risk against the alert line, the cited passages with a ±10 s clip each |
+| 2. Change the threshold or keyword list, see the effect | `/settings/threshold`, `/settings/keywords` | the keyword-review switch and the alert line re-decide all 62 calls from cache in milliseconds; missed cases, false alarms and review load move; keyword hit counts update live |
+| 3. A harmless call that still contains keywords | `/calls/call_040` | the alert's own insider words in six passages, but about public reports: **no alert**, with the judge's reason and what would change it |
+| 4. Detection quality on the test set | `/quality` | 0 false alarms in 62 calls, the missed cases said out loud, AUC with its range, and the whole method ladder including what failed |
 
-## Team
+Press **Shift+D** anywhere for the guided 8-step demo (← / → to move; drafts reset between steps).
 
-| Who | Role |
-|---|---|
-| Peter | AI / ML and full stack |
-| Loyola | Infrastructure and integration |
-| Jules | Infrastructure and integration |
-| Nik | UX and presentation |
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme/tour-dark.gif">
+  <img src="docs/assets/readme/tour-light.gif" alt="Loop through four screens of the real app: the call_041 insider-trading alert with its cited passages, the threshold settings with 0 false alarms and 21 percent review load, the quality page, and the language-routing map in the audio tab." width="100%">
+</picture>
 
----
+| Alert with evidence | Threshold | Quality | Audio analysis: language map |
+|---|---|---|---|
+| ![call_041 alert](docs/assets/readme/shots/1-alarm.png) | ![threshold settings](docs/assets/readme/shots/2-threshold.png) | ![quality](docs/assets/readme/shots/3-quality.png) | ![language map](docs/screenshots/feat-dialect-map/map_call_022_dark.png) |
 
-# Part 2 · For developers
+## Mandatory requirements
 
-## Quickstart
+| Requirement (case brief) | Status | Where and how |
+|---|---|---|
+| Transcription of the Swiss German call | ✅ | faster-whisper large-v3-turbo, self-hosted, chosen by a GPU bake-off ([`pipeline/asr.py`](pipeline/asr.py)); **5.5 s per call** on one A40 ([PERFORMANCE.md](docs/PERFORMANCE.md)); it writes Standard German for Swiss German speech, WER 0.58–0.62 against the dialect scripts ([RESULTS.md](docs/RESULTS.md#asr)) |
+| Several kinds of AI-based fraud checks | ✅ | six zero-shot checks, one per criterion (insider trading, credential sharing, third-party disclosure, documentation concealment, control evasion, payment card data), Apertus v1.5 8B; call risk = the highest check ([`pipeline/judge_multi.py`](pipeline/judge_multi.py)) |
+| Suspicious passages as audio snippets, with timestamp and reason | ✅ | every alarm and review carries the cited segments, start and end seconds, the judge's reason and an ffmpeg clip ±10 s, ffprobe-checked ([`pipeline/snippets.py`](pipeline/snippets.py)); citations are validated word for word |
+| An adjustable threshold | ✅ | alarm 0.70, review 0.20 and a keyword-review switch in [`config/thresholds.json`](config/thresholds.json); Settings previews every change on all calls before saving ([`pipeline/simulate.py`](pipeline/simulate.py)) |
+| False alarms and missed cases, reported on the test set | ✅ | `/quality` and [RESULTS.md](docs/RESULTS.md): **0 false alarms, 21 of 34 escalations missed** on the 62 case calls; the hidden set runs through `scripts/run_test_set.sh`, which also writes the organisers' result files |
+| No manual steps per call | ✅ | `./run.sh <folder>` or `scripts/run_test_set.sh <folder>` (one command: checks, GPU ASR, pipeline, export); live upload of a WAV in the web app |
 
-Requires Python 3.11 and [uv](https://docs.astral.sh/uv/). The pipeline code so far uses only the standard library; `pytest` is the one dev dependency.
+## Stretch goals
 
-```bash
-uv venv --python 3.11
-source .venv/bin/activate
-uv pip install -r requirements-dev.txt
-```
+| Goal (case brief) | Status | Where |
+|---|---|---|
+| Speaker separation | ✅ | pyannote 3.1 voices mapped to advisor / customer by Apertus: **87.3 %** of aligned words get the right role; display only ([`pipeline/diarize.py`](pipeline/diarize.py)) |
+| Notifying the right person | 🟡 | every alarm becomes an Outcept trigger with a deep link to the passage, dry-run unless `TRIGGER_URL` is set ([`pipeline/trigger.py`](pipeline/trigger.py)); routing to a named person is in the [operating concept](docs/OPERATING.md#3-four-eyes-on-alarms) |
+| Feedback and better thresholds | 🟡 | one-click verdicts on every call (correct, false alarm, missed, escalate); the suggestion engine ranks the smallest config change that fixes flagged cases ([`pipeline/suggest.py`](pipeline/suggest.py)), tested on a synthetic corpus only |
+| Patterns across calls | 🟡 | `/patterns`: entities and repeated phrasing across all calls, plus grounded questions to the self-hosted model with validated citations; lexicon and n-gram heuristics, not a learned model |
+| Operating concept | ✅ | [docs/OPERATING.md](docs/OPERATING.md): on-prem GPU, no egress, roles, four eyes on alarms, retention, audit log, model updates through the arena gate plus officer approval |
+| Outcept trigger API with backlink | 🟡 | payload `{url, title, description}` with `url = <UI>/calls/<id>?t=<seconds>`, straight to the passage; built and tested against the contract, run as a dry run here |
 
-Put the case data under `data/case/` and the organisers' 30 % package under `data/test30/` (read-only, never committed), then build the manifests and splits:
-
-```bash
-python scripts/prepare_data.py
-```
-
-Run the tests:
-
-```bash
-pytest
-```
-
-Run the baseline without a model (`--provider mock` uses keyword cues, **not** an LLM) and score it:
-
-```bash
-python scripts/baseline_direct.py --split dev --provider mock
-python -m pipeline.evaluate --pred artifacts/predictions/baseline_direct_MOCK_dev.json --split dev
-```
-
-A real baseline run needs `LLM_BASE_URL` (and optionally `LLM_MODEL`) in `.env`, pointing at the vLLM server through the SSH tunnel on `127.0.0.1:8000`.
+✅ done and measured · 🟡 works, with the limit named · ⬜ not started
 
 ## Architecture
 
 <p align="center">
-  <img src="docs/assets/architecture.svg" alt="Deployment: the compliance officer's laptop reaches FastAPI on an Exoscale GPU VM through an SSH tunnel. The VM runs the pipeline, vLLM with Apertus, faster-whisper and the artifact store, all inside a secured environment. No cloud AI APIs." width="100%">
+  <img src="docs/assets/readme/deployment.svg" alt="Animated: a GPU server running faster-whisper and Apertus via vLLM, and a workstation running the pipeline and the officer UI, both inside one environment and joined by an SSH tunnel; no cloud AI API is called." width="100%">
 </p>
 
-**Figure 3. Target deployment: everything that touches a call stays inside the secured environment.** The laptop reaches it only through an SSH tunnel, and no cloud AI API is called, not even for a quick test.
+**Perceive with AI, decide with checks you can read.** Whisper turns speech into timed text. The multi-check judge
+reads the whole call once per criterion and must quote the lines behind every flag, and the quotes are validated. The
+decision is a fixed rule over the judge's risk and the validated evidence: alarm at ≥ 0.70 with at least one valid
+citation, review at ≥ 0.20, and an optional keyword review that can raise a call to review but never to alarm. A
+failed stage or missing evidence ends as `review`, never as "all clear".
 
-<p align="center">
-  <img src="docs/assets/decision.svg" alt="Confidence gate with five components feeding a four-step decision ladder: failed stage, missing evidence or low confidence gives review; validated evidence with risk at or above the alarm threshold gives alarm; risk in the review band gives review; otherwise no alert." width="100%">
-</p>
-
-**Figure 4. Doubt is checked first, so an unsure call is meant to end as `review`, not as an alarm.** Thresholds come from `config/thresholds.json`, and the "why not flagged" text is written only after the decision is locked.
-
-The full step-by-step design, output contract and evaluation rules are in [CLAUDE.md](CLAUDE.md).
-
-## Repository layout
-
-```
-CLAUDE.md          project guide, hard rules, output contract
-docs/              PRODUCT.md (screens → JSON fields), API.md (endpoints), assets/ (figures)
-fixtures/          MOCK data for every contract (invented)
-pipeline/          schemas.py, evaluate.py, llm.py, reference.py      (stage modules: planned)
-scripts/           prepare_data.py, baseline_direct.py
-tests/             pytest suite
-data/              case data, read-only, gitignored
-artifacts/         manifests, splits, cache, predictions, metrics, gitignored
-web/               Next.js app (fixtures mode and api mode)
-services/api/       FastAPI service (fixture mode so far)
-config/ run.sh     planned, not created yet
-```
-
-## Documentation
-
-- [CLAUDE.md](CLAUDE.md): rules, pipeline design, output contract, evaluation
-- [docs/PRODUCT.md](docs/PRODUCT.md): what each screen shows and which JSON field feeds it
-- [docs/API.md](docs/API.md): endpoints, events, settings, error shapes
-- [fixtures/README.md](fixtures/README.md): the MOCK data and how to regenerate it
-- [web/README.md](web/README.md): running the web app
-- [docs/REFERENCE_NOTES.md](docs/REFERENCE_NOTES.md): which reference code the web app adapts, and what it drops
-
-## Data policy
-
-No audio, case data, model weights, `.env` files or secrets go into git (see `.gitignore`). The original dataset under `data/` is read-only. The pipeline reads only neutral call IDs from `artifacts/manifests/inference.json`; labels and original file names live in `evaluation.json` and are read only by `pipeline/evaluate.py`, after predictions exist. The test split is never used for tuning.
-
-## Branching strategy
-
-Work is split by area, with one long-lived branch (`main`) and short-lived topic branches. Each branch prefix has an owning area, changes reach `main` only through a reviewed pull request, and `main` should stay runnable.
+<details>
+<summary>The pipeline as a diagram (text)</summary>
 
 ```mermaid
-gitGraph
-    commit id: "main"
-    branch ml/asr
-    branch infra/gpu-vm
-    branch api/jobs
-    branch web/inbox
-    checkout ml/asr
-    commit id: "feature"
-    commit id: "tests"
-    checkout infra/gpu-vm
-    commit id: "setup"
-    checkout main
-    merge ml/asr id: "PR review"
-    checkout api/jobs
-    commit id: "endpoints"
-    checkout main
-    merge infra/gpu-vm id: "PR review "
-    checkout web/inbox
-    commit id: "screens"
-    checkout main
-    merge api/jobs id: "PR review  "
-    merge web/inbox id: "PR review   "
+flowchart LR
+  A[call audio · WAV 16 kHz] --> B[ASR · faster-whisper large-v3-turbo<br/>GPU, cached by audio hash]
+  B --> C[keywords · config/keywords.json<br/>fuzzy, Swiss German variants]
+  B --> D[fact extraction · Apertus 8B<br/>context for the reasoning view]
+  B --> E[multi-check judge · Apertus 8B<br/>6 criteria, quotes required]
+  E --> F[citation check<br/>word for word]
+  F --> G{decide<br/>config/thresholds.json}
+  C -. keyword review: at most review .-> G
+  G -->|alarm / review| H[snippets ±10 s · narrative · trigger]
+  G -->|no_alert| I[why not flagged · what would change]
+  subgraph GPU server
+    B
+    D
+    E
+  end
 ```
 
-| Prefix | Area |
+</details>
+
+## Results
+
+<p align="center">
+  <img src="docs/assets/readme/threshold.svg" alt="Animated: the 62 case calls as dots at their AI-judge risk; 49 at risk 0, 7 reviews at 0.60 to 0.65, 6 alarms at 0.90 to 1.00; a dashed review line sweeps from 0.20 to 0.68 and the review calls turn grey as it passes them." width="100%">
+</p>
+
+All 62 case calls, from speech recognition to decision, zero-shot (no parameter tuned on these calls):
+
+| | Multi-check judge (shipped) |
 |---|---|
-| `ml/*` | Pipeline, models, evaluation |
-| `infra/*` | Servers and deployment |
-| `api/*` | Backend service |
-| `web/*` | Frontend |
-| `docs/*` | Documentation |
+| Ranking quality, AUC [95 % CI] | **0.69** [0.58, 0.80] (0.50 = coin flip) |
+| False alarms | **0** |
+| Escalations found (alarm or review) | **13 of 34**: precision 1.00, recall 0.38 |
+| Balanced accuracy | 0.69 (dev 0.69 · Testset_30 0.63 · holdout 0.83) |
+| Sent to a person | 21 % of calls |
+
+**The ladder, honestly.** Our first design, LLM fact extraction plus hand-written rules, ranked calls **worse than
+chance** (AUC 0.36) and never beat "send everything to review". We report it because it shaped the final design. A
+single judge prompt reached AUC 0.63 and found 9 of 34. One check per criterion lifted that to 0.69 and 13 of 34,
+still with no false alarm. Keywords alone reach 0.57. Recall is the open problem, and the jury's hidden set is the
+independent test. Full report, method, CIs and limitations: [docs/RESULTS.md](docs/RESULTS.md).
+
+![AUC ladder](docs/assets/results/ladder.png)
+
+## Performance
+
+| | measured 11 Oct 2026 ([PERFORMANCE.md](docs/PERFORMANCE.md)) |
+|---|---|
+| Transcription per call, one NVIDIA A40 | **5.5 s** (real-time factor **0.020**; calls average 4.7 min) |
+| Transcription per call, MacBook Air M2 CPU | 62 s (RTF 0.22), the fallback without a GPU |
+| Whole pipeline per call, one at a time | 41.5 s median, plus ASR |
+| 20 new calls end to end, 8 in parallel | **10.1 min**, zero stage errors |
+
+![Time per stage and per worker count](docs/assets/results/timing.png)
+
+## Quick start
+
+**Prerequisites:** Python 3.11, ffmpeg, Node.js (current LTS) for the web app, and for GPU work an SSH entry
+`sentinel-pod` for the GPU server that runs Apertus via vLLM ([RUN_HIDDEN_SET.md](docs/RUN_HIDDEN_SET.md#prerequisites)).
+
+```bash
+python3.11 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt -r requirements-asr.txt -r requirements-analysis.txt
+```
+
+Open the tunnel to the GPU server and leave it running:
+
+```bash
+scripts/pod_tunnel.sh
+```
+
+Run the pipeline over a folder of WAVs:
+
+```bash
+./run.sh /path/to/wavs --out runs/new/out --artifacts runs/new/artifacts --workers 8
+```
+
+Or the whole test-set flow in one command:
+
+```bash
+scripts/run_test_set.sh /path/to/audio_or_the_organisers_packet
+```
+
+`run_test_set.sh` checks the setup, decodes on the GPU, runs the pipeline, prints the timing and writes
+`export/Ergebnisse.csv`, `Ergebnisse.jsonl` and `Laufprotokoll.json`, with an integrity check against the packet.
+
+The web app on a finished run (read-only local mode, port 3004):
+
+```bash
+cd web && npm ci && NEXT_PUBLIC_DATA_MODE=api NEXT_PUBLIC_API_PREFIX=/run-api SENTINEL_RUN_DIR=~/Developer/sentinel-runs/mc_0656_final SENTINEL_ARTIFACTS_DIR=../artifacts npm run dev -- -p 3004
+```
+
+Then open <http://localhost:3004> and press **Shift+D** for the demo. Tests: `.venv/bin/python -m pytest` and
+`cd web && npm run check`.
+
+## Configuration without code
+
+| What | File | In the app |
+|---|---|---|
+| How strict (tuning): alarm and review lines, keyword review on or off and its minimum passages | [`config/thresholds.json`](config/thresholds.json) | Settings → Threshold: presets, a draggable alert line, and the effect on every call (missed, false alarms, review load) before saving |
+| What to look for (configuration): six keyword families with Swiss German variants | [`config/keywords.json`](config/keywords.json) | Settings → Keywords: add or remove a word, with live hit counts and the calls it would change |
+| Which checks exist and how they combine | [`config/rules.yaml`](config/rules.yaml), [`config/strategy_defaults.json`](config/strategy_defaults.json) | Settings → Keywords → Checks (advanced) |
+| Which language model may be used | [`config/providers.yaml`](config/providers.yaml) | none, on purpose: self-hosted by default, remote only for fictional data behind a gate |
+
+A threshold or keyword edit re-decides from cached transcripts and AI answers, so the effect is instant. In the
+read-only local mode the app previews but does not save; saving goes through the API.
+
+## Trust and compliance
+
+- **Self-hosted, open weights only.** Whisper and Apertus run on our own GPU and no cloud AI API is called. Remote
+  providers are refused for anything but fictional data, before any network call ([`pipeline/llm.py`](pipeline/llm.py)).
+- **Every alert proven.** The judge must quote the call; each quote is checked word for word against the cited
+  segment, and an alarm needs at least one valid citation. Unsure → `review`; a failed stage → `review`, never silence.
+- **Audit record.** Each call keeps its decision path, the judge's checks and citations, the thresholds and the exact
+  model, prompt and rule versions, printable from the call page.
+- **Model arena.** Six open models ran the same judge on all 62 calls and none measurably beats Apertus (every CI
+  overlaps), so Apertus stays ([docs/ARENA.md](docs/ARENA.md), `/arena`).
+- **Governed learning loop.** Officer verdicts feed suggested threshold changes, and a model or prompt change has to
+  pass the arena and an officer's approval ([OPERATING.md](docs/OPERATING.md#6-model-and-configuration-updates-the-arena-gate-plus-officer-approval)).
+- **Language routing, not profiling.** The map shows which language model and reviewer a call needs, as probabilities
+  over regions and never a location. Dialect inference is personal data under the nDSG and never feeds a decision
+  ([DIALECT.md](docs/DIALECT.md)).
+- **Operating concept:** [docs/OPERATING.md](docs/OPERATING.md).
+
+## Repository map
+
+```
+run.py, run.sh     one command over a folder of WAVs -> results.json, snippets, triggers
+pipeline/          one module per stage (asr, keywords, extract, judge_multi, validate, decide, snippets, narrate,
+                   trigger); schemas.py (output contract), evaluate.py (the only module that reads labels),
+                   simulate.py, timing.py
+config/            thresholds.json, keywords.json, rules.yaml, providers.yaml, dialect_regions.json, organiser_keywords.json
+scripts/           run_test_set.sh, Pod ASR, benchmarks, exports, figures, language ID, data preparation
+web/               Next.js app: alerts, call page, settings, quality, arena, patterns, demo mode
+services/api/      FastAPI service (jobs, events, settings, feedback)
+tests/             pytest suite
+docs/              reports, runbooks and figures (index below)
+data/, artifacts/  case data and run outputs: read-only or gitignored, never committed
+```
+
+| Doc | What it is |
+|---|---|
+| [RESULTS.md](docs/RESULTS.md) | the scientific report: method, every number with its CI, negative results, limitations |
+| [PERFORMANCE.md](docs/PERFORMANCE.md) | transcription and pipeline times, worker counts, the one-command run |
+| [RUN_HIDDEN_SET.md](docs/RUN_HIDDEN_SET.md) | runbook for a new set of calls (the jury's hidden set) |
+| [OPERATING.md](docs/OPERATING.md) | operating concept for production in a secured environment |
+| [ARENA.md](docs/ARENA.md) | model arena: six open models against Apertus on the same judge |
+| [DIALECT.md](docs/DIALECT.md) | language routing map: method, validation, confounds, privacy |
+| [PRODUCT.md](docs/PRODUCT.md) | every screen and the JSON field behind each element |
+| [API.md](docs/API.md) | API contract: endpoints, events, settings, errors |
+| [REFERENCE_NOTES.md](docs/REFERENCE_NOTES.md) | reference code the web app adapts, with licences |
+| [CLAUDE.md](CLAUDE.md) | project rules: self-hosting, label isolation, output contract |
+
+## Limitations and next steps
+
+- **Recall is low**: 13 of 34 escalations found. The judge is cautious by design (no false alarm); the keyword-review
+  switch and the review line trade more reviews for fewer misses, measured in Settings.
+- **Small, synthetic data**: 62 calls in 24 dialogue groups with synthetic voices, so the CIs are wide. The hidden set
+  is the real test.
+- **ASR writes Standard German** for Swiss German speech (WER about 0.6 against the dialect scripts). The language
+  model reads it fine, but quotes appear in Standard German.
+- **Prototype operations**: one rented GPU for the hackathon. Production needs an on-prem or Swiss-region GPU, a
+  container image, the four-eyes workflow and the append-only audit log of [OPERATING.md](docs/OPERATING.md).
+- **Not yet run live**: a real POST to the Outcept trigger API, feedback-driven suggestions on real officer verdicts,
+  and `entity_types` in the organisers' export.
+- **Dialect is not determined**: one SwissDial speaker per dialect and synthetic case voices make it unmeasurable
+  ([DIALECT.md](docs/DIALECT.md)).
+
+## Team
+
+| | |
+|---|---|
+| Peter | lead, ML pipeline, evaluation, web |
+| Jules | API |
+| Loyola | ASR bake-off, CI, infrastructure |
+| Nik | design, web |
+| Carl | Swiss German keywords |
+
+No audio, case data, model weights or secrets are in git. The pipeline sees neutral call ids only, never a label, and
+all calls are fictional. Licence: [LICENSE](LICENSE).
