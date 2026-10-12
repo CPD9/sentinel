@@ -1,14 +1,19 @@
 """Pod-side: decode every WAV in a folder on the GPU into an ASR cache dir (one model load, faster-whisper float16).
 
-    python scripts/pod_asr_folder.py <wav_folder> <cache_dir> [--model large-v3-turbo]
+    python scripts/pod_asr_folder.py <audio_folder> <cache_dir> [--model large-v3-turbo] [--shas shas.json]
 
 Writes <cache_dir>/<key>.json with the same key as pipeline.asr.transcribe (audio sha256 + model + device + decode
 settings), so a laptop run whose artifacts dir holds these files reuses the GPU hypotheses (pipeline/asr.py prefers
 a GPU/float16 decode on any host) and does no CPU decoding. Driven by scripts/pod_asr_folder.sh.
+
+FLAC upload (pod_asr_folder.sh --flac): the folder holds <stem>.flac (lossless, same 16 kHz samples, about half the
+bytes) and --shas maps <stem> -> sha256 of the laptop's original WAV, so the cache key is the WAV's key and the
+laptop run finds it.
 """
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 import time
 from pathlib import Path
@@ -24,14 +29,27 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("folder", type=Path)
     ap.add_argument("cache_dir", type=Path)
     ap.add_argument("--model", default="large-v3-turbo")
+    ap.add_argument("--shas", type=Path, help="JSON {stem: sha256 of the original WAV} (FLAC uploads)")
+    ap.add_argument("--expect-model-id", help="name@revision the laptop pipeline resolves (scripts/asr_cache_check.py "
+                                              "id); exit 3 before decoding if this Pod resolves another model")
     a = ap.parse_args(argv)
+    shas = json.loads(a.shas.read_text(encoding="utf-8")) if a.shas else {}
     model_dir, asr_model = asr.resolve_model(a.model)
+    if a.expect_model_id and asr_model != a.expect_model_id:
+        print(f"ASR MODEL MISMATCH: the Pod resolves {asr_model}, the pipeline expects {a.expect_model_id}; "
+              f"its cache keys would not match and the laptop would re-decode on the CPU. Nothing decoded.",
+              file=sys.stderr)
+        return 3
     model = asr.load_model(model_dir, "cuda", "float16")
     a.cache_dir.mkdir(parents=True, exist_ok=True)
-    wavs = sorted(a.folder.glob("*.wav"))
+    wavs = sorted([*a.folder.glob("*.wav"), *a.folder.glob("*.flac")])
     t_all = time.perf_counter()
     for w in wavs:
-        cp = a.cache_dir / f"{asr.cache_key(asr._sha256(w), asr_model, 'cuda', 'float16')}.json"
+        if w.suffix == ".flac" and w.stem not in shas:
+            print(f"{w.name}: no WAV sha in --shas, skipped", flush=True)
+            continue
+        sha = shas.get(w.stem) or asr._sha256(w)
+        cp = a.cache_dir / f"{asr.cache_key(sha, asr_model, 'cuda', 'float16')}.json"
         if cp.is_file():
             continue
         t0 = time.perf_counter()

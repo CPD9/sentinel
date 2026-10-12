@@ -79,6 +79,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--artifacts", type=Path, default=None,
                     help="own artifacts dir (transcripts, traces, analysis and the ASR / LLM caches) instead of the "
                          "repo's artifacts/; use it for any new set so nothing shared is read or written")
+    ap.add_argument("--timings", type=Path, default=None,
+                    help="also write per-call, per-stage processing times (JSON) to this file; off by default")
     a = ap.parse_args(argv)
     if bool(a.folder) == bool(a.split):
         ap.error("give exactly one of <wav_folder> or --split")
@@ -100,11 +102,16 @@ def main(argv: list[str] | None = None) -> int:
         from pipeline import extract, judge
         extract.CACHE_DIR, judge.CACHE_DIR = a.artifacts / "cache" / "extract", a.artifacts / "cache" / "judge"
 
+    timings = None
+    if a.timings:
+        from pipeline.timing import TimingCollector
+        timings = TimingCollector()
+
     def one(job):
         cid, wav = job
         t1 = time.perf_counter()
         d = process_call(str(wav), cid, transcripts=a.transcripts, no_llm=a.no_llm, out_dir=out,
-                         artifacts_dir=a.artifacts)
+                         artifacts_dir=a.artifacts, **({"on_event": timings} if timings else {}))
         errs = ",".join(e["stage"] for e in d["stage_errors"]) or "-"
         print(f"{cid}: {d['decision']:8s} risk {d['risk_score']:.2f} conf "
               f"{'n/a' if d['confidence'] is None else format(d['confidence'], '.2f')} "
@@ -133,6 +140,8 @@ def main(argv: list[str] | None = None) -> int:
     if a.predictions:
         write_json_atomic(PRED_DIR / f"{run_id}.json", body)
     counts = {k: sum(d["decision"] == k for d in calls) for k in ("alarm", "review", "no_alert")}
+    if timings:
+        write_json_atomic(a.timings, timings.report(wall_s=time.perf_counter() - t0, workers=a.workers, run_id=run_id))
     print(f"\n{len(calls)} calls in {time.perf_counter() - t0:.1f} s: {counts}\nwrote {out / 'results.json'}"
           + (f" and {PRED_DIR / (run_id + '.json')}" if a.predictions else ""))
     return 0
